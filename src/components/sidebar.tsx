@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import type { ReactNode } from "react";
 import { navigation } from "@/lib/navigation";
 
 function isActive(pathname: string, href: string) {
@@ -9,7 +10,7 @@ function isActive(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-export function Sidebar() {
+export function Sidebar({ footer }: { footer?: ReactNode }) {
   const pathname = usePathname();
 
   return (
@@ -48,6 +49,8 @@ export function Sidebar() {
           })}
         </ul>
       </nav>
+
+      {footer ? <div className="border-t border-border px-3 py-3">{footer}</div> : null}
     </aside>
   );
 }

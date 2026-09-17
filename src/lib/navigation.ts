@@ -16,15 +16,15 @@ export const navigation: NavItem[] = [
     icon: GridIcon,
   },
   {
-    href: "/dominio",
-    label: "Domínio",
-    description: "Configure o domínio do seu site.",
+    href: "/dominios",
+    label: "Domínios",
+    description: "Cadastre domínios e defina qual página responde em cada path.",
     icon: GlobeIcon,
   },
   {
     href: "/paginas",
     label: "Páginas",
-    description: "Crie e organize as páginas do seu site.",
+    description: "Crie e edite o HTML das suas páginas.",
     icon: PagesIcon,
   },
 ];

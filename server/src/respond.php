@@ -1,0 +1,140 @@
+<?php
+/**
+ * De rotas candidatas a uma resposta.
+ *
+ * As rotas chegam em ordem de prioridade, com a FALLBACK (página padrão do
+ * domínio) por último. A primeira cujas `conditions` casam decide:
+ *
+ *   SERVE     slug_id nulo → 404 (a rota existe mas a slug não; não pula
+ *             para a próxima, para o erro aparecer em vez de sumir).
+ *             If-None-Match igual ao hash → 304. Senão 200 com o HTML.
+ *   REDIRECT  Location = redirect_url (+ query original se preserve_query).
+ *   BLOCK     o status configurado, com uma página mínima.
+ *
+ * Rota com condição `bot` fora de BLOCK é ignorada: detecção de bot serve
+ * para barrar, nunca para trocar o conteúdo.
+ *
+ * Nenhuma casou: robots.txt tem uma resposta padrão; o resto é 404.
+ */
+declare(strict_types=1);
+
+const PRIVATE_NO_CACHE = 'private, no-cache';
+
+/**
+ * @return array{0: int, 1: array<string,string>, 2: ?string}
+ */
+function decide(array $routes, Request $req): array
+{
+    foreach ($routes as $route) {
+        $cond = is_array($route['conditions'] ?? null) ? $route['conditions'] : [];
+        $action = (string) ($route['action'] ?? '');
+
+        if (array_key_exists('bot', $cond) && $action !== 'BLOCK') {
+            error_log('[dayone-pages] rota com condição bot fora de BLOCK ignorada: ' . ($route['route_id'] ?? '?'));
+            continue;
+        }
+        if (!conditions_match($cond, $req)) {
+            continue;
+        }
+
+        switch ($action) {
+            case 'SERVE':
+                return serve_slug($route, $req);
+            case 'REDIRECT':
+                return redirect_to($route, $req);
+            case 'BLOCK':
+                return block($route);
+            default:
+                continue 2;
+        }
+    }
+
+    if ($req->path === '/robots.txt') {
+        return robots_default();
+    }
+    return not_found();
+}
+
+function robots_default(): array
+{
+    return [200, ['Content-Type' => 'text/plain; charset=utf-8', 'Cache-Control' => 'public, max-age=3600'], "User-agent: *\nAllow: /\n"];
+}
+
+function serve_slug(array $route, Request $req): array
+{
+    $slugId = (string) ($route['slug_id'] ?? '');
+    $hash = (string) ($route['content_hash'] ?? '');
+    if ($slugId === '' || $hash === '') {
+        // A rota casou mas a slug não existe. robots.txt ganha o padrão; o resto é 404.
+        return $req->path === '/robots.txt' ? robots_default() : not_found();
+    }
+
+    $etag = '"' . $hash . '"';
+    $headers = [
+        'Content-Type' => (string) ($route['content_type'] ?: 'text/html; charset=utf-8'),
+        'ETag' => $etag,
+        'Cache-Control' => PRIVATE_NO_CACHE,
+        'Vary' => 'CF-IPCountry, User-Agent',
+    ];
+
+    if ($req->ifNoneMatch !== null && etag_matches($req->ifNoneMatch, $etag)) {
+        return [304, $headers, null];
+    }
+
+    $body = cache_read_content($slugId, $hash);
+    if ($body === null) {
+        error_log("[dayone-pages] conteúdo ausente no cache para slug $slugId ($hash)");
+        return [503, ['Content-Type' => 'text/html; charset=utf-8', 'Cache-Control' => 'no-store', 'Retry-After' => '10'], plain_page('Um instante', 'Atualizando a página. Tente de novo em alguns segundos.')];
+    }
+
+    return [200, $headers, $body];
+}
+
+function etag_matches(string $header, string $etag): bool
+{
+    foreach (explode(',', $header) as $candidate) {
+        $c = trim($candidate);
+        if ($c === '*' || $c === $etag || $c === 'W/' . $etag) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function redirect_to(array $route, Request $req): array
+{
+    $location = (string) ($route['redirect_url'] ?? '');
+    if (!empty($route['preserve_query']) && $req->rawQuery !== '') {
+        $location .= (str_contains($location, '?') ? '&' : '?') . $req->rawQuery;
+    }
+    $status = (int) ($route['status_code'] ?? 302);
+    if (!in_array($status, [301, 302, 307, 308], true)) {
+        $status = 302;
+    }
+    return [$status, ['Location' => $location, 'Cache-Control' => PRIVATE_NO_CACHE], ''];
+}
+
+function block(array $route): array
+{
+    $status = (int) ($route['status_code'] ?? 404);
+    if (!in_array($status, [403, 404, 410, 451], true)) {
+        $status = 404;
+    }
+    $title = match ($status) {
+        403 => 'Acesso negado',
+        410 => 'Página removida',
+        451 => 'Indisponível',
+        default => 'Página não encontrada',
+    };
+    return [$status, ['Content-Type' => 'text/html; charset=utf-8', 'Cache-Control' => PRIVATE_NO_CACHE], plain_page($title, '')];
+}
+
+function not_found(): array
+{
+    return [404, ['Content-Type' => 'text/html; charset=utf-8', 'Cache-Control' => PRIVATE_NO_CACHE], plain_page('Página não encontrada', 'O endereço não existe neste domínio.')];
+}
+
+function service_unavailable(): array
+{
+    return [503, ['Content-Type' => 'text/html; charset=utf-8', 'Cache-Control' => 'no-store', 'Retry-After' => '30'], plain_page('Um instante', 'O site está sendo carregado. Tente de novo em alguns segundos.')];
+}

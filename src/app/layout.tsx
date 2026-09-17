@@ -18,6 +18,7 @@ export const metadata: Metadata = {
     template: "%s | DayOne Pages",
   },
   description: "Painel de gerenciamento do DayOne Pages",
+  robots: { index: false, follow: false },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

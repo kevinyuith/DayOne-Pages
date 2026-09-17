@@ -32,6 +32,15 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
+!server/.env.example
+
+# servidor de entrega: cache em disco e config local
+server/cache/
+server/.env
+
+# MCP do Claude Code (carrega token de acesso)
+.mcp.json
 
 # vercel
 .vercel

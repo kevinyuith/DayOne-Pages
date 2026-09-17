@@ -1,36 +1,70 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# DayOne Pages
 
-## Getting Started
+Administrador de domínios + construtor de páginas, no modelo do hidepages.com.
 
-First, run the development server:
+- **Dashboard** (este repo, Next.js 16): cadastra domínios, cria páginas com
+  várias slugs (HTML editado num editor de código com preview) e define, por
+  domínio, **rotas**: qual página responde em cada path, com regras por país,
+  dispositivo, parâmetros de URL e referrer, além de redirects e bloqueios.
+- **Banco**: Supabase, tudo no schema `pages` (`supabase/migrations/`).
+- **Servidor de entrega** (`server/`, PHP): responde por qualquer domínio
+  apontado para ele, consulta o banco e cacheia em disco por 5 minutos.
+  Se o Supabase cair, serve a cópia que tem. Ver [server/README.md](server/README.md).
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+```
+visitante ─► Cloudflare ─HTTP─► nginx + php-fpm (server/) ─► cache 5 min ─► Supabase (pages.resolve)
+equipe    ─► dashboard (Next.js) ─senha única─► server actions ─service key─► Supabase (schema pages)
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Rodar o dashboard
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+cp .env.example .env.local        # preencha (ver abaixo)
+npm install
+npm run dev                       # http://localhost:3000
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Variáveis (`.env.local`):
 
-## Learn More
+| Variável | O que é |
+|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | URL do projeto Supabase |
+| `SUPABASE_SERVICE_KEY` | chave de serviço (só servidor; atravessa a RLS) |
+| `DASH_PASSWORD_HASH` | hash scrypt da senha única: `npm run hash-password` |
+| `DASH_SESSION_SECRET` | segredo do cookie de sessão: `openssl rand -hex 32` |
+| `SERVER_IP` | IP público do servidor de entrega (instruções de DNS) |
+| `SERVER_ID` | marcador do `/_health`; igual ao `SERVER_ID` do `server/.env` |
+| `ORIGIN_URL` | opcional; URL direta do servidor |
 
-To learn more about Next.js, take a look at the following resources:
+Login: uma senha única, hash em env, cookie assinado (12 h), 5 tentativas por
+IP a cada 15 min. Não há usuários nem cadastro.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Banco
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Aplique `supabase/migrations/20260917_dayone_pages.sql` sobre o schema `pages`
+já existente no projeto (SQL Editor). Depois registre a chave do servidor de
+entrega em `pages.server_keys` (ver `server/README.md`).
 
-## Deploy on Vercel
+Nunca rode `supabase db push` / `db reset` contra o projeto: o banco é
+compartilhado com outros sistemas; este produto só toca o schema `pages`.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Verificar
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+npm run lint && npm run typecheck && npm run build && npm run check:secrets
+php server/tests/run.php
+```
+
+`check:secrets` procura os valores das variáveis sensíveis dentro de
+`.next/static/` depois do build e falha se achar.
+
+## Como o servidor decide o que servir
+
+1. Normaliza host (`WWW.Exemplo.COM:80` → `exemplo.com`) e path (`//Promo/` → `/promo`).
+2. Busca no cache `routes/<host>/<path>`; se fresco (< 5 min) e com o HTML em disco, serve.
+3. Senão chama `pages.resolve(host, path, chave)`: rotas candidatas em ordem de prioridade + o HTML de cada slug, numa chamada.
+4. Percorre as rotas; a primeira cujas condições casam decide: servir a slug, redirecionar ou bloquear. Nenhuma → página padrão do domínio → 404.
+5. Supabase fora: serve a cópia expirada (`X-Cache: STALE`) por até 7 dias; sem cópia, 503.
+
+Detecção de bot existe só para **bloquear** (scrapers/crawlers), nunca para
+servir conteúdo diferente.
