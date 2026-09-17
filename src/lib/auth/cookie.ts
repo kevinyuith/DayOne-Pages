@@ -97,14 +97,26 @@ export function isValidSession(value: string | undefined | null, now = Date.now(
 }
 
 /**
- * As opções do cookie, num lugar só. `secure` sempre, inclusive em
- * desenvolvimento: o Chrome aceita cookie Secure sobre http em localhost, e
- * condicionar ao ambiente criaria uma diferença entre o que se testa e o que
- * se publica bem na trava que mais importa.
+ * As opções do cookie, num lugar só. `secure` é decidido por request em
+ * `isSecureRequest`: o navegador só aceita cookie Secure em https ou em
+ * localhost. Em `http://192.168.x.x:3000` (rede local) ou num servidor sem
+ * TLS, um cookie Secure é descartado em silêncio — a senha é aceita, o
+ * redirect acontece e o painel volta para o login como se nada tivesse
+ * ocorrido. Foi exatamente esse o sintoma relatado em 17/09/2026.
  */
 export const COOKIE_OPTIONS = {
   httpOnly: true,
-  secure: true,
   sameSite: "lax",
   path: "/",
 } as const;
+
+/**
+ * A request chegou por https (ou é localhost)? Atrás de proxy (Railway,
+ * Vercel, Cloudflare, nginx) o protocolo real vem em `x-forwarded-proto`.
+ */
+export function isSecureRequest(headers: Headers): boolean {
+  const proto = headers.get("x-forwarded-proto")?.split(",")[0].trim().toLowerCase();
+  if (proto) return proto === "https";
+  const host = headers.get("host") ?? "";
+  return /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i.test(host);
+}

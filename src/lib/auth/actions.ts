@@ -2,7 +2,7 @@
 
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { COOKIE_OPTIONS, SESSION_COOKIE, SESSION_SECRET_VAR, SESSION_TTL_MS, issueSession, secretConfigured } from "./cookie";
+import { COOKIE_OPTIONS, SESSION_COOKIE, SESSION_SECRET_VAR, SESSION_TTL_MS, isSecureRequest, issueSession, secretConfigured } from "./cookie";
 import type { LoginState } from "./login-state";
 import { canAttempt, recordFailure, requestIp } from "./rate-limit";
 import { HOME_PATH, LOGIN_PATH, safeNextPath } from "./routes";
@@ -32,7 +32,8 @@ export async function signIn(previous: LoginState, formData: FormData): Promise<
   const rawNext = formData.get("next");
   const next = typeof rawNext === "string" ? rawNext : HOME_PATH;
 
-  const ip = requestIp(await headers());
+  const requestHeaders = await headers();
+  const ip = requestIp(requestHeaders);
 
   const limit = await canAttempt(ip);
   if (!limit.allowed) return { error: "blocked", attempt };
@@ -55,6 +56,7 @@ export async function signIn(previous: LoginState, formData: FormData): Promise<
   const store = await cookies();
   store.set(SESSION_COOKIE, issueSession(), {
     ...COOKIE_OPTIONS,
+    secure: isSecureRequest(requestHeaders),
     // Cortesia de limpeza para o navegador; a tranca é o `exp` assinado.
     maxAge: Math.floor(SESSION_TTL_MS / 1000),
   });
