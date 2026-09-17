@@ -3,14 +3,14 @@ import { createClient } from "@supabase/supabase-js";
 /**
  * O client de serviço — o ÚNICO client Supabase deste projeto.
  *
- * Não há login no Supabase: a porta do dashboard é uma senha única e um cookie
- * assinado (src/lib/auth). Logo não existe sessão de usuário para carregar, e
- * todas as leituras e escritas passam por aqui, com a chave de serviço.
+ * Não há login no Supabase nem no dashboard: todas as leituras e escritas
+ * passam por aqui, com a chave de serviço.
  *
  * A chave de serviço tem BYPASSRLS. Isso significa, sem meias palavras: a RLS
- * do schema `pages` não protege nada do que este módulo faz. A defesa é (a) o
- * cookie de sessão conferido no proxy e no layout e (b) `requireSession()`
- * dentro de cada action antes de qualquer escrita.
+ * do schema `pages` não protege nada do que este módulo faz, e o painel em si
+ * não pede senha. Quem protege o painel é a rede na frente do deploy
+ * (Cloudflare Access, allowlist de IP). Sem isso, qualquer um com a URL edita
+ * tudo.
  *
  * Três guardas mantêm a chave fora do navegador:
  *   1. `SUPABASE_SERVICE_KEY` não tem prefixo NEXT_PUBLIC_ — o Next não a

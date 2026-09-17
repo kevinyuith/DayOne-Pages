@@ -13,7 +13,7 @@ Administrador de domínios + construtor de páginas, no modelo do hidepages.com.
 
 ```
 visitante ─► Cloudflare ─HTTP─► nginx + php-fpm (server/) ─► cache 5 min ─► Supabase (pages.resolve)
-equipe    ─► dashboard (Next.js) ─senha única─► server actions ─service key─► Supabase (schema pages)
+equipe    ─► dashboard (Next.js, sem login) ─► server actions ─service key─► Supabase (schema pages)
 ```
 
 ## Rodar o dashboard
@@ -30,14 +30,13 @@ Variáveis (`.env.local`):
 |---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` | URL do projeto Supabase |
 | `SUPABASE_SERVICE_KEY` | chave de serviço (só servidor; atravessa a RLS) |
-| `DASH_PASSWORD_HASH` | hash scrypt da senha única: `npm run hash-password` |
-| `DASH_SESSION_SECRET` | segredo do cookie de sessão: `openssl rand -hex 32` |
 | `SERVER_IP` | IP público do servidor de entrega (instruções de DNS) |
 | `SERVER_ID` | marcador do `/_health`; igual ao `SERVER_ID` do `server/.env` |
 | `ORIGIN_URL` | opcional; URL direta do servidor |
 
-Login: uma senha única, hash em env, cookie assinado (12 h), 5 tentativas por
-IP a cada 15 min. Não há usuários nem cadastro.
+**O painel não tem login.** Qualquer pessoa com a URL edita páginas e
+domínios. Proteja o deploy na rede: Cloudflare Access na frente do host, ou
+allowlist de IP no proxy reverso.
 
 ## Banco
 

@@ -12,7 +12,7 @@
 import { readdirSync, readFileSync, statSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
-const SECRETS = ["SUPABASE_SERVICE_KEY", "DASH_PASSWORD_HASH", "DASH_SESSION_SECRET"];
+const SECRETS = ["SUPABASE_SERVICE_KEY"];
 const STATIC_DIR = join(process.cwd(), ".next", "static");
 
 function loadEnvLocal() {

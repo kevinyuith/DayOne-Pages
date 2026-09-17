@@ -2,7 +2,6 @@
 
 import { revalidatePath } from "next/cache";
 import { errorReason, fail, type ActionResult } from "@/lib/action-result";
-import { requireSession } from "@/lib/auth/session";
 import { checkDomainHealth } from "@/lib/origin/health";
 import { parseConditionsForm } from "@/lib/pages/conditions";
 import { isValidDomain, isValidSlug, normalizeHost, normalizePath } from "@/lib/pages/normalize";
@@ -18,8 +17,8 @@ import { supabaseService } from "@/lib/supabase/service";
 /**
  * Ações de domínio e de rota.
  *
- * Padrão: validar no topo → `requireSession()` → escrever com o client de
- * serviço → `revalidatePath` só em sucesso. As regras dos CHECKs do banco
+ * Padrão: validar no topo → escrever com o client de serviço →
+ * `revalidatePath` só em sucesso. As regras dos CHECKs do banco
  * são repetidas aqui para a mensagem ser legível; o banco continua sendo a
  * garantia.
  */
@@ -45,7 +44,6 @@ export async function addDomain(prev: DomainFormState, fd: FormData): Promise<Do
     return { error: "Domínio inválido. Use o formato exemplo.com (sem http://, sem barra, sem www).", attempt };
   }
 
-  await requireSession();
   try {
     const { error } = await supabaseService().from("domains").insert({ domain, status: "ACTIVE", default_page_id: pageId });
     if (error) {
@@ -63,7 +61,6 @@ export async function addDomain(prev: DomainFormState, fd: FormData): Promise<Do
 export type VerifyResult = ActionResult<{ healthy: boolean; via?: "cloudflare" | "direct"; error?: string }>;
 
 export async function verifyDomain(id: string): Promise<VerifyResult> {
-  await requireSession();
   const db = supabaseService();
   try {
     const { data, error } = await db.from("domains").select("domain").eq("id", id).maybeSingle();
@@ -89,7 +86,6 @@ export async function verifyDomain(id: string): Promise<VerifyResult> {
 }
 
 export async function setDefaultPage(id: string, pageId: string | null): Promise<ActionResult> {
-  await requireSession();
   try {
     const { error } = await supabaseService().from("domains").update({ default_page_id: pageId || null }).eq("id", id);
     if (error) throw new Error(error.message);
@@ -102,7 +98,6 @@ export async function setDefaultPage(id: string, pageId: string | null): Promise
 
 export async function setDomainStatus(id: string, status: DomainStatus): Promise<ActionResult> {
   if (status !== "ACTIVE" && status !== "PAUSED") return fail("Status inválido.");
-  await requireSession();
   try {
     const { error } = await supabaseService().from("domains").update({ status }).eq("id", id);
     if (error) throw new Error(error.message);
@@ -114,7 +109,6 @@ export async function setDomainStatus(id: string, status: DomainStatus): Promise
 }
 
 export async function removeDomain(id: string): Promise<ActionResult> {
-  await requireSession();
   try {
     // As rotas caem em cascata (FK ON DELETE CASCADE).
     const { error } = await supabaseService().from("domains").delete().eq("id", id);
@@ -212,7 +206,6 @@ export async function saveRoute(prev: RouteFormState, fd: FormData): Promise<Rou
     return { error: "A condição \"só bots\" só pode ser usada com a ação Bloquear.", attempt };
   }
 
-  await requireSession();
   const db = supabaseService();
   const row = {
     domain_id: domainId,
@@ -248,7 +241,6 @@ export async function saveRoute(prev: RouteFormState, fd: FormData): Promise<Rou
 }
 
 export async function deleteRoute(id: string, domainId: string): Promise<ActionResult> {
-  await requireSession();
   try {
     const { error } = await supabaseService().from("domain_routes").delete().eq("id", id).eq("domain_id", domainId);
     if (error) throw new Error(error.message);
@@ -260,7 +252,6 @@ export async function deleteRoute(id: string, domainId: string): Promise<ActionR
 }
 
 export async function toggleRoute(id: string, domainId: string, active: boolean): Promise<ActionResult> {
-  await requireSession();
   try {
     const { error } = await supabaseService().from("domain_routes").update({ is_active: active }).eq("id", id).eq("domain_id", domainId);
     if (error) throw new Error(error.message);
@@ -273,7 +264,6 @@ export async function toggleRoute(id: string, domainId: string, active: boolean)
 
 /** Troca de lugar com a vizinha de cima/baixo. UNIQUE(domain_id, priority) exige a RPC atômica. */
 export async function moveRoute(id: string, domainId: string, direction: "up" | "down"): Promise<ActionResult> {
-  await requireSession();
   const db = supabaseService();
   try {
     const { data, error } = await db.from("domain_routes").select("id, priority").eq("domain_id", domainId).order("priority");

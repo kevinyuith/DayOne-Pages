@@ -3,7 +3,6 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { errorReason, fail, type ActionResult } from "@/lib/action-result";
-import { requireSession } from "@/lib/auth/session";
 import { isValidSlug, normalizePath } from "@/lib/pages/normalize";
 import { STARTER_HTML } from "@/lib/pages/starter-template";
 import { isPageKind, isPageStatus, type PageKind, type PageStatus } from "@/lib/pages/types";
@@ -12,8 +11,8 @@ import { supabaseService } from "@/lib/supabase/service";
 /**
  * Ações de página e slug.
  *
- * Padrão de todas: validar no topo → `requireSession()` → escrever com o
- * client de serviço → `revalidatePath` só em sucesso. Devolvem
+ * Padrão de todas: validar no topo → escrever com o client de serviço →
+ * `revalidatePath` só em sucesso. Devolvem
  * `{ ok, reason }` em vez de lançar. `redirect()` fica FORA de try/catch
  * porque ele lança uma exceção de controle que o Next intercepta.
  *
@@ -41,7 +40,6 @@ export async function createPage(prev: CreatePageState, fd: FormData): Promise<C
   }
   if (!isPageKind(kind)) return { error: "Tipo inválido.", attempt };
 
-  await requireSession();
   const db = supabaseService();
 
   let pageId: string;
@@ -93,7 +91,6 @@ export async function saveEditor(input: SaveEditorInput): Promise<SaveEditorResu
     return fail("O HTML passa de 5 MB. Hospede imagens e vídeos fora e referencie por URL.");
   }
 
-  await requireSession();
   const db = supabaseService();
 
   try {
@@ -138,7 +135,6 @@ export async function createSlug(pageId: string, rawSlug: string, title: string 
   const slug = normalizePath(rawSlug);
   if (!isValidSlug(slug)) return fail("Path inválido. Use letras minúsculas, números, `-`, `_`, `.` e `/` (ex.: /obrigado).");
 
-  await requireSession();
   try {
     const { data, error } = await supabaseService()
       .from("page_slugs")
@@ -160,7 +156,6 @@ export async function renameSlug(slugId: string, rawSlug: string): Promise<Actio
   const slug = normalizePath(rawSlug);
   if (!isValidSlug(slug)) return fail("Path inválido.");
 
-  await requireSession();
   const db = supabaseService();
   try {
     const current = await db.from("page_slugs").select("page_id, slug").eq("id", slugId).maybeSingle();
@@ -184,7 +179,6 @@ export async function renameSlug(slugId: string, rawSlug: string): Promise<Actio
 }
 
 export async function toggleSlug(slugId: string, active: boolean): Promise<ActionResult> {
-  await requireSession();
   try {
     const { error } = await supabaseService().from("page_slugs").update({ is_active: active }).eq("id", slugId);
     if (error) throw new Error(error.message);
@@ -196,7 +190,6 @@ export async function toggleSlug(slugId: string, active: boolean): Promise<Actio
 }
 
 export async function deleteSlug(slugId: string): Promise<ActionResult> {
-  await requireSession();
   const db = supabaseService();
   try {
     const current = await db.from("page_slugs").select("page_id, slug").eq("id", slugId).maybeSingle();
@@ -220,7 +213,6 @@ export async function deleteSlug(slugId: string): Promise<ActionResult> {
 }
 
 export async function deletePage(pageId: string): Promise<ActionResult> {
-  await requireSession();
   const db = supabaseService();
   try {
     const routes = await db.from("domain_routes").select("id", { count: "exact", head: true }).eq("page_id", pageId);

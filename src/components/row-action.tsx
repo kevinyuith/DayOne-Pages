@@ -46,7 +46,11 @@ export function RowAction({
             const result = await action();
             if (!result.ok) setError(result.reason);
             onDone?.(result);
-            if (result.ok && redirectTo) router.push(redirectTo);
+            if (result.ok && redirectTo) {
+              router.push(redirectTo);
+              // O destino pode ter sido prefetched antes da mutação; refresh garante dado novo.
+              router.refresh();
+            }
           });
         }}
       >

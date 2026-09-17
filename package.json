@@ -8,7 +8,6 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "hash-password": "node scripts/hash-password.mjs",
     "check:secrets": "node scripts/check-secrets.mjs"
   },
   "dependencies": {

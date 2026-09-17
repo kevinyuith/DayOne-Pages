@@ -11,7 +11,6 @@
 --   1. colunas de verificação de domínio em pages.domains
 --   2. CHECK: a condição `bot` só é aceita em rotas de BLOQUEIO
 --   3. pages.server_keys      — chaves do servidor de entrega (hash sha256)
---   4. pages.access_attempts  — limite de tentativas do login por IP
 --   5. pages.resolve()        — rotas + conteúdo numa chamada, para o servidor
 --   6. pages.swap_route_priority() — troca atômica de prioridade entre rotas
 --   7. semântica de match_routes() documentada
@@ -84,28 +83,6 @@ COMMENT ON COLUMN pages.server_keys.key_hash IS 'encode(sha256(convert_to(chave,
 ALTER TABLE pages.server_keys ENABLE ROW LEVEL SECURITY;
 -- Os default privileges do schema deram SELECT ao `authenticated`; aqui não.
 REVOKE ALL ON pages.server_keys FROM authenticated;
-
-
--- ┌──────────────────────────────────────────────────────────────────────────┐
--- │ 4. pages.access_attempts — limite de tentativas do login                  │
--- └──────────────────────────────────────────────────────────────────────────┘
---
--- Contador em memória não serve: zera a cada deploy e não é compartilhado
--- entre instâncias. Só falhas entram; nunca a senha tentada.
-
-CREATE TABLE IF NOT EXISTS pages.access_attempts (
-  id           bigserial   PRIMARY KEY,
-  ip           text        NOT NULL,
-  occurred_at  timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE INDEX IF NOT EXISTS idx_pages_access_attempts_ip_time
-  ON pages.access_attempts (ip, occurred_at DESC);
-
-COMMENT ON TABLE pages.access_attempts IS 'Falhas de login do dashboard, por IP. Lida e escrita só pelo service_role.';
-
-ALTER TABLE pages.access_attempts ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON pages.access_attempts FROM authenticated;
 
 
 -- ┌──────────────────────────────────────────────────────────────────────────┐

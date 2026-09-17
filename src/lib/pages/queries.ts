@@ -4,9 +4,8 @@ import type { Domain, DomainRoute, Page, PageRef, PageSlug, PageSlugSummary } fr
 /**
  * Leituras do schema `pages`, para Server Components.
  *
- * Tudo passa pelo client de serviço (não há sessão Supabase) e por isso
- * quem chama é sempre uma página atrás de `requireSession()` — o layout do
- * grupo (dashboard) garante isso.
+ * Tudo passa pelo client de serviço. O painel não tem login: quem o
+ * protege é a rede (Cloudflare Access, allowlist de IP) na frente do deploy.
  *
  * Erro do banco aqui LANÇA: uma tela de lista sem dados não tem o que
  * mostrar de útil, e o error boundary do Next exibe a falha.
