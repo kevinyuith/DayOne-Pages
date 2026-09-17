@@ -1,5 +1,12 @@
 import { Sidebar } from "@/components/sidebar";
 
+/**
+ * Todas as telas do painel leem o banco a cada request. Sem isto o Next
+ * tentaria pré-renderizar `/`, `/dominios` e `/paginas` no build: bateria no
+ * Supabase em tempo de build (falha sem env) e congelaria dados no HTML.
+ */
+export const dynamic = "force-dynamic";
+
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-dvh flex-col md:flex-row">
