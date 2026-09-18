@@ -48,3 +48,6 @@ server/.env
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# drop-in gerado por server/build-dropin.sh
+server/dist/

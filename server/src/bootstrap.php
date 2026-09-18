@@ -12,6 +12,8 @@
  */
 declare(strict_types=1);
 
+defined('DAYONE_ENTRY') || (http_response_code(404) && exit);
+
 const DAYONE_ROOT = __DIR__ . '/..';
 
 /** Lê KEY=VALUE do arquivo, sem sobrescrever o que já veio do ambiente. */
@@ -40,6 +42,32 @@ function dayone_load_env(string $file): void
 }
 
 dayone_load_env(DAYONE_ROOT . '/.env');
+
+/**
+ * Alternativa ao .env: um `config.php` que devolve um array CHAVE => valor.
+ *
+ * Existe para o layout em que a pasta do site É o webroot (hospedagem com
+ * painel). Ali um `.env` pode ser baixado por qualquer um se o nginx não
+ * bloquear dotfiles; um `.php` nunca é entregue como texto, e a trava
+ * DAYONE_ENTRY no topo dele faz o pedido direto responder 404.
+ */
+function dayone_load_config_php(string $file): void
+{
+    if (!is_file($file)) {
+        return;
+    }
+    $values = require $file;
+    if (!is_array($values)) {
+        return;
+    }
+    foreach ($values as $key => $value) {
+        if (is_string($key) && is_scalar($value) && getenv($key) === false) {
+            putenv($key . '=' . (is_bool($value) ? ($value ? '1' : '0') : (string) $value));
+        }
+    }
+}
+
+dayone_load_config_php(DAYONE_ROOT . '/config.php');
 
 /** A configuração, num lugar só. Lida uma vez por processo. */
 function config(): array

@@ -17,6 +17,8 @@
  */
 declare(strict_types=1);
 
+defined('DAYONE_ENTRY') || (http_response_code(404) && exit);
+
 const KNOWN_CONDITIONS = ['countries', 'devices', 'query', 'referrer', 'bot'];
 
 function conditions_match(array $cond, Request $req): bool

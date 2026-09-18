@@ -12,6 +12,8 @@
  */
 declare(strict_types=1);
 
+defined('DAYONE_ENTRY') || (http_response_code(404) && exit);
+
 function handle_health(Request $req): array
 {
     $cfg = config();

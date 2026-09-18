@@ -4,6 +4,8 @@
  */
 declare(strict_types=1);
 
+define('DAYONE_ENTRY', true);
+
 require __DIR__ . '/../src/bootstrap.php';
 
 dayone_handle();

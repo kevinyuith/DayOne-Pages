@@ -4,13 +4,13 @@
  *
  * O que é cacheado, e por quê em dois níveis:
  *
- *   routes/<h2>/<sha1(host)>/<sha1(path)>.json
+ *   routes/<h2>/<sha1(host)>/<sha1(path)>.php
  *       o RESULTADO DO RESOLVEDOR para (host, path): a lista de rotas
  *       candidatas, sem o HTML. As `conditions` variam por visitante, então
  *       a resposta final não pode ser cacheada — a lista pode.
  *       Lista vazia = domínio desconhecido (cache negativo, NEGATIVE_TTL).
  *
- *   content/<s2>/<slug_id>-<content_hash>.bin
+ *   content/<s2>/<slug_id>-<content_hash>.php
  *       o HTML de cada slug, endereçado pelo hash. Uma slug editada ganha
  *       hash novo, então o arquivo antigo simplesmente deixa de ser lido.
  *
@@ -22,6 +22,29 @@
  * servem a cópia expirada.
  */
 declare(strict_types=1);
+
+defined('DAYONE_ENTRY') || (http_response_code(404) && exit);
+
+/**
+ * Todo arquivo de cache é um `.php` que começa com este prefixo.
+ *
+ * Quando a pasta de cache fica dentro do webroot, `routes/<sha1(host)>/...`
+ * é adivinhável (o host é público) e entregaria as regras de rota a quem
+ * pedisse. Com o prefixo, um pedido direto executa o PHP, recebe 404 e sai;
+ * `__halt_compiler()` faz o PHP nem sequer analisar o que vem depois, então
+ * o HTML guardado nunca roda como código. Quem lê pelo disco pula o prefixo.
+ */
+const CACHE_GUARD = "<?php http_response_code(404);exit;__halt_compiler();";
+
+function cache_wrap(string $payload): string
+{
+    return CACHE_GUARD . $payload;
+}
+
+function cache_unwrap(string $raw): ?string
+{
+    return str_starts_with($raw, CACHE_GUARD) ? substr($raw, strlen(CACHE_GUARD)) : null;
+}
 
 function cache_dir(): string
 {
@@ -45,14 +68,14 @@ function routes_dir_for_host(string $host): string
 
 function routes_file(string $host, string $path): string
 {
-    return routes_dir_for_host($host) . '/' . sha1($path) . '.json';
+    return routes_dir_for_host($host) . '/' . sha1($path) . '.php';
 }
 
 function content_file(string $slugId, string $hash): string
 {
     $safeId = preg_replace('/[^a-f0-9-]/', '', $slugId) ?? '';
     $safeHash = preg_replace('/[^a-f0-9]/', '', $hash) ?? '';
-    return cache_dir() . '/content/' . substr($safeId, 0, 2) . '/' . $safeId . '-' . $safeHash . '.bin';
+    return cache_dir() . '/content/' . substr($safeId, 0, 2) . '/' . $safeId . '-' . $safeHash . '.php';
 }
 
 function atomic_write(string $file, string $data): bool
@@ -87,7 +110,7 @@ function cache_get_routes(string $host, string $path): array
     if ($raw === false) {
         return ['state' => 'NONE', 'entry' => null];
     }
-    $entry = json_decode($raw, true);
+    $entry = json_decode(cache_unwrap($raw) ?? '', true);
     if (!is_array($entry) || !isset($entry['stored_at'], $entry['routes']) || !is_array($entry['routes'])) {
         @unlink($file);
         return ['state' => 'NONE', 'entry' => null];
@@ -121,7 +144,7 @@ function cache_put_routes(string $host, string $path, array $routes): bool
     if ($json === false) {
         return false;
     }
-    return atomic_write(routes_file($host, $path), $json);
+    return atomic_write(routes_file($host, $path), cache_wrap($json));
 }
 
 function cache_put_content(string $slugId, string $hash, string $content): bool
@@ -131,12 +154,12 @@ function cache_put_content(string $slugId, string $hash, string $content): bool
         @touch($file);
         return true;
     }
-    if (!atomic_write($file, $content)) {
+    if (!atomic_write($file, cache_wrap($content))) {
         return false;
     }
     // Versões antigas da mesma slug: fora.
-    $prefix = dirname($file) . '/' . basename($file, '-' . preg_replace('/[^a-f0-9]/', '', $hash) . '.bin');
-    foreach (glob($prefix . '-*.bin') ?: [] as $sibling) {
+    $prefix = dirname($file) . '/' . basename($file, '-' . preg_replace('/[^a-f0-9]/', '', $hash) . '.php');
+    foreach (glob($prefix . '-*.php') ?: [] as $sibling) {
         if ($sibling !== $file) {
             @unlink($sibling);
         }
@@ -147,7 +170,7 @@ function cache_put_content(string $slugId, string $hash, string $content): bool
 function cache_read_content(string $slugId, string $hash): ?string
 {
     $data = @file_get_contents(content_file($slugId, $hash));
-    return $data === false ? null : $data;
+    return $data === false ? null : cache_unwrap($data);
 }
 
 function cache_has_all_content(array $routes): bool

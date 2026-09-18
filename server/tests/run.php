@@ -16,6 +16,8 @@ putenv('STALE_MAX_AGE=10');
 putenv('SERVER_ID=test-server');
 putenv('DEBUG_HEADERS=1');
 
+define('DAYONE_ENTRY', true);
+
 require __DIR__ . '/../src/bootstrap.php';
 
 $passed = 0;

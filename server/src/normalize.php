@@ -8,6 +8,8 @@
  */
 declare(strict_types=1);
 
+defined('DAYONE_ENTRY') || (http_response_code(404) && exit);
+
 /** Minúsculo, sem porta, sem ponto final, sem `www.`. */
 function normalize_host(string $raw): string
 {

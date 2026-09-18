@@ -18,6 +18,8 @@
  */
 declare(strict_types=1);
 
+defined('DAYONE_ENTRY') || (http_response_code(404) && exit);
+
 const PRIVATE_NO_CACHE = 'private, no-cache';
 
 /**
