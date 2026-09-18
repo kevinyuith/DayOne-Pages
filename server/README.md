@@ -41,15 +41,23 @@ cp -r server /var/www/dayone-pages/
 chown -R www-data:www-data /var/cache/dayone-pages /var/log/php
 
 cp server/.env.example /var/www/dayone-pages/server/.env   # preencha
+chown root:www-data /var/www/dayone-pages/server/.env && chmod 640 /var/www/dayone-pages/server/.env
 cp server/deploy/php-fpm/dayone-pages.conf /etc/php/8.3/fpm/pool.d/
 cp server/deploy/nginx/dayone-pages.conf /etc/nginx/sites-available/
 ln -s /etc/nginx/sites-available/dayone-pages.conf /etc/nginx/sites-enabled/
 rm -f /etc/nginx/sites-enabled/default
 
-bash server/deploy/cloudflare-allowlist.sh   # firewall só para o Cloudflare + real_ip
-systemctl restart php8.3-fpm nginx
+systemctl restart php8.3-fpm
+bash server/deploy/cloudflare-allowlist.sh   # firewall só para o Cloudflare + real_ip; recarrega o nginx
 curl -si http://127.0.0.1/_health                # 200 + X-DayOne-Pages
 ```
+
+**Antes de rodar o `cloudflare-allowlist.sh`:** ele liga o `ufw`. O script libera
+a porta do SSH (lida do `sshd -T`) antes de ligar, mas mantenha uma segunda
+sessão SSH aberta e saiba onde fica o console de emergência do seu provedor.
+Depois de rodar, abra uma sessão SSH NOVA para confirmar que entra, e só então
+feche a antiga. O script foi testado contra um `ufw` simulado, não num Ubuntu
+real: confira o resultado com `ufw status` na primeira vez.
 
 Cron sugerido (root):
 
