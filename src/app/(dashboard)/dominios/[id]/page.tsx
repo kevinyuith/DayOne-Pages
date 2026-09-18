@@ -7,6 +7,7 @@ import { Badge, DOMAIN_STATUS_TONE } from "@/components/ui/badge";
 import { getDomainDetail, listPageOptions } from "@/lib/pages/queries";
 import { DOMAIN_STATUS_LABELS } from "@/lib/pages/types";
 import { removeDomain, setDomainStatus, verifyDomain } from "../actions";
+import { BotBlockToggle } from "./bot-block-toggle";
 import { DefaultPageSelect } from "./default-page-select";
 import { FilterPanel } from "./filter-panel";
 import { RoutesPanel } from "./routes-panel";
@@ -75,6 +76,16 @@ export default async function DominioDetailPage({ params }: { params: Params }) 
           {domain.filter && domain.filter_fail_page_id ? (
             <p className="mt-2 text-xs text-muted">Há um filtro ativo: quem não passa vê a página de reprovação, não esta.</p>
           ) : null}
+        </div>
+      </section>
+
+      <section className="mb-6 rounded-xl border border-border bg-surface p-5">
+        <h2 className="text-sm font-semibold">Segurança</h2>
+        <p className="mt-1 text-xs text-muted">
+          Bloqueia crawlers e conexões automatizadas (responde 403) antes de qualquer rota. Recomendado para tráfego de Google, Taboola, Outbrain e afins. Não troca a página — só barra.
+        </p>
+        <div className="mt-3">
+          <BotBlockToggle domainId={domain.id} value={domain.block_bots} />
         </div>
       </section>
 

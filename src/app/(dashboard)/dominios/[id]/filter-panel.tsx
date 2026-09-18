@@ -5,14 +5,17 @@ import { RowAction } from "@/components/row-action";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { CHECKBOX_CLASS, Field, INPUT_CLASS, SELECT_CLASS } from "@/components/ui/field";
+import { CHECKBOX_CLASS, Field, INPUT_CLASS, SELECT_BASE, SELECT_CLASS } from "@/components/ui/field";
 import {
   DEVICES,
   DEVICE_LABELS,
+  LIST_MODES,
+  LIST_MODE_LABELS,
   QUERY_MODES,
   QUERY_MODE_LABELS,
   conditionsToForm,
   summarizeConditions,
+  type ListMode,
   type QueryRuleRow,
 } from "@/lib/pages/conditions";
 import type { DomainDetail, PageOption } from "@/lib/pages/queries";
@@ -21,9 +24,10 @@ import { clearFilter, saveFilter, type FilterFormState } from "../actions";
 
 /**
  * O filtro do domínio: uma condição, uma página para quem passa, outra para
- * quem não passa. As dimensões são país, dispositivo, parâmetros de URL e
- * referrer — as mesmas das rotas, sem `bot` (bot só bloqueia, não troca a
- * página). As regras manuais, quando existem, têm prioridade sobre o filtro.
+ * quem não passa. As dimensões são país, idioma, dispositivo, parâmetros de URL
+ * e referrer — as mesmas das rotas, sem `bot` (bot só bloqueia, e isso é o
+ * interruptor de bots do domínio, não o filtro). País e idioma têm modo
+ * permitir-só/bloquear. As regras manuais, quando existem, têm prioridade.
  */
 export function FilterPanel({ domain, pages }: { domain: DomainDetail; pages: PageOption[] }) {
   const active = domain.filter != null && domain.filter_pass_page_id != null;
@@ -101,9 +105,27 @@ function FilterForm({
       <fieldset className="mt-4">
         <legend className="text-xs font-semibold uppercase tracking-wide text-muted">Condições</legend>
         <div className="mt-2 grid gap-4 md:grid-cols-2">
-          <Field label="Países (ISO-2, separados por vírgula)" hint="Vem do header CF-IPCountry do Cloudflare">
-            <input name="countries" defaultValue={initial.countries} placeholder="BR, PT" className={`${INPUT_CLASS} uppercase`} disabled={pending} />
-          </Field>
+          <ListModeField
+            label="Países (ISO-2, separados por vírgula)"
+            name="countries"
+            modeName="countries_mode"
+            defaultMode={initial.countriesMode}
+            defaultValue={initial.countries}
+            placeholder="BR, PT"
+            hint="Vem do header CF-IPCountry do Cloudflare"
+            upper
+            disabled={pending}
+          />
+          <ListModeField
+            label="Idiomas (ISO 639-1, separados por vírgula)"
+            name="languages"
+            modeName="languages_mode"
+            defaultMode={initial.languagesMode}
+            defaultValue={initial.languages}
+            placeholder="en, es"
+            hint="Vem do header Accept-Language do navegador"
+            disabled={pending}
+          />
           <div className="flex flex-col gap-1">
             <span className="text-xs font-medium text-muted">Dispositivos</span>
             <div className="flex h-10 items-center gap-4">
@@ -198,6 +220,46 @@ function FilterForm({
         ) : null}
       </div>
     </form>
+  );
+}
+
+/** Uma lista (país/idioma) com o seletor de sentido: permitir só os listados, ou bloqueá-los. */
+function ListModeField({
+  label,
+  name,
+  modeName,
+  defaultMode,
+  defaultValue,
+  placeholder,
+  hint,
+  upper = false,
+  disabled,
+}: {
+  label: string;
+  name: string;
+  modeName: string;
+  defaultMode: ListMode;
+  defaultValue: string;
+  placeholder: string;
+  hint: string;
+  upper?: boolean;
+  disabled: boolean;
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="text-xs font-medium text-muted">{label}</span>
+      <div className="flex gap-2">
+        <select name={modeName} defaultValue={defaultMode} className={`${SELECT_BASE} w-28 shrink-0`} disabled={disabled}>
+          {LIST_MODES.map((m) => (
+            <option key={m} value={m}>
+              {LIST_MODE_LABELS[m]}
+            </option>
+          ))}
+        </select>
+        <input name={name} defaultValue={defaultValue} placeholder={placeholder} className={`${INPUT_CLASS} ${upper ? "uppercase" : ""}`} disabled={disabled} />
+      </div>
+      <span className="text-xs text-muted">{hint}</span>
+    </div>
   );
 }
 

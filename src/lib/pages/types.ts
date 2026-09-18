@@ -90,6 +90,7 @@ export type Domain = {
   filter: RouteConditions | null;
   filter_pass_page_id: string | null;
   filter_fail_page_id: string | null;
+  block_bots: boolean;
   settings: Record<string, unknown>;
   notes: string | null;
   last_checked_at: string | null;

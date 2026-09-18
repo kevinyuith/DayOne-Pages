@@ -96,6 +96,22 @@ export async function setDefaultPage(id: string, pageId: string | null): Promise
   }
 }
 
+/**
+ * Liga/desliga o bloqueio de bots do domínio (block_bots). Quando ligado, o
+ * match_routes emite um BLOCK 403 no topo que só casa User-Agent de bot; não
+ * troca a página servida ao visitante real.
+ */
+export async function setBotBlock(id: string, value: boolean): Promise<ActionResult> {
+  try {
+    const { error } = await supabaseService().from("domains").update({ block_bots: value }).eq("id", id);
+    if (error) throw new Error(error.message);
+    revalidateDomain(id);
+    return { ok: true };
+  } catch (cause) {
+    return fail(errorReason(cause));
+  }
+}
+
 // ── Filtro do domínio ────────────────────────────────────────────────────────
 
 export type FilterFormState = { error?: string; success?: string; attempt: number };

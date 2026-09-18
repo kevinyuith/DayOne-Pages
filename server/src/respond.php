@@ -76,7 +76,7 @@ function serve_slug(array $route, Request $req): array
         'Content-Type' => (string) ($route['content_type'] ?: 'text/html; charset=utf-8'),
         'ETag' => $etag,
         'Cache-Control' => PRIVATE_NO_CACHE,
-        'Vary' => 'CF-IPCountry, User-Agent',
+        'Vary' => 'CF-IPCountry, User-Agent, Accept-Language',
     ];
 
     if ($req->ifNoneMatch !== null && etag_matches($req->ifNoneMatch, $etag)) {
