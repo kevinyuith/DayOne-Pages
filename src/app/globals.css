@@ -39,3 +39,17 @@ body {
   color: var(--foreground);
   font-family: var(--font-geist-sans), system-ui, sans-serif;
 }
+
+/*
+ * "Hide values": o botão no topo do dashboard liga data-hide-values no <html>,
+ * e todo número marcado com .sensitive some sob um blur. É só de exibição —
+ * não esconde nada de verdade; serve para tirar prints sem expor métricas.
+ */
+:root[data-hide-values] .sensitive {
+  filter: blur(8px);
+  user-select: none;
+  pointer-events: none;
+}
+.sensitive {
+  transition: filter 0.15s ease;
+}
