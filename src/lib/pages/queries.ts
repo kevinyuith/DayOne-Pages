@@ -41,18 +41,25 @@ export type DomainRouteWithPage = DomainRoute & { page: PageRef | null };
 
 export type DomainDetail = Domain & {
   default_page: PageRef | null;
+  filter_pass_page: PageRef | null;
+  filter_fail_page: PageRef | null;
   routes: DomainRouteWithPage[];
 };
 
 export async function getDomainDetail(id: string): Promise<DomainDetail | null> {
   const { data, error } = await supabaseService()
     .from("domains")
-    .select("*, default_page:pages(id,name,kind,status), domain_routes(*, page:pages(id,name,kind,status))")
+    .select(
+      "*, default_page:pages!domains_default_page_id_fkey(id,name,kind,status)," +
+        "filter_pass_page:pages!domains_filter_pass_page_id_fkey(id,name,kind,status)," +
+        "filter_fail_page:pages!domains_filter_fail_page_id_fkey(id,name,kind,status)," +
+        "domain_routes(*, page:pages(id,name,kind,status))",
+    )
     .eq("id", id)
     .maybeSingle();
   throwIf(error, "getDomainDetail");
   if (!data) return null;
-  const { domain_routes, ...rest } = data as Domain & { default_page: PageRef | null; domain_routes: DomainRouteWithPage[] };
+  const { domain_routes, ...rest } = data as unknown as DomainDetail & { domain_routes: DomainRouteWithPage[] };
   const routes = [...(domain_routes ?? [])].sort((a, b) => a.priority - b.priority);
   return { ...rest, routes };
 }

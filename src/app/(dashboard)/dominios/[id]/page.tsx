@@ -8,6 +8,7 @@ import { getDomainDetail, listPageOptions } from "@/lib/pages/queries";
 import { DOMAIN_STATUS_LABELS } from "@/lib/pages/types";
 import { removeDomain, setDomainStatus, verifyDomain } from "../actions";
 import { DefaultPageSelect } from "./default-page-select";
+import { FilterPanel } from "./filter-panel";
 import { RoutesPanel } from "./routes-panel";
 
 type Params = Promise<{ id: string }>;
@@ -71,8 +72,15 @@ export default async function DominioDetailPage({ params }: { params: Params }) 
             <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">A página padrão não está publicada e não será servida.</p>
           ) : null}
           {!domain.default_page_id ? <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">Sem página padrão: paths sem rota respondem 404.</p> : null}
+          {domain.filter && domain.filter_fail_page_id ? (
+            <p className="mt-2 text-xs text-muted">Há um filtro ativo: quem não passa vê a página de reprovação, não esta.</p>
+          ) : null}
         </div>
       </section>
+
+      <div className="mb-6">
+        <FilterPanel domain={domain} pages={pages} />
+      </div>
 
       <RoutesPanel domainId={domain.id} routes={domain.routes} pages={pages} />
     </>

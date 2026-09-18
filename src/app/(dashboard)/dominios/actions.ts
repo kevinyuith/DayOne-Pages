@@ -96,6 +96,61 @@ export async function setDefaultPage(id: string, pageId: string | null): Promise
   }
 }
 
+// ── Filtro do domínio ────────────────────────────────────────────────────────
+
+export type FilterFormState = { error?: string; success?: string; attempt: number };
+
+/**
+ * Salva o filtro do domínio: as condições, a página de quem passa e a de quem
+ * não passa. As condições usam as mesmas dimensões das rotas, MENOS `bot`:
+ * detecção de bot serve para bloquear (rotas), nunca para trocar a página.
+ * O CHECK ck_domains_filter_no_bot é a garantia no banco.
+ */
+export async function saveFilter(prev: FilterFormState, fd: FormData): Promise<FilterFormState> {
+  const attempt = prev.attempt + 1;
+  const domainId = str(fd, "domain_id");
+  const passPageId = str(fd, "filter_pass_page_id") || null;
+  const failPageId = str(fd, "filter_fail_page_id") || null;
+
+  if (!domainId) return { error: "Domínio ausente.", attempt };
+  if (!passPageId) return { error: "Escolha a página para quem PASSA no filtro.", attempt };
+  if (!failPageId) return { error: "Escolha a página para quem NÃO passa no filtro.", attempt };
+
+  const conditions = parseConditionsForm(fd);
+  if (!conditions.ok) return { error: conditions.reason, attempt };
+  if (conditions.value.bot) return { error: 'A condição "só bots" não vale no filtro; use uma rota de bloqueio.', attempt };
+  if (Object.keys(conditions.value).length === 0) {
+    return { error: "Defina ao menos uma condição, senão todo visitante passa e a página de reprovação nunca aparece.", attempt };
+  }
+
+  try {
+    const { error } = await supabaseService()
+      .from("domains")
+      .update({ filter: conditions.value, filter_pass_page_id: passPageId, filter_fail_page_id: failPageId })
+      .eq("id", domainId);
+    if (error) throw new Error(error.message);
+    revalidateDomain(domainId);
+    return { success: "Filtro salvo. Entra no ar em até 5 min (ou use Limpar cache).", attempt };
+  } catch (cause) {
+    return { error: errorReason(cause), attempt };
+  }
+}
+
+/** Remove o filtro. O domínio volta a servir só a página padrão / as rotas. */
+export async function clearFilter(domainId: string): Promise<ActionResult> {
+  try {
+    const { error } = await supabaseService()
+      .from("domains")
+      .update({ filter: null, filter_pass_page_id: null, filter_fail_page_id: null })
+      .eq("id", domainId);
+    if (error) throw new Error(error.message);
+    revalidateDomain(domainId);
+    return { ok: true };
+  } catch (cause) {
+    return fail(errorReason(cause));
+  }
+}
+
 export async function setDomainStatus(id: string, status: DomainStatus): Promise<ActionResult> {
   if (status !== "ACTIVE" && status !== "PAUSED") return fail("Status inválido.");
   try {

@@ -87,6 +87,9 @@ export type Domain = {
   domain: string;
   status: DomainStatus;
   default_page_id: string | null;
+  filter: RouteConditions | null;
+  filter_pass_page_id: string | null;
+  filter_fail_page_id: string | null;
   settings: Record<string, unknown>;
   notes: string | null;
   last_checked_at: string | null;
