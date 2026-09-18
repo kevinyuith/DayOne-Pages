@@ -28,7 +28,8 @@ export type DomainListItem = Domain & {
 export async function listDomains(): Promise<DomainListItem[]> {
   const { data, error } = await supabaseService()
     .from("domains")
-    .select("*, default_page:pages(id,name,kind,status), domain_routes(count)")
+    // domains tem 3 FKs para pages (default, filter_pass, filter_fail); nomear a FK desfaz a ambiguidade.
+    .select("*, default_page:pages!domains_default_page_id_fkey(id,name,kind,status), domain_routes(count)")
     .order("domain");
   throwIf(error, "listDomains");
   return (data ?? []).map((row) => {
@@ -73,7 +74,8 @@ export type PageListItem = Page & {
 export async function listPages(): Promise<PageListItem[]> {
   const { data, error } = await supabaseService()
     .from("pages")
-    .select("*, page_slugs(count), domains(count), domain_routes(count)")
+    // domains referencia pages por 3 FKs; nomeamos a de página padrão para o count não ficar ambíguo.
+    .select("*, page_slugs(count), domains!domains_default_page_id_fkey(count), domain_routes(count)")
     .order("updated_at", { ascending: false });
   throwIf(error, "listPages");
   return (data ?? []).map((row) => {
