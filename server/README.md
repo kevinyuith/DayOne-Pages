@@ -34,6 +34,21 @@ bloqueio.
 
 ## Instalação (Ubuntu/Debian)
 
+> **Só para um VPS limpo e dedicado.** Os arquivos de `deploy/` assumem que esta
+> máquina não hospeda mais nada. **Não os aplique num servidor com painel
+> (CloudPanel, Plesk, cPanel) nem num que já responda por domínios em produção:**
+>
+> - `deploy/nginx/dayone-pages.conf` declara `default_server` na porta 80. Se já
+>   existir um, o nginx recusa recarregar; se não existir, este passa a responder
+>   por TODO domínio apontado para o IP, e os que não estiverem cadastrados no
+>   painel viram 404.
+> - `deploy/cloudflare-allowlist.sh` fecha a porta 80 para tudo que não for
+>   Cloudflare. Domínio com registro `A` direto para o IP sai do ar.
+> - O roteiro abaixo apaga `sites-enabled/default`.
+>
+> Num servidor com painel, crie o site pelo painel e adapte só o vhost dele.
+
+
 ```bash
 apt install -y nginx php8.3-fpm php8.3-curl
 mkdir -p /var/www/dayone-pages /var/cache/dayone-pages /var/log/php
