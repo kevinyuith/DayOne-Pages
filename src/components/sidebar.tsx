@@ -77,20 +77,7 @@ export function Sidebar() {
       </nav>
 
       <div className="hidden border-t border-border p-3 md:block">
-        <div className="rounded-lg border border-border bg-background/50 p-3">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted">Requests</span>
-            <span className="rounded-md bg-accent/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent">
-              Enterprise
-            </span>
-          </div>
-          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-foreground/10">
-            <div className="h-full w-0 rounded-full bg-accent" />
-          </div>
-          <p className="mt-2 text-[11px] text-muted">Usage tracking — coming soon</p>
-        </div>
-
-        <div className="mt-3 flex items-center gap-3 rounded-lg px-1 py-1">
+        <div className="flex items-center gap-3 rounded-lg px-1 py-1">
           <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-accent/15 text-sm font-semibold text-accent">
             D
           </span>
