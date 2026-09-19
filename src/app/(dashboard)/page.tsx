@@ -5,34 +5,38 @@ import { DashboardControls } from "@/components/dashboard/dashboard-controls";
 import { FounderBadge } from "@/components/dashboard/founder-badge";
 import { StatCard, type StatTone } from "@/components/dashboard/stat-card";
 import { TrafficChart } from "@/components/dashboard/traffic-chart";
-import {
-  AccountIcon,
-  BotIcon,
-  GlobeIcon,
-  PagesIcon,
-  ShieldCheckIcon,
-  ShieldXIcon,
-} from "@/components/icons";
-import { countOverview, listDomains } from "@/lib/pages/queries";
+import { AccountIcon, BotIcon, GlobeIcon, PagesIcon, ShieldCheckIcon, ShieldXIcon } from "@/components/icons";
+import { countOverview, hitStats, hitTimeseries, listDomains, recentHits } from "@/lib/pages/queries";
 
-// Os 5 cards de tráfego mapeiam 1:1 os do layout de referência, adaptados ao
-// DayOne (sem "Gray Page", que é cloaking). Todos "soon": ainda não há coleta.
-const TRAFFIC_CARDS: { label: string; icon: typeof GlobeIcon; tone: StatTone }[] = [
-  { label: "Total Requests", icon: GlobeIcon, tone: "blue" },
-  { label: "Served", icon: ShieldCheckIcon, tone: "green" },
-  { label: "Blocked", icon: ShieldXIcon, tone: "red" },
-  { label: "Unique Visitors", icon: AccountIcon, tone: "amber" },
-  { label: "Bots Blocked", icon: BotIcon, tone: "purple" },
-];
-
+const num = new Intl.NumberFormat("en-US");
 const dateFmt = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" });
+const pct = (part: number, total: number) => (total > 0 ? `${Math.round((part / total) * 100)}% of total` : "—");
 
 export default async function DashboardPage() {
-  const [counts, domains] = await Promise.all([countOverview(), listDomains()]);
+  // Server Component dinâmico (a rota é force-dynamic): ler o relógio por request é intencional.
+  // eslint-disable-next-line react-hooks/purity
+  const nowMs = Date.now();
+  const now = new Date(nowMs);
+  const since = new Date(nowMs - 24 * 60 * 60 * 1000);
+  const [counts, domains, stats, series, hits] = await Promise.all([
+    countOverview(),
+    listDomains(),
+    hitStats(since),
+    hitTimeseries(since, 60),
+    recentHits(20),
+  ]);
 
-  // Sinal real para o banner: domínios ativos que ainda não verificaram o DNS.
   const attentionCount = domains.filter((d) => d.status === "ACTIVE" && d.last_check_ok !== true).length;
   const domainNames = domains.map((d) => d.domain);
+
+  // Os 5 cards, adaptados ao DayOne (sem "Gray Page"/cloaking), agora com dado real (24h).
+  const cards: { label: string; value: number; detail: string; icon: typeof GlobeIcon; tone: StatTone }[] = [
+    { label: "Total Requests", value: stats.total, detail: "last 24h", icon: GlobeIcon, tone: "blue" },
+    { label: "Served", value: stats.served, detail: pct(stats.served, stats.total), icon: ShieldCheckIcon, tone: "green" },
+    { label: "Blocked", value: stats.blocked, detail: pct(stats.blocked, stats.total), icon: ShieldXIcon, tone: "red" },
+    { label: "Unique Visitors", value: stats.uniques, detail: "by IP · 24h", icon: AccountIcon, tone: "amber" },
+    { label: "Bots", value: stats.bots, detail: pct(stats.bots, stats.total), icon: BotIcon, tone: "purple" },
+  ];
 
   const quickAccess = [
     { label: "Domains", value: counts.domains, detail: `${counts.domainsActive} active`, href: "/dominios", icon: GlobeIcon },
@@ -54,20 +58,20 @@ export default async function DashboardPage() {
         <FounderBadge />
       </header>
 
-      <DashboardControls dateLabel={dateFmt.format(new Date())} domains={domainNames} />
+      <DashboardControls dateLabel={dateFmt.format(now)} domains={domainNames} />
 
       <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-        {TRAFFIC_CARDS.map((c) => (
-          <StatCard key={c.label} label={c.label} icon={c.icon} tone={c.tone} soon />
+        {cards.map((c) => (
+          <StatCard key={c.label} label={c.label} value={num.format(c.value)} detail={c.detail} icon={c.icon} tone={c.tone} />
         ))}
       </div>
 
       <div className="mb-6">
-        <TrafficChart />
+        <TrafficChart buckets={series} />
       </div>
 
       <div className="mb-8">
-        <AccessLogs />
+        <AccessLogs hits={hits} />
       </div>
 
       <section>
@@ -76,11 +80,7 @@ export default async function DashboardPage() {
           {quickAccess.map((s) => {
             const Icon = s.icon;
             return (
-              <Link
-                key={s.label}
-                href={s.href}
-                className="group rounded-xl border border-border bg-surface p-5 transition-colors hover:border-accent"
-              >
+              <Link key={s.label} href={s.href} className="group rounded-xl border border-border bg-surface p-5 transition-colors hover:border-accent">
                 <div className="flex items-start justify-between">
                   <div>
                     <p className="text-sm text-muted">{s.label}</p>

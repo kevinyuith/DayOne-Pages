@@ -66,3 +66,44 @@ function supabase_resolve(string $host, string $path): array
 
     return ['ok' => true, 'routes' => array_values($rows)];
 }
+
+/**
+ * Grava um hit: POST /rest/v1/rpc/log_hit. Mesma porta do resolve (anon +
+ * server key). Fire-and-forget — nunca derruba a resposta ao visitante; falha
+ * vai só para o log. Deve ser chamada DEPOIS de fastcgi_finish_request.
+ *
+ * @param array<string,mixed> $params já com as chaves p_* (menos p_key)
+ */
+function supabase_log_hit(array $params): void
+{
+    $cfg = config();
+    if ($cfg['supabase_url'] === '' || $cfg['supabase_anon_key'] === '' || $cfg['server_key'] === '') {
+        return;
+    }
+
+    $body = json_encode(['p_key' => $cfg['server_key']] + $params);
+    if ($body === false) {
+        return;
+    }
+
+    $ch = curl_init($cfg['supabase_url'] . '/rest/v1/rpc/log_hit');
+    curl_setopt_array($ch, [
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => $body,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_CONNECTTIMEOUT => 2,
+        CURLOPT_TIMEOUT => max(2, (int) $cfg['hits_timeout']),
+        CURLOPT_HTTPHEADER => [
+            'apikey: ' . $cfg['supabase_anon_key'],
+            'Authorization: Bearer ' . $cfg['supabase_anon_key'],
+            'Content-Type: application/json',
+            'Content-Profile: pages',
+            'Prefer: return=minimal',
+        ],
+    ]);
+    $raw = curl_exec($ch);
+    $status = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+    if ($raw === false || ($status !== 200 && $status !== 204)) {
+        error_log("[dayone-pages] log_hit falhou (HTTP $status)");
+    }
+}

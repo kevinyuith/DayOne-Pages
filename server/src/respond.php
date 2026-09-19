@@ -23,7 +23,10 @@ defined('DAYONE_ENTRY') || (http_response_code(404) && exit);
 const PRIVATE_NO_CACHE = 'private, no-cache';
 
 /**
- * @return array{0: int, 1: array<string,string>, 2: ?string}
+ * Devolve [status, headers, body, outcome]. `outcome` classifica o hit para o
+ * registro de tráfego: served | redirect | blocked | bot | notfound | error.
+ *
+ * @return array{0: int, 1: array<string,string>, 2: ?string, 3: string}
  */
 function decide(array $routes, Request $req): array
 {
@@ -41,20 +44,34 @@ function decide(array $routes, Request $req): array
 
         switch ($action) {
             case 'SERVE':
-                return serve_slug($route, $req);
+                $r = serve_slug($route, $req);
+                return [$r[0], $r[1], $r[2], serve_outcome($r[0])];
             case 'REDIRECT':
-                return redirect_to($route, $req);
+                $r = redirect_to($route, $req);
+                return [$r[0], $r[1], $r[2], 'redirect'];
             case 'BLOCK':
-                return block($route);
+                $r = block($route);
+                $bot = ($route['match_type'] ?? '') === 'BOTGATE' || array_key_exists('bot', $cond);
+                return [$r[0], $r[1], $r[2], $bot ? 'bot' : 'blocked'];
             default:
                 continue 2;
         }
     }
 
     if ($req->path === '/robots.txt') {
-        return robots_default();
+        return [...robots_default(), 'served'];
     }
-    return not_found();
+    return [...not_found(), 'notfound'];
+}
+
+/** Traduz o status de uma rota SERVE em outcome de tráfego. */
+function serve_outcome(int $status): string
+{
+    return match ($status) {
+        404 => 'notfound',
+        503 => 'error',
+        default => 'served', // 200 e 304
+    };
 }
 
 function robots_default(): array

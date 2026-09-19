@@ -60,15 +60,23 @@ function dayone_handle(): void
         return;
     }
 
-    [$status, $headers, $body] = decide($resolved['routes'], $req);
+    [$status, $headers, $body, $outcome] = decide($resolved['routes'], $req);
     if ($cfg['debug_headers']) {
         $headers['X-Cache'] = $resolved['xcache'];
     }
     send_response($status, $headers, $body, $req->isHead());
 
-    if ($resolved['refresh']) {
-        // SWR: a resposta já foi; agora atualiza sem ninguém esperando.
+    // Pós-resposta: nada aqui faz o visitante esperar. Com php-fpm a conexão já
+    // foi encerrada; sem ele (dev), roda em linha mesmo.
+    if (function_exists('fastcgi_finish_request')) {
         fastcgi_finish_request();
+    }
+
+    $domainId = $resolved['routes'][0]['domain_id'] ?? null;
+    log_hit($req, $status, $outcome, is_string($domainId) ? $domainId : null);
+
+    if ($resolved['refresh']) {
+        // SWR: atualiza o cache sem ninguém esperando.
         refresh_in_background($host, $path);
     }
 }

@@ -97,6 +97,8 @@ function config(): array
         'max_paths_per_host'=> $int('MAX_PATHS_PER_HOST', 2000),
         'supabase_timeout'  => $int('SUPABASE_TIMEOUT', 5),
         'debug_headers'     => $int('DEBUG_HEADERS', 1) === 1,
+        'log_hits'          => $int('LOG_HITS', 1) === 1,
+        'hits_timeout'      => $int('HITS_TIMEOUT', 3),
     ];
     return $config;
 }
@@ -136,5 +138,6 @@ require __DIR__ . '/supabase.php';
 require __DIR__ . '/conditions.php';
 require __DIR__ . '/resolver.php';
 require __DIR__ . '/respond.php';
+require __DIR__ . '/hits.php';
 require __DIR__ . '/handlers.php';
 require __DIR__ . '/app.php';

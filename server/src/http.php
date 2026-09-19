@@ -22,6 +22,7 @@ final class Request
         public readonly string $referer,
         public readonly string $country,
         public readonly string $acceptLanguage,
+        public readonly string $ip,
         public readonly ?string $ifNoneMatch,
         public readonly ?string $purgeToken,
         public readonly bool $viaCloudflare,
@@ -52,10 +53,30 @@ function parse_request(array $server): Request
         referer: (string) ($server['HTTP_REFERER'] ?? ''),
         country: strtoupper((string) ($server['HTTP_CF_IPCOUNTRY'] ?? '')),
         acceptLanguage: (string) ($server['HTTP_ACCEPT_LANGUAGE'] ?? ''),
+        ip: client_ip($server),
         ifNoneMatch: isset($server['HTTP_IF_NONE_MATCH']) ? (string) $server['HTTP_IF_NONE_MATCH'] : null,
         purgeToken: isset($server['HTTP_X_PURGE_TOKEN']) ? (string) $server['HTTP_X_PURGE_TOKEN'] : null,
         viaCloudflare: isset($server['HTTP_CF_RAY']),
     );
+}
+
+/**
+ * IP real do visitante. Atrás do Cloudflare vem em CF-Connecting-IP; o
+ * firewall só aceita os IPs do Cloudflare (deploy/cloudflare-allowlist.sh),
+ * então esse header é confiável. Fallbacks: primeiro X-Forwarded-For, depois
+ * REMOTE_ADDR (conexão direta em dev).
+ */
+function client_ip(array $server): string
+{
+    $cf = trim((string) ($server['HTTP_CF_CONNECTING_IP'] ?? ''));
+    if ($cf !== '') {
+        return $cf;
+    }
+    $xff = (string) ($server['HTTP_X_FORWARDED_FOR'] ?? '');
+    if ($xff !== '') {
+        return trim(explode(',', $xff)[0]);
+    }
+    return (string) ($server['REMOTE_ADDR'] ?? '');
 }
 
 /**

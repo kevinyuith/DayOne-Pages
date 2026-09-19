@@ -157,6 +157,56 @@ export type Overview = {
   routes: number;
 };
 
+// ── Tráfego (hits) ───────────────────────────────────────────────────────────
+
+export type HitStats = { total: number; served: number; blocked: number; bots: number; uniques: number };
+export type HitBucket = { bucket: string; served: number; blocked: number; bots: number };
+export type HitRow = {
+  created_at: string;
+  host: string;
+  path: string;
+  outcome: string;
+  status_code: number | null;
+  country: string | null;
+  device: string | null;
+  is_bot: boolean;
+  referrer_host: string | null;
+  ip: string | null;
+};
+
+const n = (v: unknown) => Number(v ?? 0);
+
+/** Contadores do período (para os cards). */
+export async function hitStats(since: Date, domainId: string | null = null): Promise<HitStats> {
+  const { data, error } = await supabaseService().rpc("hit_stats", { p_since: since.toISOString(), p_domain: domainId });
+  throwIf(error, "hitStats");
+  const r = (data as Record<string, unknown>[] | null)?.[0];
+  return { total: n(r?.total), served: n(r?.served), blocked: n(r?.blocked), bots: n(r?.bots), uniques: n(r?.uniques) };
+}
+
+/** Série por bucket (para o gráfico), já sem buracos. */
+export async function hitTimeseries(since: Date, bucketMinutes: number, domainId: string | null = null): Promise<HitBucket[]> {
+  const { data, error } = await supabaseService().rpc("hit_timeseries", {
+    p_since: since.toISOString(),
+    p_bucket: `${bucketMinutes} minutes`,
+    p_domain: domainId,
+  });
+  throwIf(error, "hitTimeseries");
+  return (data as Record<string, unknown>[] | null ?? []).map((r) => ({
+    bucket: String(r.bucket),
+    served: n(r.served),
+    blocked: n(r.blocked),
+    bots: n(r.bots),
+  }));
+}
+
+/** Últimos N hits (para os Access Logs). */
+export async function recentHits(limit = 20, domainId: string | null = null): Promise<HitRow[]> {
+  const { data, error } = await supabaseService().rpc("recent_hits", { p_limit: limit, p_domain: domainId });
+  throwIf(error, "recentHits");
+  return (data as HitRow[] | null) ?? [];
+}
+
 export async function countOverview(): Promise<Overview> {
   const db = supabaseService();
   const head = { count: "exact" as const, head: true };
