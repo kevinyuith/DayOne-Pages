@@ -52,6 +52,20 @@ check('query equals casa', conditions_match(['query' => ['utm_source' => ['equal
 check('query equals não casa', !conditions_match(['query' => ['utm_source' => ['equals' => 'meta']]], $withQuery));
 check('query regra inválida não casa', !conditions_match(['query' => ['x' => 'maybe']], $withQuery));
 
+$withCookie = make_request(['HTTP_COOKIE' => 'dop_step=p_ab12; _ga=GA1.2; seen=1']);
+same('cookie header parseado', ['dop_step' => 'p_ab12', '_ga' => 'GA1.2', 'seen' => '1'], $withCookie->cookies);
+same('cookie header vazio', [], $desktop->cookies);
+same('cookie decodifica valor', ['k' => 'a b'], parse_cookie_header('k=a%20b'));
+same('cookie repetido: o primeiro vale', ['k' => '1'], parse_cookie_header('k=1; k=2'));
+check('cookie present casa', conditions_match(['cookies' => ['seen' => 'present']], $withCookie));
+check('cookie present não casa', !conditions_match(['cookies' => ['seen' => 'present']], $desktop));
+check('cookie absent casa', conditions_match(['cookies' => ['seen' => 'absent']], $desktop));
+check('cookie absent não casa', !conditions_match(['cookies' => ['seen' => 'absent']], $withCookie));
+check('cookie equals casa', conditions_match(['cookies' => ['dop_step' => ['equals' => 'p_ab12']]], $withCookie));
+check('cookie equals não casa', !conditions_match(['cookies' => ['dop_step' => ['equals' => 'p_zz99']]], $withCookie));
+check('cookie regra inválida não casa', !conditions_match(['cookies' => ['seen' => 'maybe']], $withCookie));
+check('cookie + query juntos', conditions_match(['cookies' => ['seen' => 'present'], 'query' => ['x' => 'absent']], $withCookie));
+
 check('referrer casa', conditions_match(['referrer' => 'facebook.com'], $fromFb));
 check('referrer case-insensitive', conditions_match(['referrer' => 'FACEBOOK'], $fromFb));
 check('referrer não casa', !conditions_match(['referrer' => 'tiktok'], $fromFb));

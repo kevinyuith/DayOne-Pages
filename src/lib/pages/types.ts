@@ -61,6 +61,33 @@ export type Page = {
   kind: PageKind;
   status: PageStatus;
   notes: string | null;
+  /** Pasta na tela de páginas; null = raiz. */
+  folder_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+/** Cores de pasta: chave gravada no banco → classes da UI (ver `FOLDER_COLOR_CLASSES`). */
+export const FOLDER_COLORS = ["blue", "emerald", "violet", "amber", "rose", "slate"] as const;
+export type FolderColor = (typeof FOLDER_COLORS)[number];
+export const FOLDER_COLOR_LABELS: Record<FolderColor, string> = {
+  blue: "Azul",
+  emerald: "Verde",
+  violet: "Roxo",
+  amber: "Âmbar",
+  rose: "Rosa",
+  slate: "Cinza",
+};
+export function isFolderColor(v: unknown): v is FolderColor {
+  return typeof v === "string" && (FOLDER_COLORS as readonly string[]).includes(v);
+}
+
+/** Pasta da tela de páginas (aninhável: parent_id). */
+export type Folder = {
+  id: string;
+  name: string;
+  parent_id: string | null;
+  color: FolderColor | null;
   created_at: string;
   updated_at: string;
 };

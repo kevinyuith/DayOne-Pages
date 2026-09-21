@@ -13,9 +13,10 @@ export function DomainForm({ pages }: { pages: PageOption[] }) {
   const [state, action, pending] = useActionState(addDomain, INITIAL);
 
   return (
-    <form action={action} key={state.success ? state.attempt : "form"} className="mt-3 flex flex-col gap-3">
+    <form action={action} key={state.success ? state.attempt : "form"} className="mt-3 flex flex-col gap-2">
+      {/* A dica fica FORA da linha: com ela dentro do campo, `items-end` alinhava o select e o botão pela dica, não pelo input. */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-        <Field label="Domínio" hint="Sem http:// e sem www. Ex.: minhaoferta.com" className="sm:flex-1">
+        <Field label="Domínio" className="min-w-0 sm:flex-1">
           <input name="domain" required placeholder="exemplo.com" disabled={pending} className={INPUT_CLASS} autoCapitalize="off" spellCheck={false} />
         </Field>
         <Field label="Página padrão" className="sm:w-64">
@@ -29,10 +30,11 @@ export function DomainForm({ pages }: { pages: PageOption[] }) {
             ))}
           </select>
         </Field>
-        <Button type="submit" disabled={pending}>
+        <Button type="submit" disabled={pending} className="sm:shrink-0">
           {pending ? "Adicionando…" : "Adicionar"}
         </Button>
       </div>
+      <p className="text-xs text-muted">Sem http:// e sem www. Ex.: minhaoferta.com</p>
       {state.error ? (
         <p role="alert" className="text-sm text-red-600 dark:text-red-400">
           {state.error}

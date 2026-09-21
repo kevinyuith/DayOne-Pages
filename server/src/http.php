@@ -26,6 +26,8 @@ final class Request
         public readonly ?string $ifNoneMatch,
         public readonly ?string $purgeToken,
         public readonly bool $viaCloudflare,
+        /** Cookies da request, nome → valor (já decodificados). */
+        public readonly array $cookies,
         /** Host e path normalizados; preenchidos por app.php. */
         public string $host = '',
         public string $path = '/',
@@ -57,7 +59,31 @@ function parse_request(array $server): Request
         ifNoneMatch: isset($server['HTTP_IF_NONE_MATCH']) ? (string) $server['HTTP_IF_NONE_MATCH'] : null,
         purgeToken: isset($server['HTTP_X_PURGE_TOKEN']) ? (string) $server['HTTP_X_PURGE_TOKEN'] : null,
         viaCloudflare: isset($server['HTTP_CF_RAY']),
+        cookies: parse_cookie_header((string) ($server['HTTP_COOKIE'] ?? '')),
     );
+}
+
+/**
+ * "a=1; b=x%20y" → ['a' => '1', 'b' => 'x y']. Lido do header (não de
+ * $_COOKIE) para a request ser reconstruível nos testes. Nome repetido: o
+ * primeiro vale, como o navegador manda o mais específico primeiro.
+ */
+function parse_cookie_header(string $header): array
+{
+    $out = [];
+    foreach (explode(';', $header) as $pair) {
+        $pair = trim($pair);
+        if ($pair === '') {
+            continue;
+        }
+        [$name, $value] = array_pad(explode('=', $pair, 2), 2, '');
+        $name = trim($name);
+        if ($name === '' || array_key_exists($name, $out)) {
+            continue;
+        }
+        $out[$name] = rawurldecode(trim($value));
+    }
+    return $out;
 }
 
 /**

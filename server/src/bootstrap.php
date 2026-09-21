@@ -136,6 +136,7 @@ require __DIR__ . '/normalize.php';
 require __DIR__ . '/cache.php';
 require __DIR__ . '/supabase.php';
 require __DIR__ . '/conditions.php';
+require __DIR__ . '/funnel.php';
 require __DIR__ . '/resolver.php';
 require __DIR__ . '/respond.php';
 require __DIR__ . '/hits.php';

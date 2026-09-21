@@ -4,13 +4,20 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { CodeEditor } from "@/components/code-editor";
-import { Inspector, type InspectorCallbacks, type InspectorTab } from "@/components/editor/inspector";
+import { Inspector, type InspectorCallbacks, type InspectorTab, type LinkDestination } from "@/components/editor/inspector";
+import { LayersPanel } from "@/components/editor/panels/layers-panel";
+import { LinksPanel } from "@/components/editor/panels/links-panel";
+import { PagesPanel } from "@/components/editor/panels/pages-panel";
+import { SubPagesPanel, type SubPagesActions } from "@/components/editor/panels/subpages-panel";
+import { WidgetsPanel } from "@/components/editor/panels/widgets-panel";
+import { Rail, type RailPanel } from "@/components/editor/rail";
 import { VisualCanvas, type CanvasHandle } from "@/components/editor/visual-canvas";
 import { HtmlPreview } from "@/components/html-preview";
 import {
   CodeIcon,
   DesktopIcon,
   EyeIcon,
+  LinkIcon,
   MobileIcon,
   PlayIcon,
   PublishIcon,
@@ -22,8 +29,28 @@ import { Alert } from "@/components/ui/alert";
 import { Badge, PAGE_STATUS_TONE } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { INPUT_BASE, SELECT_BASE } from "@/components/ui/field";
-import type { SelectionInfo } from "@/lib/pages/html-editing";
+import { buildLayers, parseHtml, type LayerNode, type SelectionInfo } from "@/lib/pages/html-editing";
+import { extractLinks, mutateHtml, replaceAll, replaceDestination, type LinkEntry } from "@/lib/pages/links";
+import { NEXT_STEP } from "@/lib/pages/runtime";
 import { isFullDocument, wrapFragment } from "@/lib/pages/starter-template";
+import {
+  addPage,
+  duplicatePage,
+  getFunnelMode,
+  listPages,
+  movePage,
+  pageById,
+  pageHref,
+  removePage,
+  renamePage,
+  setFunnelMode,
+  setPageKind,
+  setStart,
+  setTriggers,
+  startPage,
+  type FunnelMode,
+  type SubPage,
+} from "@/lib/pages/subpages";
 import {
   PAGE_KINDS,
   PAGE_KIND_LABELS,
@@ -38,18 +65,25 @@ import { createSlug, deletePage, deleteSlug, renameSlug, saveEditor, toggleSlug 
 
 /**
  * O editor de página em formato de construtor: topbar (Preview/Publish/Saved,
- * desfazer/refazer), painel de páginas à esquerda, canvas no meio (edição
- * visual por clique OU código) e inspetor à direita (Style/Settings).
+ * desfazer/refazer), barra de ícones + painel à esquerda (Pages, Widgets,
+ * Layers, Links), canvas no meio (edição visual por clique OU código) e
+ * inspetor à direita (Style/Settings).
  *
  * A edição visual grava de volta no MESMO HTML por slug — nada muda no modelo
  * nem no servidor. O estado local é a verdade enquanto se edita; o servidor só
  * entra ao salvar, com concorrência otimista (os `updated_at` voltam e são
  * guardados para o próximo save; em `conflict`, a tela avisa e oferece recarregar).
+ *
+ * Links: o painel Links e a árvore de camadas são derivados do HTML atual
+ * (`parseHtml` → mesmos uids da canvas), então funcionam nos dois modos. As
+ * trocas passam por `applyDocChange`: na canvas ao vivo quando ela está
+ * montada (sem recarregar o iframe), ou sobre o HTML em modo código.
  */
 
 type Device = "desktop" | "tablet" | "mobile";
 type Mode = "visual" | "code";
 const DEVICE_W: Record<Device, string> = { desktop: "100%", tablet: "820px", mobile: "390px" };
+const OUTLINE_DEBOUNCE_MS = 250;
 
 export function PageEditor({
   page,
@@ -81,6 +115,16 @@ export function PageEditor({
   const [selection, setSelection] = useState<SelectionInfo | null>(null);
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>("settings");
   const [hiddenCount, setHiddenCount] = useState(0);
+  const [panel, setPanel] = useState<RailPanel | null>("pages");
+  const [showMarkers, setShowMarkers] = useState(true);
+  const [currentPageId, setCurrentPageId] = useState<string | null>(null);
+  const [previewDoc, setPreviewDoc] = useState("");
+  const [outline, setOutline] = useState<{ links: LinkEntry[]; layers: LayerNode[]; pages: SubPage[]; funnelMode: FunnelMode }>({
+    links: [],
+    layers: [],
+    pages: [],
+    funnelMode: "browser",
+  });
 
   const [pending, startTransition] = useTransition();
   const [busy, startBusy] = useTransition();
@@ -140,6 +184,23 @@ export function PageEditor({
   const dirtyContent = content !== savedSnapshot.content;
   const dirty = dirtyMeta || dirtyContent;
   const fullDoc = useMemo(() => isFullDocument(content), [content]);
+
+  // ── Links + camadas, derivados do HTML atual ──────────────────────────────
+  // Só no cliente (DOMParser) e com debounce: no modo código o CodeMirror
+  // dispara a cada tecla. Efeito, não memo, para não divergir do SSR.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const d = parseHtml(content);
+      const pages = listPages(d);
+      const root = currentPageId ? pageById(d, currentPageId) : null;
+      setOutline({ links: extractLinks(d), layers: buildLayers(d, root), pages, funnelMode: getFunnelMode(d) });
+      // Em modo código a canvas não está montada para escolher a sub-página:
+      // cai na inicial (ou solta, se a slug voltou a ser página única).
+      if (pages.length && (!currentPageId || !pages.some((p) => p.id === currentPageId))) setCurrentPageId(startPage(d)?.getAttribute("data-dop-page") ?? null);
+      else if (!pages.length && currentPageId) setCurrentPageId(null);
+    }, mode === "code" ? OUTLINE_DEBOUNCE_MS : 0); // no visual a mudança vem pronta da canvas
+    return () => clearTimeout(t);
+  }, [content, currentPageId, mode]);
 
   const save = useCallback(
     (override?: { status?: PageStatus }) => {
@@ -269,6 +330,9 @@ export function PageEditor({
     if (on) {
       canvasRef.current?.clearSelection();
       setSelection(null);
+      // O preview começa na sub-página que está na canvas (só no preview; nada é gravado).
+      const c = contentRef.current;
+      setPreviewDoc(currentPageId && isFullDocument(c) ? mutateHtml(c, (d) => setStart(d, currentPageId)) : c);
     }
     setPreviewing(on);
   };
@@ -282,10 +346,89 @@ export function PageEditor({
 
   const callbacks: InspectorCallbacks = {
     setText: (v) => canvasRef.current?.setText(v),
-    setHref: (v) => canvasRef.current?.setHref(v),
+    setLink: (href, target) => canvasRef.current?.setLink(href, target),
+    clearLink: () => canvasRef.current?.clearLink(),
     setHidden: (v) => canvasRef.current?.setHidden(v),
     setStyle: (p, v) => canvasRef.current?.setStyleProp(p, v),
   };
+
+  // ── Painéis: trocas de link, seleção pela lista, inserir widget ───────────
+  /** Aplica uma mudança no documento: na canvas ao vivo se montada, senão no HTML. */
+  const applyDocChange = useCallback(
+    (fn: (doc: Document) => void, opts?: { reindex?: boolean }) => {
+      const c = canvasRef.current;
+      if (c) c.mutate(fn, opts);
+      else if (isFullDocument(contentRef.current)) updateContent(mutateHtml(contentRef.current, fn));
+    },
+    [updateContent],
+  );
+
+  /** Garante a canvas montada (sai do preview / do código) e roda `fn` nela. */
+  const withCanvas = useCallback(
+    (fn: (c: CanvasHandle) => void) => {
+      const now = canvasRef.current;
+      if (now) return fn(now);
+      if (!isFullDocument(contentRef.current)) return;
+      setPreviewing(false);
+      setMode("visual");
+      // A canvas monta no próximo commit do React e escreve o documento no
+      // efeito de montagem — antes deste timeout rodar.
+      setTimeout(() => {
+        const c = canvasRef.current;
+        if (c) fn(c);
+      }, 0);
+    },
+    [],
+  );
+
+  const focusUid = useCallback(
+    (uid: string) => {
+      setInspectorTab("settings");
+      withCanvas((c) => c.selectByUid(uid));
+    },
+    [withCanvas],
+  );
+
+  const insertWidget = useCallback((html: string) => withCanvas((c) => c.insertHtml(html)), [withCanvas]);
+
+  const replaceLinks = useCallback((from: string, to: string) => applyDocChange((d) => void replaceDestination(d, from, to)), [applyDocChange]);
+  const replaceAllLinks = useCallback((to: string) => applyDocChange((d) => void replaceAll(d, to)), [applyDocChange]);
+
+  const togglePanel = (p: RailPanel) => setPanel((cur) => (cur === p ? null : p));
+
+  // ── Funil (sub-páginas) ────────────────────────────────────────────────────
+  // Toda ação muda a estrutura do body → reindexa uids. Quem escolhe a
+  // sub-página mostrada é `currentPageId`; a canvas cai na inicial se ela sumir.
+  const subPages: SubPagesActions = {
+    select: (id) => {
+      setCurrentPageId(id);
+      canvasRef.current?.clearSelection();
+      setSelection(null);
+    },
+    add: (kind, name) => {
+      let created = "";
+      applyDocChange((d) => void (created = addPage(d, { kind, name, after: currentPageId ?? undefined })), { reindex: true });
+      if (created) setCurrentPageId(created);
+    },
+    rename: (id, name) => applyDocChange((d) => renamePage(d, id, name)),
+    setStart: (id) => applyDocChange((d) => setStart(d, id)),
+    setKind: (id, kind) => applyDocChange((d) => setPageKind(d, id, kind)),
+    setTriggers: (id, t) => applyDocChange((d) => setTriggers(d, id, t)),
+    move: (id, dir) => applyDocChange((d) => movePage(d, id, dir), { reindex: true }),
+    duplicate: (id) => {
+      let created = "";
+      applyDocChange((d) => void (created = duplicatePage(d, id)), { reindex: true });
+      if (created) setCurrentPageId(created);
+    },
+    remove: (id) => applyDocChange((d) => removePage(d, id), { reindex: true }),
+    setMode: (m) => applyDocChange((d) => setFunnelMode(d, m)),
+  };
+
+  const destinations: LinkDestination[] = [
+    ...(outline.pages.length > 1 ? [{ label: "Próxima sub-página (#next-step)", href: NEXT_STEP, group: "Funil desta slug (mesma URL)" }] : []),
+    ...outline.pages.filter((p) => p.id !== currentPageId).map((p) => ({ label: `${p.name} (${p.kind === "backredirect" ? "back redirect" : "sub-página"})`, href: pageHref(p.id), group: "Funil desta slug (mesma URL)" })),
+    ...slugs.filter((s) => s.id !== slug.id && s.is_active).map((s) => ({ label: s.slug, href: s.slug, group: "Slugs desta página (muda a URL)" })),
+  ];
 
   const baseHref = previewBase ? `https://${previewBase}/` : undefined;
   const savedLabel = pending ? "Saving…" : dirty ? "Unsaved" : lastSavedAt ? `Saved ${lastSavedAt.toLocaleTimeString("pt-BR")}` : "Saved";
@@ -294,7 +437,8 @@ export function PageEditor({
     <div className="flex h-[calc(100dvh-4rem)] flex-col gap-2">
       {/* Topbar */}
       <header className="flex flex-wrap items-center gap-2">
-        <Link href="/paginas" className="text-sm text-muted hover:text-foreground">
+        {/* Volta para a pasta onde a página está, não para a raiz. */}
+        <Link href={page.folder_id ? `/paginas?pasta=${page.folder_id}` : "/paginas"} title="Voltar para as páginas" className="text-sm text-muted hover:text-foreground">
           ←
         </Link>
         <input value={name} onChange={(e) => setName(e.target.value)} aria-label="Nome da página" className={`${INPUT_BASE} h-9 w-52 font-medium`} />
@@ -328,47 +472,43 @@ export function PageEditor({
         </Alert>
       ) : null}
 
-      {/* Corpo: painel esquerdo | canvas | inspetor */}
+      {/* Corpo: rail + painel | canvas | inspetor */}
       <div className="flex min-h-0 flex-1 gap-2">
-        {/* Páginas / slugs */}
-        <aside className="hidden w-52 shrink-0 flex-col rounded-xl border border-border bg-surface md:flex">
-          <div className="border-b border-border px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted">Pages</div>
-          <ul className="min-h-0 flex-1 overflow-auto p-2">
-            {slugs.map((s) => (
-              <li key={s.id}>
-                <Link
-                  href={`/paginas/${page.id}/slugs/${s.id}`}
-                  aria-current={s.id === slug.id ? "page" : undefined}
-                  className={[
-                    "block truncate rounded-lg px-2 py-1.5 font-mono text-xs",
-                    s.id === slug.id ? "bg-accent/10 text-accent" : "text-foreground hover:bg-foreground/5",
-                    s.is_active ? "" : "line-through opacity-60",
-                  ].join(" ")}
-                  title={s.is_active ? s.slug : `${s.slug} (inativa)`}
-                >
-                  {s.slug}
-                </Link>
-              </li>
-            ))}
-          </ul>
-          <form onSubmit={onNewSlug} className="flex gap-1 border-t border-border p-2">
-            <input name="slug" placeholder="/nova" disabled={busy} className={`${INPUT_BASE} h-8 w-full font-mono text-xs`} />
-            <Button type="submit" size="sm" variant="secondary" disabled={busy}>
-              +
-            </Button>
-          </form>
-          <div className="flex flex-wrap gap-1 border-t border-border p-2">
-            <Button size="sm" variant="ghost" onClick={onRenameSlug} disabled={busy}>
-              Renomear
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => run(() => toggleSlug(slug.id, !slug.is_active))} disabled={busy}>
-              {slug.is_active ? "Desativar" : "Ativar"}
-            </Button>
-            <Button size="sm" variant="ghost" onClick={onDeleteSlug} disabled={busy}>
-              Remover
-            </Button>
-          </div>
-        </aside>
+        <div className="hidden shrink-0 gap-2 md:flex">
+          <Rail active={panel} onSelect={togglePanel} badges={{ links: outline.links.length, funnel: outline.pages.length > 1 ? outline.pages.length : 0 }} />
+          {panel ? (
+            <aside className="flex w-64 shrink-0 flex-col rounded-xl border border-border bg-surface">
+              {panel === "pages" ? (
+                <PagesPanel
+                  pageId={page.id}
+                  slugs={slugs}
+                  currentSlugId={slug.id}
+                  currentActive={slug.is_active}
+                  busy={busy}
+                  onNewSlug={onNewSlug}
+                  onRename={onRenameSlug}
+                  onToggle={() => run(() => toggleSlug(slug.id, !slug.is_active))}
+                  onRemove={onDeleteSlug}
+                />
+              ) : panel === "funnel" ? (
+                <SubPagesPanel pages={outline.pages} currentId={currentPageId} mode={outline.funnelMode} canEdit={fullDoc} actions={subPages} />
+              ) : panel === "widgets" ? (
+                <WidgetsPanel canInsert={fullDoc} onInsert={insertWidget} />
+              ) : panel === "layers" ? (
+                <LayersPanel layers={outline.layers} selectedUid={selection?.uid ?? null} onSelect={focusUid} />
+              ) : (
+                <LinksPanel
+                  links={outline.links}
+                  selectedUid={selection?.uid ?? null}
+                  canEdit={fullDoc}
+                  onSelect={focusUid}
+                  onReplace={replaceLinks}
+                  onReplaceAll={replaceAllLinks}
+                />
+              )}
+            </aside>
+          ) : null}
+        </div>
 
         {/* Canvas */}
         <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-surface">
@@ -378,13 +518,23 @@ export function PageEditor({
               style={{ width: DEVICE_W[device], maxWidth: "100%" }}
             >
               {previewing ? (
-                <HtmlPreview html={content} baseHref={baseHref} className="h-full w-full" />
+                <HtmlPreview html={previewDoc || content} baseHref={baseHref} className="h-full w-full" />
               ) : mode === "code" ? (
                 <div className="h-full bg-surface">
                   <CodeEditor value={content} onChange={updateContent} />
                 </div>
               ) : fullDoc ? (
-                <VisualCanvas ref={canvasRef} html={content} baseHref={baseHref} onChange={updateContent} onSelect={setSelection} onHiddenCount={setHiddenCount} />
+                <VisualCanvas
+                  ref={canvasRef}
+                  html={content}
+                  baseHref={baseHref}
+                  onChange={updateContent}
+                  onSelect={setSelection}
+                  onHiddenCount={setHiddenCount}
+                  showMarkers={showMarkers}
+                  currentPageId={currentPageId}
+                  onPageChange={setCurrentPageId}
+                />
               ) : (
                 <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
                   <p className="text-sm font-medium">A edição visual precisa de um documento HTML completo.</p>
@@ -429,8 +579,21 @@ export function PageEditor({
               ))}
             </select>
 
+            {mode === "visual" && !previewing ? (
+              <button
+                type="button"
+                onClick={() => setShowMarkers((v) => !v)}
+                aria-pressed={showMarkers}
+                title={showMarkers ? "Ocultar marcadores de link" : "Mostrar marcadores de link"}
+                className={`ml-auto inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs transition-colors ${
+                  showMarkers ? "border-accent/40 bg-accent/10 text-accent" : "border-border text-muted hover:text-foreground"
+                }`}
+              >
+                <LinkIcon className="size-3.5" /> {outline.links.length} {outline.links.length === 1 ? "link" : "links"}
+              </button>
+            ) : null}
             {hiddenCount > 0 && mode === "visual" && !previewing ? (
-              <span className="ml-auto inline-flex items-center gap-1 text-xs text-muted">
+              <span className="inline-flex items-center gap-1 text-xs text-muted">
                 <EyeIcon className="size-3.5" /> {hiddenCount} hidden
               </span>
             ) : null}
@@ -443,6 +606,7 @@ export function PageEditor({
           onTab={setInspectorTab}
           selection={previewing ? null : selection}
           callbacks={callbacks}
+          destinations={destinations}
           pageSettings={
             <PageSettings
               name={name}

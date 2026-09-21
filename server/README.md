@@ -28,9 +28,42 @@ Cloudflare ──HTTP:80──► nginx (catch-all) ──► php-fpm ──► 
 | domínio desconhecido | 404 (cache negativo `NEGATIVE_TTL`) | `MISS`/`HIT` |
 
 As rotas do domínio são avaliadas em ordem de prioridade; a primeira cujas
-condições (país, dispositivo, parâmetros de URL, referrer) casam decide:
-servir uma slug, redirecionar ou bloquear. `bot` só é honrado em rotas de
-bloqueio.
+condições (país, dispositivo, idioma, parâmetros de URL, cookies, referrer)
+casam decide: servir uma slug, redirecionar ou bloquear. `bot` só é honrado
+em rotas de bloqueio. `cookies` tem a mesma forma de `query`
+(`"present" | "absent" | {"equals": "v"}`, por nome) e lê o header `Cookie`.
+
+### Funil em modo servidor (`dop_step`)
+
+Uma slug com sub-páginas (presell → principal → back redirect, ver README da
+raiz) pode ser gravada com `<body data-dop-funnel="server">`. Aí o HTML da
+slug vai para o cache como está (todas as seções), mas **na resposta** o
+servidor (`src/funnel.php`) entrega só a etapa atual:
+
+- etapa = cookie `dop_step=<id>` se apontar para uma seção que existe; senão
+  a inicial (`data-dop-start`);
+- as outras `<section data-dop-page>` são removidas do HTML; a servida perde o
+  `hidden`; o `<body>` recebe `data-dop-cur/-next/-start/-main/-br/-br-trigger`
+  para o runtime da página saber para onde ir;
+- o runtime avança gravando `dop_step` (`Path` = o path da slug, 1 dia) e
+  recarregando a mesma URL. A URL nunca muda e o fonte de uma etapa não
+  contém as outras.
+
+O `ETag` vira `"<hash>-<etapa>"` e a resposta leva `Vary: Cookie`. O HTML
+sempre vem da origem (o Cloudflare não cacheia HTML por padrão); se um dia
+ligar cache de HTML, funil em modo servidor exige *Bypass* nessa slug.
+Sem o atributo (modo navegador), nada disso roda e o HTML sai inteiro.
+
+O corte é por contagem de `<section>` numa cópia do HTML com comentários,
+`<script>`, `<style>` e `<template>` apagados (mesmo tamanho), então um
+`</section>` dentro deles não conta. Se mesmo assim o servidor reconhecer
+menos de duas etapas numa slug em modo servidor, ele serve o HTML inteiro e
+registra no log (`funil em modo servidor com N etapa(s)`) — a página continua
+funcionando, no modo navegador.
+
+**Ordem de deploy:** o servidor PHP antes do dashboard. O servidor trata
+condição desconhecida como "não casa"; uma rota salva com condição de
+cookie num servidor antigo nunca casaria até a atualização.
 
 ## Instalação (Ubuntu/Debian)
 

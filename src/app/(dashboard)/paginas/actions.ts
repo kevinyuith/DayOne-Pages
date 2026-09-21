@@ -5,11 +5,12 @@ import { redirect } from "next/navigation";
 import { errorReason, fail, type ActionResult } from "@/lib/action-result";
 import { isValidSlug, normalizePath } from "@/lib/pages/normalize";
 import { STARTER_HTML } from "@/lib/pages/starter-template";
-import { isPageKind, isPageStatus, type PageKind, type PageStatus } from "@/lib/pages/types";
+import { refreshPageIds } from "@/lib/pages/subpages";
+import { isFolderColor, isPageKind, isPageStatus, type Page, type PageKind, type PageStatus } from "@/lib/pages/types";
 import { supabaseService } from "@/lib/supabase/service";
 
 /**
- * Ações de página e slug.
+ * Ações de página, slug e pasta.
  *
  * Padrão de todas: validar no topo → escrever com o client de serviço →
  * `revalidatePath` só em sucesso. Devolvem
@@ -28,23 +29,33 @@ const MAX_CONTENT_BYTES = 5 * 1024 * 1024;
 const NAME_MIN = 2;
 const NAME_MAX = 120;
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** `null` para vazio/ausente; `undefined` para valor que não é um uuid. */
+function optionalId(v: unknown): string | null | undefined {
+  const s = String(v ?? "").trim();
+  if (!s) return null;
+  return UUID_RE.test(s) ? s : undefined;
+}
+
 export type CreatePageState = { error?: string; attempt: number };
 
 export async function createPage(prev: CreatePageState, fd: FormData): Promise<CreatePageState> {
   const attempt = prev.attempt + 1;
   const name = String(fd.get("name") ?? "").trim();
   const kind = String(fd.get("kind") ?? "OTHER");
+  const folderId = optionalId(fd.get("folder_id"));
 
   if (name.length < NAME_MIN || name.length > NAME_MAX) {
     return { error: `Dê um nome com ${NAME_MIN} a ${NAME_MAX} caracteres.`, attempt };
   }
   if (!isPageKind(kind)) return { error: "Tipo inválido.", attempt };
+  if (folderId === undefined) return { error: "Pasta inválida.", attempt };
 
   const db = supabaseService();
 
   let pageId: string;
   try {
-    const { data, error } = await db.from("pages").insert({ name, kind, status: "DRAFT" }).select("id").single();
+    const { data, error } = await db.from("pages").insert({ name, kind, status: "DRAFT", folder_id: folderId }).select("id").single();
     if (error) throw new Error(error.message);
     pageId = (data as { id: string }).id;
 
@@ -224,6 +235,172 @@ export async function deletePage(pageId: string): Promise<ActionResult> {
     if (error) throw new Error(error.message);
     revalidatePath("/paginas");
     revalidatePath("/dominios", "layout");
+    return { ok: true };
+  } catch (cause) {
+    return fail(errorReason(cause));
+  }
+}
+
+// ── Cards da tela /paginas: renomear, mover, duplicar ─────────────────────────
+
+export async function renamePage(pageId: string, rawName: string): Promise<ActionResult> {
+  const name = rawName.trim();
+  if (name.length < NAME_MIN || name.length > NAME_MAX) return fail(`Dê um nome com ${NAME_MIN} a ${NAME_MAX} caracteres.`);
+  try {
+    const { error } = await supabaseService().from("pages").update({ name }).eq("id", pageId);
+    if (error) throw new Error(error.message);
+    revalidatePath("/paginas", "layout");
+    return { ok: true };
+  } catch (cause) {
+    return fail(errorReason(cause));
+  }
+}
+
+/** Move a página para uma pasta (`null` = raiz). */
+export async function movePage(pageId: string, folderId: string | null): Promise<ActionResult> {
+  const target = optionalId(folderId);
+  if (target === undefined) return fail("Pasta inválida.");
+  try {
+    const { error } = await supabaseService().from("pages").update({ folder_id: target }).eq("id", pageId);
+    if (error) throw new Error(error.message);
+    revalidatePath("/paginas");
+    return { ok: true };
+  } catch (cause) {
+    return fail(errorReason(cause));
+  }
+}
+
+/**
+ * Duplica a página com todas as slugs (mesmo HTML), como rascunho, na mesma
+ * pasta. Domínios e rotas continuam apontando para a original. As sub-páginas
+ * (funil) ganham ids novos: no modo servidor o cookie `dop_step` é por path e
+ * duas slugs com os mesmos ids de etapa se confundiriam.
+ */
+export async function duplicatePage(pageId: string): Promise<ActionResult<{ pageId: string }>> {
+  const db = supabaseService();
+  try {
+    const src = await db.from("pages").select("name, kind, notes, folder_id").eq("id", pageId).maybeSingle();
+    if (src.error) throw new Error(src.error.message);
+    if (!src.data) return fail("Página não encontrada.");
+    const page = src.data as Pick<Page, "name" | "kind" | "notes" | "folder_id">;
+
+    const slugs = await db.from("page_slugs").select("slug, title, content, content_type, is_active").eq("page_id", pageId);
+    if (slugs.error) throw new Error(slugs.error.message);
+
+    const name = `${page.name} (cópia)`.slice(0, NAME_MAX);
+    const created = await db
+      .from("pages")
+      .insert({ name, kind: page.kind, status: "DRAFT", notes: page.notes, folder_id: page.folder_id })
+      .select("id")
+      .single();
+    if (created.error) throw new Error(created.error.message);
+    const newId = (created.data as { id: string }).id;
+
+    const rows = (slugs.data ?? []).map((s) => {
+      const row = s as { content: string };
+      return { ...(s as object), content: refreshPageIds(row.content ?? ""), page_id: newId };
+    });
+    if (rows.length > 0) {
+      const { error } = await db.from("page_slugs").insert(rows);
+      if (error) {
+        await db.from("pages").delete().eq("id", newId);
+        throw new Error(error.message);
+      }
+    }
+    revalidatePath("/paginas");
+    return { ok: true, pageId: newId };
+  } catch (cause) {
+    return fail(errorReason(cause));
+  }
+}
+
+// ── Pastas ────────────────────────────────────────────────────────────────────
+
+const FOLDER_NAME_MAX = 80;
+
+function folderName(raw: string): string | null {
+  const name = raw.trim();
+  return name.length >= 1 && name.length <= FOLDER_NAME_MAX ? name : null;
+}
+
+export async function createFolder(parentId: string | null, rawName: string): Promise<ActionResult<{ folderId: string }>> {
+  const name = folderName(rawName);
+  if (!name) return fail(`Dê um nome com 1 a ${FOLDER_NAME_MAX} caracteres.`);
+  const parent = optionalId(parentId);
+  if (parent === undefined) return fail("Pasta inválida.");
+  try {
+    const { data, error } = await supabaseService().from("folders").insert({ name, parent_id: parent }).select("id").single();
+    if (error) throw new Error(error.message);
+    revalidatePath("/paginas");
+    return { ok: true, folderId: (data as { id: string }).id };
+  } catch (cause) {
+    return fail(errorReason(cause));
+  }
+}
+
+export async function renameFolder(folderId: string, rawName: string): Promise<ActionResult> {
+  const name = folderName(rawName);
+  if (!name) return fail(`Dê um nome com 1 a ${FOLDER_NAME_MAX} caracteres.`);
+  try {
+    const { error } = await supabaseService().from("folders").update({ name }).eq("id", folderId);
+    if (error) throw new Error(error.message);
+    revalidatePath("/paginas");
+    return { ok: true };
+  } catch (cause) {
+    return fail(errorReason(cause));
+  }
+}
+
+export async function setFolderColor(folderId: string, color: string | null): Promise<ActionResult> {
+  if (color !== null && !isFolderColor(color)) return fail("Cor inválida.");
+  try {
+    const { error } = await supabaseService().from("folders").update({ color }).eq("id", folderId);
+    if (error) throw new Error(error.message);
+    revalidatePath("/paginas");
+    return { ok: true };
+  } catch (cause) {
+    return fail(errorReason(cause));
+  }
+}
+
+/** Move a pasta para dentro de outra (`null` = raiz). O banco recusa ciclos. */
+export async function moveFolder(folderId: string, parentId: string | null): Promise<ActionResult> {
+  const parent = optionalId(parentId);
+  if (parent === undefined) return fail("Pasta inválida.");
+  if (parent === folderId) return fail("Uma pasta não pode ficar dentro dela mesma.");
+  try {
+    const { error } = await supabaseService().from("folders").update({ parent_id: parent }).eq("id", folderId);
+    if (error) {
+      if (error.code === "23514") return fail("Uma pasta não pode ficar dentro de uma subpasta dela.");
+      throw new Error(error.message);
+    }
+    revalidatePath("/paginas");
+    return { ok: true };
+  } catch (cause) {
+    return fail(errorReason(cause));
+  }
+}
+
+/**
+ * Exclui a pasta sem apagar nada dentro: páginas e subpastas sobem para a
+ * pasta-mãe (ou para a raiz).
+ */
+export async function deleteFolder(folderId: string): Promise<ActionResult> {
+  const db = supabaseService();
+  try {
+    const cur = await db.from("folders").select("parent_id").eq("id", folderId).maybeSingle();
+    if (cur.error) throw new Error(cur.error.message);
+    if (!cur.data) return fail("Pasta não encontrada.");
+    const parent = (cur.data as { parent_id: string | null }).parent_id;
+
+    const up1 = await db.from("pages").update({ folder_id: parent }).eq("folder_id", folderId);
+    if (up1.error) throw new Error(up1.error.message);
+    const up2 = await db.from("folders").update({ parent_id: parent }).eq("parent_id", folderId);
+    if (up2.error) throw new Error(up2.error.message);
+
+    const { error } = await db.from("folders").delete().eq("id", folderId);
+    if (error) throw new Error(error.message);
+    revalidatePath("/paginas");
     return { ok: true };
   } catch (cause) {
     return fail(errorReason(cause));
