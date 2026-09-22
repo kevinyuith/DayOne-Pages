@@ -1,10 +1,16 @@
 "use client";
 
 import { useActionState, useEffect, useState } from "react";
-import { RuleRows } from "@/components/rule-rows";
 import { Button } from "@/components/ui/button";
 import { CHECKBOX_CLASS, Field, INPUT_CLASS, SELECT_CLASS } from "@/components/ui/field";
-import { DEVICES, DEVICE_LABELS, conditionsToForm, type RuleRow } from "@/lib/pages/conditions";
+import {
+  DEVICES,
+  DEVICE_LABELS,
+  QUERY_MODES,
+  QUERY_MODE_LABELS,
+  conditionsToForm,
+  type QueryRuleRow,
+} from "@/lib/pages/conditions";
 import type { DomainRouteWithPage, PageOption } from "@/lib/pages/queries";
 import {
   BLOCK_CODES,
@@ -22,8 +28,8 @@ import { saveRoute, type RouteFormState } from "../actions";
 
 /**
  * Formulário de rota. Os campos mudam com a ação e o tipo de casamento; o
- * resto é FormData puro lido por `saveRoute`. As linhas de parâmetro de URL e
- * de cookie são listas paralelas (`query_*`, `cookie_*`), ver `RuleRows`.
+ * resto é FormData puro lido por `saveRoute`. As linhas de parâmetro de URL
+ * são listas paralelas (`query_key`, `query_mode`, `query_value`).
  */
 export function RouteForm({
   domainId,
@@ -43,8 +49,7 @@ export function RouteForm({
   const [matchType, setMatchType] = useState<MatchType>(route?.match_type ?? "EXACT");
   const [routeAction, setRouteAction] = useState<RouteAction>(route?.action ?? "SERVE");
   const [pageId, setPageId] = useState<string>(route?.page_id ?? pages[0]?.id ?? "");
-  const [queryRows, setQueryRows] = useState<RuleRow[]>(initialConditions.query);
-  const [cookieRows, setCookieRows] = useState<RuleRow[]>(initialConditions.cookies);
+  const [queryRows, setQueryRows] = useState<QueryRuleRow[]>(initialConditions.query);
 
   useEffect(() => {
     if (state.savedId) onDone();
@@ -66,8 +71,7 @@ export function RouteForm({
         <Field label="Prioridade" hint="Menor = avaliada antes">
           <input name="priority" type="number" min={0} max={100000} defaultValue={nextPriority} required className={INPUT_CLASS} disabled={pending} />
         </Field>
-        {/* Alinha com o INPUT de Prioridade (label + gap = 20px), não com a dica abaixo dele. */}
-        <label className="flex h-10 items-center gap-2 self-start text-sm md:mt-5">
+        <label className="flex items-center gap-2 self-end pb-2 text-sm">
           <input type="checkbox" name="is_active" defaultChecked={route?.is_active ?? true} className={CHECKBOX_CLASS} disabled={pending} />
           Ativa
         </label>
@@ -199,26 +203,53 @@ export function RouteForm({
             <input name="referrer" defaultValue={initialConditions.referrer} placeholder="facebook.com" className={INPUT_CLASS} disabled={pending} />
           </Field>
 
-          <RuleRows
-            prefix="query"
-            title="Parâmetros de URL"
-            addLabel="+ parâmetro"
-            emptyHint="Nenhum. Ex.: utm_source igual a tiktok, ou gclid presente."
-            keyPlaceholder="utm_source"
-            rows={queryRows}
-            onChange={setQueryRows}
-            disabled={pending}
-          />
-          <RuleRows
-            prefix="cookie"
-            title="Cookies"
-            addLabel="+ cookie"
-            emptyHint="Nenhum. Ex.: dop_step igual a p_ab12 (etapa do funil em modo servidor), ou vip presente."
-            keyPlaceholder="dop_step"
-            rows={cookieRows}
-            onChange={setCookieRows}
-            disabled={pending}
-          />
+          <div className="md:col-span-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-muted">Parâmetros de URL</span>
+              <Button size="sm" variant="ghost" onClick={() => setQueryRows([...queryRows, { key: "", mode: "present", value: "" }])} disabled={pending}>
+                + parâmetro
+              </Button>
+            </div>
+            {queryRows.length === 0 ? <p className="mt-1 text-xs text-muted">Nenhum. Ex.: utm_source igual a tiktok, ou gclid presente.</p> : null}
+            <div className="mt-1 flex flex-col gap-2">
+              {queryRows.map((row, i) => (
+                <div key={i} className="grid grid-cols-[1fr_8rem_1fr_auto] gap-2">
+                  <input
+                    name="query_key"
+                    value={row.key}
+                    onChange={(e) => setQueryRows(queryRows.map((r, j) => (j === i ? { ...r, key: e.target.value } : r)))}
+                    placeholder="utm_source"
+                    className={`${INPUT_CLASS} h-9 font-mono`}
+                    disabled={pending}
+                  />
+                  <select
+                    name="query_mode"
+                    value={row.mode}
+                    onChange={(e) => setQueryRows(queryRows.map((r, j) => (j === i ? { ...r, mode: e.target.value as QueryRuleRow["mode"] } : r)))}
+                    className={`${SELECT_CLASS} h-9`}
+                    disabled={pending}
+                  >
+                    {QUERY_MODES.map((m) => (
+                      <option key={m} value={m}>
+                        {QUERY_MODE_LABELS[m]}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    name="query_value"
+                    value={row.value}
+                    onChange={(e) => setQueryRows(queryRows.map((r, j) => (j === i ? { ...r, value: e.target.value } : r)))}
+                    placeholder={row.mode === "equals" ? "valor" : "—"}
+                    className={`${INPUT_CLASS} h-9`}
+                    disabled={pending || row.mode !== "equals"}
+                  />
+                  <Button size="sm" variant="ghost" onClick={() => setQueryRows(queryRows.filter((_, j) => j !== i))} disabled={pending}>
+                    ×
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </div>
 
           {routeAction === "BLOCK" ? (
             <label className="flex items-center gap-2 text-sm md:col-span-2">

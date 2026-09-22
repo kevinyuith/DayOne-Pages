@@ -28,10 +28,9 @@ Cloudflare ──HTTP:80──► nginx (catch-all) ──► php-fpm ──► 
 | domínio desconhecido | 404 (cache negativo `NEGATIVE_TTL`) | `MISS`/`HIT` |
 
 As rotas do domínio são avaliadas em ordem de prioridade; a primeira cujas
-condições (país, dispositivo, idioma, parâmetros de URL, cookies, referrer)
-casam decide: servir uma slug, redirecionar ou bloquear. `bot` só é honrado
-em rotas de bloqueio. `cookies` tem a mesma forma de `query`
-(`"present" | "absent" | {"equals": "v"}`, por nome) e lê o header `Cookie`.
+condições (país, dispositivo, idioma, parâmetros de URL, referrer) casam
+decide: servir uma slug, redirecionar ou bloquear. `bot` só é honrado em
+rotas de bloqueio.
 
 ### Funil em modo servidor (`dop_step`)
 
@@ -61,9 +60,8 @@ menos de duas etapas numa slug em modo servidor, ele serve o HTML inteiro e
 registra no log (`funil em modo servidor com N etapa(s)`) — a página continua
 funcionando, no modo navegador.
 
-**Ordem de deploy:** o servidor PHP antes do dashboard. O servidor trata
-condição desconhecida como "não casa"; uma rota salva com condição de
-cookie num servidor antigo nunca casaria até a atualização.
+**Ordem de deploy:** o servidor PHP antes do dashboard, para uma slug salva
+em modo servidor já ser cortada por etapa desde a primeira visita.
 
 ## Instalação (Ubuntu/Debian)
 
