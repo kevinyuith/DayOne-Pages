@@ -2,7 +2,7 @@ import { Badge } from "@/components/ui/badge";
 import type { HitRow } from "@/lib/pages/queries";
 
 /** Rótulo + tom do resultado de um hit. */
-const OUTCOME: Record<string, { label: string; tone: "success" | "info" | "danger" | "warning" | "neutral" }> = {
+export const OUTCOME_BADGE: Record<string, { label: string; tone: "success" | "info" | "danger" | "warning" | "neutral" }> = {
   served: { label: "Served", tone: "success" },
   redirect: { label: "Redirect", tone: "info" },
   blocked: { label: "Blocked", tone: "danger" },
@@ -41,7 +41,7 @@ export function AccessLogs({ hits }: { hits: HitRow[] }) {
             </thead>
             <tbody className="sensitive">
               {hits.map((h, i) => {
-                const o = OUTCOME[h.outcome] ?? OUTCOME.other;
+                const o = OUTCOME_BADGE[h.outcome] ?? OUTCOME_BADGE.other;
                 return (
                   <tr key={i} className="border-b border-border/60 last:border-0">
                     <td className="py-2 pr-3 tabular-nums text-muted">{timeFmt.format(new Date(h.created_at))}</td>
