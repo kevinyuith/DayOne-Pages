@@ -74,11 +74,15 @@ function refresh_routes(string $host, string $path): ?array
         return null;
     }
 
-    foreach ($r['routes'] as $row) {
+    foreach ($r['routes'] as &$row) {
         if (!empty($row['slug_id']) && isset($row['content']) && !empty($row['content_hash'])) {
             cache_put_content((string) $row['slug_id'], (string) $row['content_hash'], (string) $row['content']);
+            // Sabendo de antemão que a slug NÃO é funil em modo servidor, o 304
+            // sai sem ler o conteúdo do disco (ver serve_slug).
+            $row['funnel'] = funnel_is_server_mode((string) $row['content']);
         }
     }
+    unset($row);
 
     $routes = strip_content($r['routes']);
     if (!host_over_cap($host)) {

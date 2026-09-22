@@ -10,6 +10,10 @@
  *   languages       ["en","es"]                 Accept-Language do navegador ∩ lista
  *   languages_mode  "block"                     inverte: casa quem NÃO tem os idiomas
  *   query           {"utm_source": "present" | "absent" | {"equals": "x"}}
+ *   cookies         {"dop_step": "present" | "absent" | {"equals": "x"}}
+ *                                               cookie do visitante (header Cookie).
+ *                                               É o que permite "só serve X para
+ *                                               quem já passou por Y" (upsell).
  *   referrer        "texto"                     Referer contém (case-insensitive)
  *   bot             true                        User-Agent de crawler/scraper.
  *                                               Só vale em rotas BLOCK; respond.php
@@ -25,7 +29,7 @@ declare(strict_types=1);
 
 defined('DAYONE_ENTRY') || (http_response_code(404) && exit);
 
-const KNOWN_CONDITIONS = ['countries', 'countries_mode', 'devices', 'languages', 'languages_mode', 'query', 'referrer', 'bot'];
+const KNOWN_CONDITIONS = ['countries', 'countries_mode', 'devices', 'languages', 'languages_mode', 'query', 'cookies', 'referrer', 'bot'];
 
 function conditions_match(array $cond, Request $req): bool
 {
@@ -63,23 +67,14 @@ function conditions_match(array $cond, Request $req): bool
     if (isset($cond['query']) && is_array($cond['query'])) {
         $params = [];
         parse_str($req->rawQuery, $params);
-        foreach ($cond['query'] as $name => $rule) {
-            $present = array_key_exists($name, $params);
-            if ($rule === 'present') {
-                if (!$present) {
-                    return false;
-                }
-            } elseif ($rule === 'absent') {
-                if ($present) {
-                    return false;
-                }
-            } elseif (is_array($rule) && array_key_exists('equals', $rule)) {
-                if (!$present || !is_scalar($params[$name]) || (string) $params[$name] !== (string) $rule['equals']) {
-                    return false;
-                }
-            } else {
-                return false;
-            }
+        if (!named_rules_match($cond['query'], $params)) {
+            return false;
+        }
+    }
+
+    if (isset($cond['cookies']) && is_array($cond['cookies'])) {
+        if (!named_rules_match($cond['cookies'], $req->cookies)) {
+            return false;
         }
     }
 
@@ -95,6 +90,34 @@ function conditions_match(array $cond, Request $req): bool
         }
     }
 
+    return true;
+}
+
+/**
+ * Regras "por nome" (parâmetros de URL, cookies): cada nome tem uma regra
+ * "present" | "absent" | {"equals": "x"} contra o mapa nome → valor. Regra
+ * desconhecida não casa. Valor não escalar (ex.: `a[]=1`) só casa em present.
+ */
+function named_rules_match(array $rules, array $values): bool
+{
+    foreach ($rules as $name => $rule) {
+        $present = array_key_exists($name, $values);
+        if ($rule === 'present') {
+            if (!$present) {
+                return false;
+            }
+        } elseif ($rule === 'absent') {
+            if ($present) {
+                return false;
+            }
+        } elseif (is_array($rule) && array_key_exists('equals', $rule)) {
+            if (!$present || !is_scalar($values[$name]) || (string) $values[$name] !== (string) $rule['equals']) {
+                return false;
+            }
+        } else {
+            return false;
+        }
+    }
     return true;
 }
 

@@ -25,7 +25,8 @@ export default async function DominiosPage() {
     <>
       <PageHeader title="Domínios" description="Cadastre o domínio, aponte o DNS pelo Cloudflare e escolha a página padrão. Rotas por path ficam no detalhe de cada domínio." />
 
-      <div className="mb-8 grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
+      {/* `items-start`: o card do formulário fica na altura do conteúdo, sem esticar até o card de DNS. */}
+      <div className="mb-8 grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start">
         <section className="rounded-xl border border-border bg-surface p-5">
           <h2 className="text-sm font-semibold">Adicionar domínio</h2>
           <DomainForm pages={pages} />

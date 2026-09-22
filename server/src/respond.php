@@ -8,6 +8,8 @@
  *   SERVE     slug_id nulo → 404 (a rota existe mas a slug não; não pula
  *             para a próxima, para o erro aparecer em vez de sumir).
  *             If-None-Match igual ao hash → 304. Senão 200 com o HTML.
+ *             Slug com funil em modo servidor (funnel.php): só a etapa atual
+ *             sai, o ETag ganha o id da etapa e a resposta varia por Cookie.
  *   REDIRECT  Location = redirect_url (+ query original se preserve_query).
  *   BLOCK     o status configurado, com uma página mínima.
  *
@@ -88,22 +90,40 @@ function serve_slug(array $route, Request $req): array
         return $req->path === '/robots.txt' ? robots_default() : not_found();
     }
 
-    $etag = '"' . $hash . '"';
     $headers = [
         'Content-Type' => (string) ($route['content_type'] ?: 'text/html; charset=utf-8'),
-        'ETag' => $etag,
         'Cache-Control' => PRIVATE_NO_CACHE,
         'Vary' => 'CF-IPCountry, User-Agent, Accept-Language',
     ];
 
-    if ($req->ifNoneMatch !== null && etag_matches($req->ifNoneMatch, $etag)) {
-        return [304, $headers, null];
+    // Slug que o cache já marcou como "não é funil em modo servidor": o ETag é
+    // só o hash e o 304 sai sem ler o conteúdo do disco. Cache antigo (sem a
+    // marca) ou funil: lê o conteúdo, porque a etapa entra no ETag.
+    if (($route['funnel'] ?? null) === false) {
+        $headers['ETag'] = '"' . $hash . '"';
+        if ($req->ifNoneMatch !== null && etag_matches($req->ifNoneMatch, $headers['ETag'])) {
+            return [304, $headers, null];
+        }
     }
 
     $body = cache_read_content($slugId, $hash);
     if ($body === null) {
         error_log("[dayone-pages] conteúdo ausente no cache para slug $slugId ($hash)");
         return [503, ['Content-Type' => 'text/html; charset=utf-8', 'Cache-Control' => 'no-store', 'Retry-After' => '10'], plain_page('Um instante', 'Atualizando a página. Tente de novo em alguns segundos.')];
+    }
+
+    // Funil em modo servidor: a etapa entra no ETag (cada etapa é um corpo
+    // diferente na MESMA URL) e a resposta passa a variar por Cookie.
+    $funnel = funnel_apply($body, $req->cookies);
+    $etag = '"' . $hash . ($funnel ? '-' . $funnel['step'] : '') . '"';
+    if ($funnel) {
+        $body = $funnel['html'];
+        $headers['Vary'] .= ', Cookie';
+    }
+    $headers['ETag'] = $etag;
+
+    if ($req->ifNoneMatch !== null && etag_matches($req->ifNoneMatch, $etag)) {
+        return [304, $headers, null];
     }
 
     return [200, $headers, $body];

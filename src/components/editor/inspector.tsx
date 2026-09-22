@@ -1,15 +1,17 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { EyeIcon } from "@/components/icons";
-import { INPUT_BASE, SELECT_BASE } from "@/components/ui/field";
-import type { SelectionInfo, SelectionStyle } from "@/lib/pages/html-editing";
+import { EyeIcon, LinkIcon, UnlinkIcon } from "@/components/icons";
+import { CHECKBOX_CLASS, INPUT_BASE, SELECT_BASE } from "@/components/ui/field";
+import type { LinkSource, SelectionInfo, SelectionStyle } from "@/lib/pages/html-editing";
 
 export type InspectorTab = "style" | "settings";
 
 export type InspectorCallbacks = {
   setText: (v: string) => void;
-  setHref: (v: string) => void;
+  /** Link do elemento: nativo (<a>) ou atrelado (data-href). `href` vazio remove. */
+  setLink: (href: string, target: string) => void;
+  clearLink: () => void;
   setHidden: (v: boolean) => void;
   setStyle: (prop: keyof SelectionStyle, v: string) => void;
 };
@@ -19,18 +21,23 @@ export type InspectorCallbacks = {
  * (conteúdo/link/visibilidade do elemento, ou os ajustes da página quando nada
  * está selecionado) e Style (cor, fundo, tamanho, alinhamento, espaçamento).
  */
+/** Um destino pronto para o seletor de link (sub-página do funil, outra slug…). */
+export type LinkDestination = { label: string; href: string; group: string };
+
 export function Inspector({
   tab,
   onTab,
   selection,
   callbacks,
   pageSettings,
+  destinations = [],
 }: {
   tab: InspectorTab;
   onTab: (t: InspectorTab) => void;
   selection: SelectionInfo | null;
   callbacks: InspectorCallbacks;
   pageSettings: ReactNode;
+  destinations?: LinkDestination[];
 }) {
   return (
     <aside className="flex min-h-0 w-72 shrink-0 flex-col rounded-xl border border-border bg-surface">
@@ -52,7 +59,7 @@ export function Inspector({
       <div className="min-h-0 flex-1 overflow-auto p-4">
         {tab === "settings" ? (
           selection ? (
-            <ElementSettings key={selection.uid} selection={selection} callbacks={callbacks} />
+            <ElementSettings key={selection.uid} selection={selection} callbacks={callbacks} destinations={destinations} />
           ) : (
             pageSettings
           )
@@ -66,9 +73,8 @@ export function Inspector({
   );
 }
 
-function ElementSettings({ selection, callbacks }: { selection: SelectionInfo; callbacks: InspectorCallbacks }) {
+function ElementSettings({ selection, callbacks, destinations }: { selection: SelectionInfo; callbacks: InspectorCallbacks; destinations: LinkDestination[] }) {
   const [text, setText] = useState(selection.text);
-  const [href, setHref] = useState(selection.href);
 
   return (
     <div className="flex flex-col gap-4">
@@ -86,17 +92,8 @@ function ElementSettings({ selection, callbacks }: { selection: SelectionInfo; c
         </Group>
       ) : null}
 
-      {selection.isLink ? (
-        <Group label="Link (href)">
-          <input
-            value={href}
-            onChange={(e) => setHref(e.target.value)}
-            onBlur={() => href !== selection.href && callbacks.setHref(href)}
-            placeholder="https://…"
-            className={`${INPUT_BASE} w-full`}
-          />
-        </Group>
-      ) : null}
+      {/* Remonta quando o link muda por fora (Remover, troca em massa no painel Links). */}
+      <LinkSettings key={`${selection.href}|${selection.linkTarget}`} selection={selection} callbacks={callbacks} destinations={destinations} />
 
       <Group label="Visibility">
         <button
@@ -108,6 +105,103 @@ function ElementSettings({ selection, callbacks }: { selection: SelectionInfo; c
           <EyeIcon className={`size-4 ${selection.hidden ? "text-muted/50" : "text-accent"}`} />
         </button>
       </Group>
+    </div>
+  );
+}
+
+const LINK_HINT: Record<LinkSource, (tag: string) => string> = {
+  anchor: (tag) => (tag === "form" ? "Destino do formulário (action)." : "Link nativo deste elemento (href)."),
+  inherited: () => "Herdado do <a> que envolve este elemento — editar mexe nele.",
+  attached: (tag) => `Atrelado a este <${tag}> (data-href). O clique navega; a slug da página não muda.`,
+  none: (tag) => `Sem link. Cole um destino para atrelar um link a este <${tag}> — sem mexer na estrutura nem na slug.`,
+};
+
+/**
+ * Link do elemento: um campo só, que edita o href de um <a> (ou do <a> pai) e,
+ * para qualquer outro elemento, atrela um link via data-href. É o "atrelar
+ * links a novos elementos sem mudar a slug".
+ */
+function LinkSettings({ selection, callbacks, destinations }: { selection: SelectionInfo; callbacks: InspectorCallbacks; destinations: LinkDestination[] }) {
+  const [href, setHref] = useState(selection.href);
+  const newTab = selection.linkTarget === "_blank";
+  const commit = () => {
+    const v = href.trim();
+    if (v !== selection.href) callbacks.setLink(v, selection.linkTarget);
+  };
+
+  // "Destino", como o Navigation → Destination da referência: uma slug desta
+  // página, uma âncora (#id) ou uma URL livre. O valor é derivado do href.
+  const kind = destinations.some((d) => d.href === href.trim()) ? href.trim() : href.trim().startsWith("#") ? "#" : "";
+  const onKind = (v: string) => {
+    if (v === "#") {
+      setHref("#");
+      return;
+    }
+    if (v === "") {
+      setHref("");
+      return;
+    }
+    setHref(v);
+    if (v !== selection.href) callbacks.setLink(v, selection.linkTarget);
+  };
+
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border border-border p-3">
+      <div className="flex items-center justify-between">
+        <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted">
+          <LinkIcon className="size-3.5" /> Link
+        </span>
+        {selection.isLink ? (
+          <button
+            type="button"
+            onClick={callbacks.clearLink}
+            className="inline-flex items-center gap-1 text-xs text-muted hover:text-red-600 dark:hover:text-red-400"
+            title="Remover link"
+          >
+            <UnlinkIcon className="size-3.5" /> Remover
+          </button>
+        ) : null}
+      </div>
+      {destinations.length ? (
+        <select value={kind} onChange={(e) => onKind(e.target.value)} aria-label="Destino" className={`${SELECT_BASE} h-8 w-full text-xs`}>
+          <option value="">URL externa / personalizada</option>
+          <option value="#">Âncora nesta página (#id)</option>
+          {Array.from(new Set(destinations.map((d) => d.group))).map((g) => (
+            <optgroup key={g} label={g}>
+              {destinations
+                .filter((d) => d.group === g)
+                .map((d) => (
+                  <option key={d.href} value={d.href}>
+                    {d.label}
+                  </option>
+                ))}
+            </optgroup>
+          ))}
+        </select>
+      ) : null}
+      <input
+        value={href}
+        onChange={(e) => setHref(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+        placeholder="https://… ou #secao"
+        className={`${INPUT_BASE} w-full font-mono text-xs`}
+      />
+      <label className={`flex items-center gap-2 text-xs ${selection.isLink ? "" : "opacity-50"}`}>
+        <input
+          type="checkbox"
+          className={CHECKBOX_CLASS}
+          checked={newTab}
+          disabled={!selection.isLink}
+          onChange={(e) => callbacks.setLink(selection.href, e.target.checked ? "_blank" : "")}
+        />
+        Abrir em nova aba
+      </label>
+      <p className="text-[11px] leading-snug text-muted">
+        {selection.href === "#next-step" || selection.href.startsWith("#page:")
+          ? "Troca a sub-página do funil no navegador — a URL não muda."
+          : LINK_HINT[selection.linkSource](selection.tag)}
+      </p>
     </div>
   );
 }

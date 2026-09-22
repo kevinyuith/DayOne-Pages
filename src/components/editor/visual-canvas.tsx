@@ -1,18 +1,32 @@
 "use client";
 
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
-import { ArrowDownIcon, ArrowUpIcon, DuplicateIcon, TrashIcon } from "@/components/icons";
+import { ArrowDownIcon, ArrowUpIcon, DuplicateIcon, LinkIcon, TrashIcon } from "@/components/icons";
 import {
   assignUids,
   countHidden,
   describe,
   elementByUid,
+  HREF_ATTR,
   injectCanvasChrome,
+  PAGE_ATTR,
+  RUNTIME_ATTR,
   serialize,
   UID_ATTR,
   type SelectionInfo,
   type SelectionStyle,
 } from "@/lib/pages/html-editing";
+import { clearLink, setLink } from "@/lib/pages/links";
+import { syncRuntime } from "@/lib/pages/runtime";
+import { normalizePages, pageById, pageOf, setCurrent, startPage } from "@/lib/pages/subpages";
+
+/**
+ * Marcadores de link no canvas (como os "markers" do builder de referência):
+ * um chip por link visível, desenhado pelo pai por cima do iframe. Clicar no
+ * chip seleciona o elemento. Recalculados a cada mudança/rolagem, via rAF.
+ */
+type Marker = { uid: string; kind: "a" | "form" | "atrelado"; top: number; left: number };
+const MARKER_SELECTOR = `a[href], area[href], form[action], [${HREF_ATTR}]`;
 
 /**
  * A canvas de edição visual. Um iframe MESMA-ORIGEM (sandbox="allow-same-origin",
@@ -28,16 +42,27 @@ import {
 
 export type CanvasHandle = {
   setText(text: string): void;
-  setHref(href: string): void;
+  /** Define o link do elemento selecionado (nativo ou atrelado). `href` vazio remove. */
+  setLink(href: string, target?: string): void;
+  clearLink(): void;
   setHidden(hidden: boolean): void;
   setStyleProp(prop: keyof SelectionStyle, value: string): void;
   duplicate(): void;
   remove(): void;
   move(dir: "up" | "down"): void;
   clearSelection(): void;
+  /** Seleciona pelo uid (painéis Links/Camadas) e rola até o elemento. */
+  selectByUid(uid: string): void;
+  /**
+   * Roda `fn` no documento AO VIVO (sem recarregar o iframe), reindexa se a
+   * estrutura mudou e grava. É a porta dos painéis para trocas em massa.
+   */
+  mutate(fn: (doc: Document) => void, opts?: { reindex?: boolean }): void;
+  /** Insere HTML depois do elemento selecionado (ou no fim do body) e o seleciona. */
+  insertHtml(markup: string): void;
 };
 
-type Rect = { top: number; left: number; width: number; height: number };
+type Rect = { uid: string; top: number; left: number; width: number; height: number };
 
 const STYLE_TO_CSS: Record<keyof SelectionStyle, string> = {
   color: "color",
@@ -55,8 +80,14 @@ export const VisualCanvas = forwardRef<
     onChange: (html: string) => void;
     onSelect: (info: SelectionInfo | null) => void;
     onHiddenCount?: (n: number) => void;
+    /** Mostra um chip sobre cada link (a / form / atrelado). */
+    showMarkers?: boolean;
+    /** Sub-página que a canvas mostra (null numa slug de página única). */
+    currentPageId?: string | null;
+    /** A canvas trocou de sub-página por conta própria (seleção em outra página, página removida…). */
+    onPageChange?: (id: string | null) => void;
   }
->(function VisualCanvas({ html, baseHref, onChange, onSelect, onHiddenCount }, ref) {
+>(function VisualCanvas({ html, baseHref, onChange, onSelect, onHiddenCount, showMarkers = false, currentPageId = null, onPageChange }, ref) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const selectedRef = useRef<HTMLElement | null>(null);
   const selectedUidRef = useRef<string | null>(null);
@@ -64,18 +95,77 @@ export const VisualCanvas = forwardRef<
   // edição); recargas por mudança externa passam pelo efeito abaixo.
   const lastSerializedRef = useRef<string>(html);
   const [rect, setRect] = useState<Rect | null>(null);
+  const [markers, setMarkers] = useState<Marker[]>([]);
+  const showMarkersRef = useRef(showMarkers);
+  useEffect(() => {
+    showMarkersRef.current = showMarkers;
+  }, [showMarkers]);
 
   const doc = () => iframeRef.current?.contentDocument ?? null;
 
+  // ── Sub-página atual ───────────────────────────────────────────────────────
+  // A canvas mostra UMA sub-página por vez (atributo data-dop-current, só do
+  // editor). O pai manda a desejada; se ela não existe mais, cai na inicial e
+  // avisa. `ensureCurrent` roda após hidratar e após cada mutação estrutural.
+  const currentPageIdRef = useRef<string | null>(currentPageId);
+  const onPageChangeRef = useRef(onPageChange);
+  useEffect(() => {
+    onPageChangeRef.current = onPageChange;
+  });
+  const ensureCurrent = useCallback((d: Document) => {
+    const want = currentPageIdRef.current;
+    const id = want && pageById(d, want) ? want : (startPage(d)?.getAttribute(PAGE_ATTR) ?? null);
+    setCurrent(d, id);
+    if (id !== want) {
+      currentPageIdRef.current = id;
+      onPageChangeRef.current?.(id);
+    }
+  }, []);
+
+  const markersRaf = useRef(0);
+  const refreshMarkers = useCallback(() => {
+    if (!showMarkersRef.current) {
+      setMarkers((m) => (m.length ? [] : m));
+      return;
+    }
+    cancelAnimationFrame(markersRaf.current);
+    markersRaf.current = requestAnimationFrame(() => {
+      const d = doc();
+      const win = d?.defaultView;
+      if (!d?.body || !win) return;
+      const vh = win.innerHeight;
+      const vw = win.innerWidth;
+      const out: Marker[] = [];
+      d.body.querySelectorAll<HTMLElement>(MARKER_SELECTOR).forEach((el) => {
+        const uid = el.getAttribute(UID_ATTR);
+        if (!uid) return;
+        const r = el.getBoundingClientRect();
+        if (r.width < 4 || r.height < 4 || r.bottom < 0 || r.top > vh || r.right < 0 || r.left > vw) return;
+        out.push({
+          uid,
+          kind: el.hasAttribute(HREF_ATTR) ? "atrelado" : el.tagName === "FORM" ? "form" : "a",
+          top: Math.max(r.top, 8),
+          left: Math.max(r.left, 0),
+        });
+      });
+      setMarkers(out);
+    });
+  }, []);
+
   const refreshRect = useCallback(() => {
+    refreshMarkers();
     const el = selectedRef.current;
     if (!el || !el.isConnected) {
       setRect(null);
       return;
     }
     const r = el.getBoundingClientRect();
-    setRect({ top: r.top, left: r.left, width: r.width, height: r.height });
-  }, []);
+    setRect({ uid: el.getAttribute(UID_ATTR) ?? "", top: r.top, left: r.left, width: r.width, height: r.height });
+  }, [refreshMarkers]);
+
+  useEffect(() => {
+    refreshMarkers();
+  }, [showMarkers, refreshMarkers]);
 
   const emitSelect = useCallback(() => {
     const el = selectedRef.current;
@@ -86,11 +176,14 @@ export const VisualCanvas = forwardRef<
   const commit = useCallback(() => {
     const d = doc();
     if (!d) return;
+    normalizePages(d);
+    syncRuntime(d);
     const out = serialize(d);
     lastSerializedRef.current = out;
     onChange(out);
     onHiddenCount?.(countHidden(d));
-  }, [onChange, onHiddenCount]);
+    refreshMarkers();
+  }, [onChange, onHiddenCount, refreshMarkers]);
 
   const select = useCallback(
     (el: HTMLElement | null) => {
@@ -107,6 +200,7 @@ export const VisualCanvas = forwardRef<
     if (!d || !d.body) return;
     injectCanvasChrome(d, baseHref);
     assignUids(d);
+    ensureCurrent(d);
     onHiddenCount?.(countHidden(d));
 
     const onClick = (e: Event) => {
@@ -150,7 +244,7 @@ export const VisualCanvas = forwardRef<
     // Reencontra a seleção anterior (após recarga externa).
     if (selectedUidRef.current) select(elementByUid(d, selectedUidRef.current));
     else refreshRect();
-  }, [baseHref, commit, emitSelect, onHiddenCount, refreshRect, select]);
+  }, [baseHref, commit, emitSelect, ensureCurrent, onHiddenCount, refreshRect, select]);
 
   // Escreve o markup no iframe e hidrata na hora. document.open/write/close é
   // síncrono e não depende do evento load (que, com srcDoc, não é confiável).
@@ -189,6 +283,17 @@ export const VisualCanvas = forwardRef<
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, [refreshRect]);
+
+  // O pai trocou a sub-página: aplica na canvas e solta a seleção se ela ficou fora.
+  useEffect(() => {
+    currentPageIdRef.current = currentPageId;
+    const d = doc();
+    if (!d?.body) return;
+    ensureCurrent(d);
+    const sel = selectedRef.current;
+    if (sel && currentPageIdRef.current && pageOf(sel)?.getAttribute(PAGE_ATTR) !== currentPageIdRef.current) select(null);
+    else refreshRect();
+  }, [currentPageId, ensureCurrent, refreshRect, select]);
 
   // ── Comandos (usados pelo inspetor via handle e pela toolbar) ──────────────
   const withSelected = useCallback(
@@ -245,16 +350,85 @@ export const VisualCanvas = forwardRef<
     [withSelected],
   );
 
+  const cmdSelectByUid = useCallback(
+    (uid: string) => {
+      const d = doc();
+      if (!d) return;
+      const el = elementByUid(d, uid);
+      const pg = el ? pageOf(el)?.getAttribute(PAGE_ATTR) ?? null : null;
+      if (pg && pg !== currentPageIdRef.current) {
+        currentPageIdRef.current = pg;
+        setCurrent(d, pg);
+        onPageChangeRef.current?.(pg);
+      }
+      select(el);
+      if (el) {
+        el.scrollIntoView({ block: "center", inline: "nearest" });
+        // `scrollIntoView` dispara scroll no iframe (que já atualiza o rect),
+        // mas não quando o elemento já está visível — garante o contorno.
+        refreshRect();
+      }
+    },
+    [refreshRect, select],
+  );
+
+  const cmdMutate = useCallback(
+    (fn: (d: Document) => void, opts: { reindex?: boolean } = {}) => {
+      const d = doc();
+      if (!d) return;
+      fn(d);
+      if (opts.reindex) {
+        assignUids(d);
+        if (selectedUidRef.current) selectedRef.current = elementByUid(d, selectedUidRef.current);
+      }
+      ensureCurrent(d);
+      commit();
+      emitSelect();
+    },
+    [commit, emitSelect, ensureCurrent],
+  );
+
+  const cmdInsertHtml = useCallback(
+    (markup: string) => {
+      const d = doc();
+      if (!d?.body || !markup.trim()) return;
+      const tpl = d.createElement("template");
+      tpl.innerHTML = markup;
+      const nodes = Array.from(tpl.content.children) as HTMLElement[];
+      if (!nodes.length) return;
+      const anchor = selectedRef.current;
+      const page = currentPageIdRef.current ? pageById(d, currentPageIdRef.current) : null;
+      if (anchor?.isConnected && anchor.parentElement && anchor.parentElement !== d.documentElement && !anchor.hasAttribute(PAGE_ATTR)) {
+        anchor.after(...nodes);
+      } else if (page) {
+        page.append(...nodes);
+      } else {
+        // Antes do script de runtime, se existir — ele fica por último.
+        const runtime = d.body.querySelector(`:scope > script[${RUNTIME_ATTR}]`);
+        if (runtime) runtime.before(...nodes);
+        else d.body.append(...nodes);
+      }
+      assignUids(d);
+      select(nodes[0]);
+      nodes[0].scrollIntoView({ block: "center" });
+      commit();
+    },
+    [commit, select],
+  );
+
   useImperativeHandle(
     ref,
     (): CanvasHandle => ({
       setText: (text) => withSelected((el) => (el.textContent = text)),
-      setHref: (href) =>
+      setLink: (href, target) =>
         withSelected((el) => {
-          const a = el.tagName === "A" ? el : el.closest("a");
-          if (!a) return;
-          if (href) a.setAttribute("href", href);
-          else a.removeAttribute("href");
+          const uid = el.getAttribute(UID_ATTR);
+          if (uid) setLink(el.ownerDocument, uid, { href, target });
+        }),
+      clearLink: () =>
+        withSelected((el) => {
+          const uid = el.getAttribute(UID_ATTR);
+          if (uid) clearLink(el.ownerDocument, uid);
         }),
       setHidden: (hidden) =>
         withSelected((el) => {
@@ -271,8 +445,11 @@ export const VisualCanvas = forwardRef<
       remove: cmdRemove,
       move: cmdMove,
       clearSelection: () => select(null),
+      selectByUid: cmdSelectByUid,
+      mutate: cmdMutate,
+      insertHtml: cmdInsertHtml,
     }),
-    [withSelected, cmdDuplicate, cmdRemove, cmdMove, select],
+    [withSelected, cmdDuplicate, cmdRemove, cmdMove, cmdSelectByUid, cmdMutate, cmdInsertHtml, select],
   );
 
   return (
@@ -283,8 +460,25 @@ export const VisualCanvas = forwardRef<
         sandbox="allow-same-origin allow-forms"
         className="block h-full w-full border-0 bg-white"
       />
-      {/* Camada de seleção do pai — não intercepta cliques, só a toolbar. */}
+      {/* Camada de seleção do pai — não intercepta cliques, só a toolbar e os marcadores. */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        {markers.map((m) =>
+          m.uid === rect?.uid ? null : (
+            <button
+              key={m.uid}
+              type="button"
+              title={m.kind === "a" ? "Link — clique para selecionar" : m.kind === "form" ? "Formulário — clique para selecionar" : "Link atrelado — clique para selecionar"}
+              onClick={() => cmdSelectByUid(m.uid)}
+              className={`pointer-events-auto absolute z-10 inline-flex h-4 -translate-y-1/2 items-center gap-0.5 rounded px-1 text-[9px] font-semibold leading-none text-white shadow ${
+                m.kind === "atrelado" ? "bg-violet-600" : m.kind === "form" ? "bg-amber-600" : "bg-accent"
+              }`}
+              style={{ top: m.top, left: m.left }}
+            >
+              <LinkIcon className="size-2.5" />
+              {m.kind}
+            </button>
+          ),
+        )}
         {rect ? (
           <>
             <div

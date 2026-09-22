@@ -14,6 +14,8 @@ import { z } from "zod";
  *   languages       ISO 639-1 (duas letras), minúsculo. Vem do Accept-Language do navegador.
  *   languages_mode  igual a countries_mode, para os idiomas.
  *   query           por parâmetro: "present" | "absent" | { equals: "valor" }.
+ *   cookies         por cookie (header Cookie): mesma forma de `query`. Serve para
+ *                   rotear por etapa do funil (`dop_step`) ou por marcador próprio.
  *   referrer        texto contido no header Referer (case-insensitive).
  *   bot             true = User-Agent de crawler/scraper. SÓ com action=BLOCK
  *                   (CHECK no banco). Serve para barrar, nunca para trocar conteúdo.
@@ -33,6 +35,8 @@ export type QueryMode = (typeof QUERY_MODES)[number];
 export const QUERY_MODE_LABELS: Record<QueryMode, string> = { present: "presente", absent: "ausente", equals: "igual a" };
 
 const queryRule = z.union([z.literal("present"), z.literal("absent"), z.strictObject({ equals: z.string().min(1).max(200) })]);
+// Nome de cookie: token da RFC 6265 (sem espaço, `;`, `=`, `,`).
+const cookieName = z.string().regex(/^[A-Za-z0-9!#$%&'*+\-.^_`|~]{1,100}$/, "nome de cookie inválido");
 
 export const conditionsSchema = z
   .strictObject({
@@ -42,6 +46,7 @@ export const conditionsSchema = z
     languages: z.array(z.string().regex(/^[a-z]{2}$/, "idioma deve ser um código de duas letras (ISO 639-1)")).min(1).max(50).optional(),
     languages_mode: z.literal("block").optional(),
     query: z.record(z.string().regex(/^[A-Za-z0-9_.\-\[\]]{1,100}$/, "nome de parâmetro inválido"), queryRule).optional(),
+    cookies: z.record(cookieName, queryRule).optional(),
     referrer: z.string().min(1).max(200).optional(),
     bot: z.literal(true).optional(),
   })
@@ -51,17 +56,43 @@ export const conditionsSchema = z
 
 export type RouteConditions = z.infer<typeof conditionsSchema>;
 
-/** Linha do formulário de parâmetros. */
-export type QueryRuleRow = { key: string; mode: QueryMode; value: string };
+/** Linha do formulário de regras por nome (parâmetro de URL ou cookie). */
+export type RuleRow = { key: string; mode: QueryMode; value: string };
+/** @deprecated use RuleRow */
+export type QueryRuleRow = RuleRow;
+
+type NamedRule = z.infer<typeof queryRule>;
+
+/** Lê as listas paralelas `<prefix>_key` / `<prefix>_mode` / `<prefix>_value` do formulário. */
+function namedRulesFromForm(fd: FormData, prefix: "query" | "cookie"): Record<string, NamedRule> {
+  const keys = fd.getAll(`${prefix}_key`).map(String);
+  const modes = fd.getAll(`${prefix}_mode`).map(String);
+  const values = fd.getAll(`${prefix}_value`).map(String);
+  const out: Record<string, NamedRule> = {};
+  keys.forEach((key, i) => {
+    const k = key.trim();
+    if (!k) return;
+    const mode = modes[i] ?? "present";
+    out[k] = mode === "equals" ? { equals: (values[i] ?? "").trim() } : mode === "absent" ? "absent" : "present";
+  });
+  return out;
+}
+
+function namedRulesToRows(rules: Record<string, NamedRule> | undefined): RuleRow[] {
+  return Object.entries(rules ?? {}).map(([key, rule]) =>
+    typeof rule === "string" ? { key, mode: rule, value: "" } : { key, mode: "equals", value: rule.equals },
+  );
+}
 
 /**
  * Lê as condições do FormData do formulário de rota/filtro.
  *
  * Campos: `countries` (texto: "BR, US"), `countries_mode` ("allow"|"block"),
  * `devices` (checkboxes), `languages` (texto: "en, es"), `languages_mode`
- * ("allow"|"block"), `query_key`, `query_mode`, `query_value` (listas
- * paralelas), `referrer`, `bot` (checkbox). O modo só é gravado quando a lista
- * correspondente existe; "allow" é o padrão e nunca vai para o JSON.
+ * ("allow"|"block"), `query_key`, `query_mode`, `query_value` e
+ * `cookie_key`, `cookie_mode`, `cookie_value` (listas paralelas), `referrer`,
+ * `bot` (checkbox). O modo só é gravado quando a lista correspondente existe;
+ * "allow" é o padrão e nunca vai para o JSON.
  */
 export function parseConditionsForm(fd: FormData): { ok: true; value: RouteConditions } | { ok: false; reason: string } {
   const raw: Record<string, unknown> = {};
@@ -83,17 +114,11 @@ export function parseConditionsForm(fd: FormData): { ok: true; value: RouteCondi
     if (String(fd.get("languages_mode") ?? "allow") === "block") raw.languages_mode = "block";
   }
 
-  const keys = fd.getAll("query_key").map(String);
-  const modes = fd.getAll("query_mode").map(String);
-  const values = fd.getAll("query_value").map(String);
-  const query: Record<string, unknown> = {};
-  keys.forEach((key, i) => {
-    const k = key.trim();
-    if (!k) return;
-    const mode = modes[i] ?? "present";
-    query[k] = mode === "equals" ? { equals: (values[i] ?? "").trim() } : mode;
-  });
+  const query = namedRulesFromForm(fd, "query");
   if (Object.keys(query).length > 0) raw.query = query;
+
+  const cookies = namedRulesFromForm(fd, "cookie");
+  if (Object.keys(cookies).length > 0) raw.cookies = cookies;
 
   const referrer = String(fd.get("referrer") ?? "").trim();
   if (referrer) raw.referrer = referrer;
@@ -115,20 +140,19 @@ export function conditionsToForm(c: RouteConditions | null | undefined): {
   devices: Device[];
   languages: string;
   languagesMode: ListMode;
-  query: QueryRuleRow[];
+  query: RuleRow[];
+  cookies: RuleRow[];
   referrer: string;
   bot: boolean;
 } {
-  const query: QueryRuleRow[] = Object.entries(c?.query ?? {}).map(([key, rule]) =>
-    typeof rule === "string" ? { key, mode: rule, value: "" } : { key, mode: "equals", value: rule.equals },
-  );
   return {
     countries: (c?.countries ?? []).join(", "),
     countriesMode: c?.countries_mode === "block" ? "block" : "allow",
     devices: [...(c?.devices ?? [])],
     languages: (c?.languages ?? []).join(", "),
     languagesMode: c?.languages_mode === "block" ? "block" : "allow",
-    query,
+    query: namedRulesToRows(c?.query),
+    cookies: namedRulesToRows(c?.cookies),
     referrer: c?.referrer ?? "",
     bot: c?.bot === true,
   };
@@ -143,6 +167,9 @@ export function summarizeConditions(c: RouteConditions | null | undefined): stri
   if (c.languages?.length) parts.push(`Idioma${c.languages_mode === "block" ? " (bloquear)" : ""}: ${c.languages.join(", ")}`);
   for (const [key, rule] of Object.entries(c.query ?? {})) {
     parts.push(typeof rule === "string" ? `?${key} ${QUERY_MODE_LABELS[rule]}` : `?${key} = ${rule.equals}`);
+  }
+  for (const [key, rule] of Object.entries(c.cookies ?? {})) {
+    parts.push(typeof rule === "string" ? `cookie ${key} ${QUERY_MODE_LABELS[rule]}` : `cookie ${key} = ${rule.equals}`);
   }
   if (c.referrer) parts.push(`Referrer contém "${c.referrer}"`);
   if (c.bot) parts.push("Só bots/crawlers");

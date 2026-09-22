@@ -1,5 +1,5 @@
 import { supabaseService } from "@/lib/supabase/service";
-import type { Domain, DomainRoute, Page, PageRef, PageSlug, PageSlugSummary } from "./types";
+import type { Domain, DomainRoute, Folder, Page, PageRef, PageSlug, PageSlugSummary } from "./types";
 
 /**
  * Leituras do schema `pages`, para Server Components.
@@ -91,6 +91,13 @@ export async function listPages(): Promise<PageListItem[]> {
       routes_count: countOf(domain_routes),
     };
   });
+}
+
+/** Todas as pastas (são poucas; a árvore é montada na tela). */
+export async function listFolders(): Promise<Folder[]> {
+  const { data, error } = await supabaseService().from("folders").select("*").order("name");
+  throwIf(error, "listFolders");
+  return (data ?? []) as Folder[];
 }
 
 export type PageWithSlugs = Page & { slugs: PageSlugSummary[] };
