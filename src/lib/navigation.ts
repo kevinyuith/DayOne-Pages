@@ -29,5 +29,8 @@ export const navGroups: NavGroup[] = [
   },
 ];
 
+/** Cookie com o estado do menu lateral: "expanded" ou "collapsed" (padrão). */
+export const SIDEBAR_COOKIE = "sidebar";
+
 /** As seções reais (com rota), para atalhos na tela inicial. */
 export const liveSections: NavItem[] = navGroups[0].items.filter((i) => !i.soon && i.href !== "/");

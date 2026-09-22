@@ -1,4 +1,6 @@
+import { cookies } from "next/headers";
 import { Sidebar } from "@/components/sidebar";
+import { SIDEBAR_COOKIE } from "@/lib/navigation";
 
 /**
  * Todas as telas do painel leem o banco a cada request. Sem isto o Next
@@ -7,13 +9,13 @@ import { Sidebar } from "@/components/sidebar";
  */
 export const dynamic = "force-dynamic";
 
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
+  const collapsed = (await cookies()).get(SIDEBAR_COOKIE)?.value !== "expanded";
+
   return (
     <div className="flex min-h-dvh flex-col md:flex-row">
-      <Sidebar />
-      <main className="flex-1 px-4 py-8 sm:px-8 lg:px-12">
-        <div className="mx-auto w-full max-w-6xl">{children}</div>
-      </main>
+      <Sidebar defaultCollapsed={collapsed} />
+      <main className="min-w-0 flex-1 px-4 py-8 sm:px-6 lg:px-8">{children}</main>
     </div>
   );
 }
