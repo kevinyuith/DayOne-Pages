@@ -215,7 +215,7 @@ export async function recentHits(limit = 20, domainId: string | null = null): Pr
 }
 
 /** Um hit com tudo o que pages.hits guarda (para a tela de Logs). */
-export type HitLogRow = HitRow & { id: number; domain_id: string | null; user_agent: string | null };
+export type HitLogRow = HitRow & { id: number; domain_id: string | null; user_agent: string | null; hostname: string | null };
 
 /**
  * Página de hits, do mais novo para o mais antigo. Paginação por cursor:
@@ -226,7 +226,7 @@ export async function listHits(opts: { domainId?: string | null; beforeId?: numb
   const limit = opts.limit ?? 100;
   let q = supabaseService()
     .from("hits")
-    .select("id, created_at, domain_id, host, path, outcome, status_code, country, device, is_bot, referrer_host, ip, user_agent")
+    .select("id, created_at, domain_id, host, path, outcome, status_code, country, device, is_bot, referrer_host, ip, user_agent, hostname")
     .order("id", { ascending: false })
     .limit(limit + 1);
   if (opts.domainId) q = q.eq("domain_id", opts.domainId);
