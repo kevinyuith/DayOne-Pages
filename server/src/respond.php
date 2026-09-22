@@ -25,10 +25,11 @@ defined('DAYONE_ENTRY') || (http_response_code(404) && exit);
 const PRIVATE_NO_CACHE = 'private, no-cache';
 
 /**
- * Devolve [status, headers, body, outcome]. `outcome` classifica o hit para o
- * registro de tráfego: served | redirect | blocked | bot | notfound | error.
+ * Devolve [status, headers, body, outcome, rota]. `outcome` classifica o hit
+ * para o registro de tráfego: served | redirect | blocked | bot | notfound |
+ * error. `rota` é a que decidiu (null se nenhuma casou), também para o registro.
  *
- * @return array{0: int, 1: array<string,string>, 2: ?string, 3: string}
+ * @return array{0: int, 1: array<string,string>, 2: ?string, 3: string, 4: ?array}
  */
 function decide(array $routes, Request $req): array
 {
@@ -47,23 +48,23 @@ function decide(array $routes, Request $req): array
         switch ($action) {
             case 'SERVE':
                 $r = serve_slug($route, $req);
-                return [$r[0], $r[1], $r[2], serve_outcome($r[0])];
+                return [$r[0], $r[1], $r[2], serve_outcome($r[0]), $route];
             case 'REDIRECT':
                 $r = redirect_to($route, $req);
-                return [$r[0], $r[1], $r[2], 'redirect'];
+                return [$r[0], $r[1], $r[2], 'redirect', $route];
             case 'BLOCK':
                 $r = block($route);
                 $bot = ($route['match_type'] ?? '') === 'BOTGATE' || array_key_exists('bot', $cond);
-                return [$r[0], $r[1], $r[2], $bot ? 'bot' : 'blocked'];
+                return [$r[0], $r[1], $r[2], $bot ? 'bot' : 'blocked', $route];
             default:
                 continue 2;
         }
     }
 
     if ($req->path === '/robots.txt') {
-        return [...robots_default(), 'served'];
+        return [...robots_default(), 'served', null];
     }
-    return [...not_found(), 'notfound'];
+    return [...not_found(), 'notfound', null];
 }
 
 /** Traduz o status de uma rota SERVE em outcome de tráfego. */

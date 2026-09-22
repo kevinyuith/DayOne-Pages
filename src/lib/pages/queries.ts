@@ -215,7 +215,23 @@ export async function recentHits(limit = 20, domainId: string | null = null): Pr
 }
 
 /** Um hit com tudo o que pages.hits guarda (para a tela de Logs). */
-export type HitLogRow = HitRow & { id: number; domain_id: string | null; user_agent: string | null; hostname: string | null };
+export type HitLogRow = HitRow & {
+  id: number;
+  domain_id: string | null;
+  user_agent: string | null;
+  hostname: string | null;
+  asn: number | null;
+  as_name: string | null;
+  cookies: string | null;
+  region: string | null;
+  route_id: string | null;
+  page_id: string | null;
+  slug: string | null;
+  decision: string | null;
+  /** Domínio cadastrado (pages.domains), não o host da request. */
+  domain: string | null;
+  page_name: string | null;
+};
 
 /**
  * Página de hits, do mais novo para o mais antigo. Paginação por cursor:
@@ -224,17 +240,41 @@ export type HitLogRow = HitRow & { id: number; domain_id: string | null; user_ag
  */
 export async function listHits(opts: { domainId?: string | null; beforeId?: number | null; limit?: number } = {}): Promise<{ rows: HitLogRow[]; hasMore: boolean }> {
   const limit = opts.limit ?? 100;
-  let q = supabaseService()
+  const db = supabaseService();
+  let q = db
     .from("hits")
-    .select("id, created_at, domain_id, host, path, outcome, status_code, country, device, is_bot, referrer_host, ip, user_agent, hostname")
+    .select(
+      "id, created_at, domain_id, host, path, outcome, status_code, country, device, is_bot, referrer_host, ip, user_agent, " +
+        "hostname, asn, as_name, cookies, region, route_id, page_id, slug, decision, domains(domain)",
+    )
     .order("id", { ascending: false })
     .limit(limit + 1);
   if (opts.domainId) q = q.eq("domain_id", opts.domainId);
   if (opts.beforeId) q = q.lt("id", opts.beforeId);
   const { data, error } = await q;
   throwIf(error, "listHits");
-  const rows = (data as HitLogRow[] | null) ?? [];
-  return { rows: rows.slice(0, limit), hasMore: rows.length > limit };
+
+  type Raw = Omit<HitLogRow, "domain" | "page_name"> & { domains: { domain: string } | null };
+  const raw = (data as unknown as Raw[] | null) ?? [];
+  const rows = raw.slice(0, limit);
+
+  // page_id não tem FK (a página pode ter sido apagada), então o nome vem numa segunda leitura.
+  const pageIds = [...new Set(rows.map((r) => r.page_id).filter((id): id is string => id !== null))];
+  const pageNames = new Map<string, string>();
+  if (pageIds.length > 0) {
+    const { data: pages, error: pagesError } = await db.from("pages").select("id, name").in("id", pageIds);
+    throwIf(pagesError, "listHits (páginas)");
+    for (const p of (pages as Pick<Page, "id" | "name">[] | null) ?? []) pageNames.set(p.id, p.name);
+  }
+
+  return {
+    rows: rows.map(({ domains, ...r }) => ({
+      ...r,
+      domain: domains?.domain ?? null,
+      page_name: r.page_id ? (pageNames.get(r.page_id) ?? null) : null,
+    })),
+    hasMore: raw.length > limit,
+  };
 }
 
 export async function countOverview(): Promise<Overview> {

@@ -60,7 +60,7 @@ function dayone_handle(): void
         return;
     }
 
-    [$status, $headers, $body, $outcome] = decide($resolved['routes'], $req);
+    [$status, $headers, $body, $outcome, $route] = decide($resolved['routes'], $req);
     if ($cfg['debug_headers']) {
         $headers['X-Cache'] = $resolved['xcache'];
     }
@@ -73,7 +73,7 @@ function dayone_handle(): void
     }
 
     $domainId = $resolved['routes'][0]['domain_id'] ?? null;
-    log_hit($req, $status, $outcome, is_string($domainId) ? $domainId : null);
+    log_hit($req, $status, $outcome, is_string($domainId) ? $domainId : null, $route);
 
     if ($resolved['refresh']) {
         // SWR: atualiza o cache sem ninguém esperando.
