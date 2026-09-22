@@ -2,7 +2,6 @@
 
 import { useActionState, useState } from "react";
 import { RowAction } from "@/components/row-action";
-import { RuleRows } from "@/components/rule-rows";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,10 +11,12 @@ import {
   DEVICE_LABELS,
   LIST_MODES,
   LIST_MODE_LABELS,
+  QUERY_MODES,
+  QUERY_MODE_LABELS,
   conditionsToForm,
   summarizeConditions,
   type ListMode,
-  type RuleRow,
+  type QueryRuleRow,
 } from "@/lib/pages/conditions";
 import type { DomainDetail, PageOption } from "@/lib/pages/queries";
 import { PAGE_KIND_LABELS, PAGE_STATUS_LABELS } from "@/lib/pages/types";
@@ -23,8 +24,8 @@ import { clearFilter, saveFilter, type FilterFormState } from "../actions";
 
 /**
  * O filtro do domínio: uma condição, uma página para quem passa, outra para
- * quem não passa. As dimensões são país, idioma, dispositivo, parâmetros de URL,
- * cookies e referrer — as mesmas das rotas, sem `bot` (bot só bloqueia, e isso é o
+ * quem não passa. As dimensões são país, idioma, dispositivo, parâmetros de URL
+ * e referrer — as mesmas das rotas, sem `bot` (bot só bloqueia, e isso é o
  * interruptor de bots do domínio, não o filtro). País e idioma têm modo
  * permitir-só/bloquear. As regras manuais, quando existem, têm prioridade.
  */
@@ -86,8 +87,7 @@ function FilterForm({
 }) {
   const initial = conditionsToForm(domain.filter);
   const [state, action, pending] = useActionState(saveFilter, INITIAL);
-  const [queryRows, setQueryRows] = useState<RuleRow[]>(initial.query);
-  const [cookieRows, setCookieRows] = useState<RuleRow[]>(initial.cookies);
+  const [queryRows, setQueryRows] = useState<QueryRuleRow[]>(initial.query);
 
   if (state.success) {
     // Salvou: o servidor revalidou a página; volta para a visão de leitura.
@@ -140,26 +140,53 @@ function FilterForm({
           <Field label="Referrer contém" className="md:col-span-2">
             <input name="referrer" defaultValue={initial.referrer} placeholder="facebook.com" className={INPUT_CLASS} disabled={pending} />
           </Field>
-          <RuleRows
-            prefix="query"
-            title="Parâmetros de URL"
-            addLabel="+ parâmetro"
-            emptyHint="Ex.: gclid presente, ou utm_source igual a facebook."
-            keyPlaceholder="gclid"
-            rows={queryRows}
-            onChange={setQueryRows}
-            disabled={pending}
-          />
-          <RuleRows
-            prefix="cookie"
-            title="Cookies"
-            addLabel="+ cookie"
-            emptyHint="Ex.: dop_step presente (visitante que já avançou no funil), ou vip igual a 1."
-            keyPlaceholder="dop_step"
-            rows={cookieRows}
-            onChange={setCookieRows}
-            disabled={pending}
-          />
+          <div className="md:col-span-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-muted">Parâmetros de URL</span>
+              <Button size="sm" variant="ghost" onClick={() => setQueryRows([...queryRows, { key: "", mode: "present", value: "" }])} disabled={pending}>
+                + parâmetro
+              </Button>
+            </div>
+            {queryRows.length === 0 ? <p className="mt-1 text-xs text-muted">Ex.: gclid presente, ou utm_source igual a facebook.</p> : null}
+            <div className="mt-1 flex flex-col gap-2">
+              {queryRows.map((row, i) => (
+                <div key={i} className="grid grid-cols-[1fr_8rem_1fr_auto] gap-2">
+                  <input
+                    name="query_key"
+                    value={row.key}
+                    onChange={(e) => setQueryRows(queryRows.map((r, j) => (j === i ? { ...r, key: e.target.value } : r)))}
+                    placeholder="gclid"
+                    className={`${INPUT_CLASS} h-9 font-mono`}
+                    disabled={pending}
+                  />
+                  <select
+                    name="query_mode"
+                    value={row.mode}
+                    onChange={(e) => setQueryRows(queryRows.map((r, j) => (j === i ? { ...r, mode: e.target.value as QueryRuleRow["mode"] } : r)))}
+                    className={`${SELECT_CLASS} h-9`}
+                    disabled={pending}
+                  >
+                    {QUERY_MODES.map((m) => (
+                      <option key={m} value={m}>
+                        {QUERY_MODE_LABELS[m]}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    name="query_value"
+                    value={row.value}
+                    onChange={(e) => setQueryRows(queryRows.map((r, j) => (j === i ? { ...r, value: e.target.value } : r)))}
+                    placeholder={row.mode === "equals" ? "valor" : "—"}
+                    className={`${INPUT_CLASS} h-9`}
+                    disabled={pending || row.mode !== "equals"}
+                  />
+                  <Button size="sm" variant="ghost" onClick={() => setQueryRows(queryRows.filter((_, j) => j !== i))} disabled={pending}>
+                    ×
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </fieldset>
 

@@ -5,8 +5,7 @@ Administrador de domínios + construtor de páginas, no modelo do hidepages.com.
 - **Dashboard** (este repo, Next.js 16): cadastra domínios, cria páginas com
   várias slugs (HTML editado num editor de código com preview) e define, por
   domínio, **rotas**: qual página responde em cada path, com regras por país,
-  dispositivo, idioma, parâmetros de URL, cookies e referrer, além de
-  redirects e bloqueios.
+  dispositivo, parâmetros de URL e referrer, além de redirects e bloqueios.
 - **Banco**: Supabase, tudo no schema `pages` (`supabase/migrations/`).
 - **Servidor de entrega** (`server/`, PHP): responde por qualquer domínio
   apontado para ele, consulta o banco e cacheia em disco por 5 minutos.
@@ -105,9 +104,7 @@ em `<body data-dop-funnel>`):
 No modo servidor a URL também não muda, e o servidor responde com `ETag`
 por etapa e `Vary: Cookie`; o HTML vem sempre da origem (não ligue cache de
 HTML no Cloudflare para essas slugs). Preview e canvas mostram tudo nos dois
-modos — o corte só acontece no servidor de entrega. As rotas do domínio
-podem usar a condição **Cookies** (`dop_step` presente / igual a `p_xxxx`)
-para, por exemplo, mandar quem já avançou no funil para outra página.
+modos — o corte só acontece no servidor de entrega.
 
 Os painéis Links, Layers e Funil são derivados do HTML atual (`parseHtml`,
 com os mesmos uids que a canvas atribui), então funcionam também no modo

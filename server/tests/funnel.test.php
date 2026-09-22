@@ -90,3 +90,10 @@ check('trigger com $1 escapado no body', $r !== null && str_contains($r['html'],
 
 check('funnel_is_server_mode: sim', funnel_is_server_mode($server));
 check('funnel_is_server_mode: não', !funnel_is_server_mode($browser));
+
+// ── Header Cookie → Request->cookies (o modo servidor lê dop_step daqui) ──
+$withCookie = make_request(['HTTP_COOKIE' => 'dop_step=p_ab12; _ga=GA1.2; seen=1']);
+same('cookie header parseado', ['dop_step' => 'p_ab12', '_ga' => 'GA1.2', 'seen' => '1'], $withCookie->cookies);
+same('cookie header ausente', [], make_request([])->cookies);
+same('cookie decodifica valor', ['k' => 'a b'], parse_cookie_header('k=a%20b'));
+same('cookie repetido: o primeiro vale', ['k' => '1'], parse_cookie_header('k=1; k=2'));
