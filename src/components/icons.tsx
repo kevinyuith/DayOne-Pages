@@ -168,6 +168,29 @@ export function McpIcon(props: IconProps) {
   );
 }
 
+export function LogsIcon(props: IconProps) {
+  return (
+    <svg {...baseProps(props)}>
+      <path d="M9 6h11" />
+      <path d="M9 12h11" />
+      <path d="M9 18h11" />
+      <path d="M4 6h.01" />
+      <path d="M4 12h.01" />
+      <path d="M4 18h.01" />
+    </svg>
+  );
+}
+
+export function FunnelIcon(props: IconProps) {
+  return (
+    <svg {...baseProps(props)}>
+      <path d="M3 5h18" />
+      <path d="M6 12h12" />
+      <path d="M10 19h4" />
+    </svg>
+  );
+}
+
 export function FilterIcon(props: IconProps) {
   return (
     <svg {...baseProps(props)}>
@@ -614,6 +637,15 @@ export function PaletteIcon(props: IconProps) {
       <circle cx="7.5" cy="11" r="1" fill="currentColor" />
       <circle cx="10.5" cy="7" r="1" fill="currentColor" />
       <circle cx="15" cy="7.5" r="1" fill="currentColor" />
+    </svg>
+  );
+}
+
+export function GearIcon(props: IconProps) {
+  return (
+    <svg {...baseProps(props)}>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M12 1v6m0 6v6M4.22 4.22l4.24 4.24m2.12 2.12l4.24 4.24M1 12h6m6 0h6M4.22 19.78l4.24-4.24m2.12-2.12l4.24-4.24M19.78 19.78l-4.24-4.24m-2.12-2.12l-4.24-4.24M19.78 4.22l-4.24 4.24m-2.12 2.12l-4.24 4.24" />
     </svg>
   );
 }

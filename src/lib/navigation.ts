@@ -1,5 +1,5 @@
 import type { ComponentType, SVGProps } from "react";
-import { DashboardIcon, GlobeIcon, PagesIcon } from "@/components/icons";
+import { DashboardIcon, FunnelIcon, GlobeIcon, LogsIcon, PagesIcon, GearIcon } from "@/components/icons";
 
 export type NavItem = {
   href: string;
@@ -22,6 +22,9 @@ export const navGroups: NavGroup[] = [
       { href: "/", label: "Dashboard", description: "Overview of your workspace.", icon: DashboardIcon },
       { href: "/paginas", label: "Pages", description: "Create and edit your pages' HTML.", icon: PagesIcon },
       { href: "/dominios", label: "Domains", description: "Point domains and route each path.", icon: GlobeIcon },
+      { href: "/funil", label: "Funil", description: "Your funnel.", icon: FunnelIcon },
+      { href: "/logs", label: "Logs", description: "Every request, one row each.", icon: LogsIcon },
+      { href: "/configuracoes", label: "Configurações", description: "Bot detection rules and settings.", icon: GearIcon },
     ],
   },
 ];

@@ -1,5 +1,5 @@
 import { supabaseService } from "@/lib/supabase/service";
-import type { Domain, DomainRoute, Folder, Page, PageRef, PageSlug, PageSlugSummary } from "./types";
+import type { DetectionRule, Domain, DomainRoute, Folder, Page, PageRef, PageSlug, PageSlugSummary } from "./types";
 
 /**
  * Leituras do schema `pages`, para Server Components.
@@ -214,6 +214,29 @@ export async function recentHits(limit = 20, domainId: string | null = null): Pr
   return (data as HitRow[] | null) ?? [];
 }
 
+/** Um hit com tudo o que pages.hits guarda (para a tela de Logs). */
+export type HitLogRow = HitRow & { id: number; domain_id: string | null; user_agent: string | null };
+
+/**
+ * Página de hits, do mais novo para o mais antigo. Paginação por cursor:
+ * `beforeId` = id do último da página anterior (o índice por created_at segue
+ * a mesma ordem do id, que é IDENTITY). Pede um a mais para saber se há próxima.
+ */
+export async function listHits(opts: { domainId?: string | null; beforeId?: number | null; limit?: number } = {}): Promise<{ rows: HitLogRow[]; hasMore: boolean }> {
+  const limit = opts.limit ?? 100;
+  let q = supabaseService()
+    .from("hits")
+    .select("id, created_at, domain_id, host, path, outcome, status_code, country, device, is_bot, referrer_host, ip, user_agent")
+    .order("id", { ascending: false })
+    .limit(limit + 1);
+  if (opts.domainId) q = q.eq("domain_id", opts.domainId);
+  if (opts.beforeId) q = q.lt("id", opts.beforeId);
+  const { data, error } = await q;
+  throwIf(error, "listHits");
+  const rows = (data as HitLogRow[] | null) ?? [];
+  return { rows: rows.slice(0, limit), hasMore: rows.length > limit };
+}
+
 export async function countOverview(): Promise<Overview> {
   const db = supabaseService();
   const head = { count: "exact" as const, head: true };
@@ -231,4 +254,17 @@ export async function countOverview(): Promise<Overview> {
     pagesPublished: pp.count ?? 0,
     routes: r.count ?? 0,
   };
+}
+
+// ── Regras de Detecção (bots e suspeitos) ────────────────────────────────────
+
+/** Lista todas as regras de detecção ordenadas por prioridade. */
+export async function listDetectionRules(): Promise<DetectionRule[]> {
+  const { data, error } = await supabaseService()
+    .from("detection_rules")
+    .select("*")
+    .order("priority", { ascending: true })
+    .order("created_at", { ascending: false });
+  throwIf(error, "listDetectionRules");
+  return (data as DetectionRule[] | null) ?? [];
 }
