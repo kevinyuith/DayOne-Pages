@@ -99,6 +99,7 @@ function config(): array
         'debug_headers'     => $int('DEBUG_HEADERS', 1) === 1,
         'log_hits'          => $int('LOG_HITS', 1) === 1,
         'hits_timeout'      => $int('HITS_TIMEOUT', 3),
+        'sub0_key'          => (string) $get('SUB0_KEY', 'DAYONE'),
     ];
     return $config;
 }
@@ -140,5 +141,6 @@ require __DIR__ . '/funnel.php';
 require __DIR__ . '/resolver.php';
 require __DIR__ . '/respond.php';
 require __DIR__ . '/hits.php';
+require __DIR__ . '/sub0.php';
 require __DIR__ . '/handlers.php';
 require __DIR__ . '/app.php';

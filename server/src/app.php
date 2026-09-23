@@ -8,6 +8,7 @@
  *   path longo demais      → 404 (idem)
  *   resolver               → HIT | MISS | STALE | UPDATING | null (503)
  *   decide                 → SERVE | REDIRECT | BLOCK | 404
+ *   página servida em www. → 302 para sem www com sub0 (sub0.php)
  *
  * X-Cache só sai com DEBUG_HEADERS=1. Em HEAD o corpo não vai.
  */
@@ -61,6 +62,12 @@ function dayone_handle(): void
     }
 
     [$status, $headers, $body, $outcome, $route] = decide($resolved['routes'], $req);
+    $www = www_entry_redirect($req, $outcome, $route);
+    if ($www !== null) {
+        [$status, $headers, $body] = $www;
+        $outcome = 'redirect';
+        $route = [...$route, 'action' => 'REDIRECT', 'match_type' => 'WWW'];
+    }
     if ($cfg['debug_headers']) {
         $headers['X-Cache'] = $resolved['xcache'];
     }

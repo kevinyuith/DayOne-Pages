@@ -63,6 +63,43 @@ funcionando, no modo navegador.
 **Ordem de deploy:** o servidor PHP antes do dashboard, para uma slug salva
 em modo servidor já ser cortada por etapa desde a primeira visita.
 
+### Entrada por `www.` (`sub0`)
+
+Uma página que seria servida em `www.x.com` vira um **302** para o domínio sem
+www, com os parâmetros originais. Se a URL traz campanha — `sub1`,
+`utm_campaign` ou `campaign`, com valor — ganha também `sub0` = unix timestamp
+cifrado (`src/sub0.php`):
+
+```
+GET https://www.x.com/oferta?utm_campaign=c1
+→ 302 Location: https://x.com/oferta?utm_campaign=c1&sub0=<token>   (Cache-Control: no-store)
+GET https://www.x.com/oferta?utm_source=fb&sub1=a&sub2=b
+→ 302 Location: https://x.com/oferta?utm_source=fb&sub0=<token>&sub1=a&sub2=b   (sub0 logo antes do sub1)
+GET https://www.x.com/oferta?utm_source=fb
+→ 302 Location: https://x.com/oferta?utm_source=fb                  (sem campanha, sem sub0)
+```
+
+- Só páginas servidas (200/304). Bloqueio, bot, 404, redirect de rota e
+  arquivos (`.js`, `robots.txt`…) seguem normais no próprio www.
+- O `sub0` entra logo antes do primeiro `sub1`; sem `sub1`, no fim da query.
+- Com campanha, um `sub0` que já venha na URL é trocado pelo novo; sem
+  campanha a query segue intacta. O hop é registrado nos Logs como
+  `redirect` com decisão `REDIRECT · WWW`.
+- O vhost do nginx NÃO pode redirecionar `www` por conta própria (bloco
+  `server_name ~^www\.…; return 301`): isso responde antes do PHP e o sub0
+  nunca sai.
+- Token: `base64url(nonce 12 B ‖ cifrado ‖ tag 16 B)`, AES-256-GCM, chave
+  `SHA-256(SUB0_KEY)` (padrão `DAYONE`); texto claro = segundos, ex.
+  `1790000000`. 51 caracteres. Para decifrar em PHP: `sub0_decrypt($token, 'DAYONE')`;
+  em Node:
+
+```js
+const b = Buffer.from(token, "base64url");
+const d = crypto.createDecipheriv("aes-256-gcm", crypto.createHash("sha256").update("DAYONE").digest(), b.subarray(0, 12));
+d.setAuthTag(b.subarray(-16));
+const ts = Number(d.update(b.subarray(12, -16), undefined, "utf8") + d.final("utf8"));
+```
+
 ## Instalação (Ubuntu/Debian)
 
 > **Só para um VPS limpo e dedicado.** Os arquivos de `deploy/` assumem que esta

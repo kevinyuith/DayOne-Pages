@@ -33,5 +33,10 @@ return [
     'STALE_MAX_AGE'     => 604800,   // por quanto tempo a cópia expirada serve se o Supabase cair
 
     'SUPABASE_TIMEOUT'  => 5,
+
+    // Chave do sub0: quem entra por www. vai (302) para o domínio sem www; com
+    // sub1/utm_campaign/campaign na URL, ganha ?sub0=<timestamp cifrado em
+    // AES-256-GCM>. Sem esta linha vale 'DAYONE'.
+    'SUB0_KEY'          => 'DAYONE',
     'DEBUG_HEADERS'     => 1,        // 1 = manda X-Cache (HIT/MISS/STALE). Desligue depois de validar.
 ];
