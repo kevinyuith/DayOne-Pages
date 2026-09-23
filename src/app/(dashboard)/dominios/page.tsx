@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { isIP } from "node:net";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { RowAction } from "@/components/row-action";
@@ -26,7 +27,9 @@ export default async function DominiosPage() {
   // eslint-disable-next-line react-hooks/purity
   const seenSince = new Date(Date.now() - SEEN_DAYS * 24 * 60 * 60 * 1000);
   const [domains, pages, seen] = await Promise.all([listDomains(), listPageOptions(), unregisteredHosts(seenSince)]);
-  const serverIp = process.env.SERVER_IP ?? "";
+  // Só um IP de verdade vai para as instruções; qualquer outro texto na variável cai no aviso "defina SERVER_IP".
+  const envIp = process.env.SERVER_IP?.trim() ?? "";
+  const serverIp = isIP(envIp) ? envIp : "";
 
   return (
     <>
