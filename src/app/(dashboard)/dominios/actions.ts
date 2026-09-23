@@ -345,6 +345,8 @@ export async function saveRoute(prev: RouteFormState, fd: FormData): Promise<Rou
     const { data, error } = await query;
     if (error) {
       if (error.code === UNIQUE_VIOLATION) return { error: `Já existe uma rota com prioridade ${priority} neste domínio.`, attempt };
+      // Regex que o JS aceita e o Postgres (POSIX) recusa: o trigger devolve check_violation citando path_pattern.
+      if (error.code === "23514" && error.message.includes("path_pattern")) return { error: "Regex inválida para o banco (POSIX).", attempt };
       throw new Error(error.message);
     }
     if (!data) return { error: "Rota não encontrada.", attempt };
