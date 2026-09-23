@@ -79,9 +79,12 @@ same('redirect 302', 302, $status);
 same('redirect mantém query', 'https://x.test/y?z=1&go=1&utm=2', $headers['Location']);
 [$status] = decide($routes, $desktop);
 same('fallback com slug_id nulo → 404', 404, $status);
-[$status, $headers, $body] = decide([], make_request(['REQUEST_URI' => '/robots.txt']));
+[$status, $headers, $body] = decide([$routes[2]], make_request(['REQUEST_URI' => '/robots.txt']));
 same('robots.txt padrão', 200, $status);
 check('robots.txt corpo', str_contains((string) $body, 'User-agent'));
+// Sem rota nenhuma = domínio pausado/desconhecido: 404 em tudo, até robots.txt.
+same('domínio sem rotas: robots.txt 404', 404, decide([], make_request(['REQUEST_URI' => '/robots.txt']))[0]);
+same('domínio sem rotas: / 404', 404, decide([], make_request(['REQUEST_URI' => '/']))[0]);
 
 // Bot gate do domínio (block_bots): BLOCK 403 no topo, só casa bot; humano segue.
 $gate = [

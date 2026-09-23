@@ -17,6 +17,8 @@
  * para barrar, nunca para trocar o conteúdo.
  *
  * Nenhuma casou: robots.txt tem uma resposta padrão; o resto é 404.
+ * Sem rota nenhuma (domínio pausado ou desconhecido): 404 em tudo, até no
+ * robots.txt — domínio fora do ar não responde nada.
  */
 declare(strict_types=1);
 
@@ -61,7 +63,7 @@ function decide(array $routes, Request $req): array
         }
     }
 
-    if ($req->path === '/robots.txt') {
+    if ($routes !== [] && $req->path === '/robots.txt') {
         return [...robots_default(), 'served', null];
     }
     return [...not_found(), 'notfound', null];
