@@ -1,10 +1,12 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { DASHBOARD_TZ } from "@/lib/pages/dashboard-filters";
 import type { HitBucket } from "@/lib/pages/queries";
 
 /**
- * Traffic Overview: uma linha por série (Served/Blocked/Bots) ao longo do dia.
+ * Traffic Overview: uma linha por série (Served/Blocked/Bots) ao longo do
+ * período (buckets por hora em Today/24h, por dia em 7/30 dias).
  * Cores validadas (scripts/validate_palette.js da skill dataviz) para dark e
  * light — verde/vermelho/violeta passam faixa de luminosidade, CVD, visão
  * normal e contraste. Identidade vem da legenda (sempre presente) + hover, não
@@ -32,8 +34,19 @@ function niceCeil(v: number): number {
 }
 
 const fmt = new Intl.NumberFormat("en-US");
+// Fuso fixo: os buckets diários são meia-noite de DASHBOARD_TZ, e o SSR não depende do fuso do servidor.
+const hourFmt = new Intl.DateTimeFormat("en-US", { hour: "numeric", hourCycle: "h23", timeZone: DASHBOARD_TZ });
+const dayFmt = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: DASHBOARD_TZ });
 
-export function TrafficChart({ buckets }: { buckets: HitBucket[] }) {
+export function TrafficChart({
+  buckets,
+  granularity = "hour",
+  periodLabel = "Last 24 hours",
+}: {
+  buckets: HitBucket[];
+  granularity?: "hour" | "day";
+  periodLabel?: string;
+}) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [hover, setHover] = useState<number | null>(null);
 
@@ -47,10 +60,11 @@ export function TrafficChart({ buckets }: { buckets: HitBucket[] }) {
     buckets.map((b, i) => `${i === 0 ? "M" : "L"} ${xFor(i).toFixed(1)} ${yFor(b[key]).toFixed(1)}`).join(" ");
 
   const gridVals = [0, 0.25, 0.5, 0.75, 1].map((f) => Math.round(maxY * f));
-  const labelHour = (iso: string) => {
-    const d = new Date(iso);
-    return `${d.getHours()}h`;
-  };
+  const step = Math.ceil(n / 8);
+  // Number() tira o zero à esquerda ("03" → 3h), como era com getHours().
+  const hourOf = (iso: string) => `${Number(hourFmt.format(new Date(iso)))}h`;
+  const labelAxis = (iso: string) => (granularity === "day" ? dayFmt.format(new Date(iso)) : hourOf(iso));
+  const labelTip = (iso: string) => (granularity === "day" ? dayFmt.format(new Date(iso)) : `${dayFmt.format(new Date(iso))} · ${hourOf(iso)}`);
 
   const onMove = (e: React.MouseEvent) => {
     const svg = svgRef.current;
@@ -66,7 +80,7 @@ export function TrafficChart({ buckets }: { buckets: HitBucket[] }) {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-base font-semibold">Traffic Overview</h2>
-          <p className="mt-0.5 text-sm text-muted">Requests over time · last 24h</p>
+          <p className="mt-0.5 text-sm text-muted">Requests over time · {periodLabel.toLowerCase()}</p>
         </div>
         <div className="flex items-center gap-4">
           {SERIES.map((s) => (
@@ -80,7 +94,7 @@ export function TrafficChart({ buckets }: { buckets: HitBucket[] }) {
 
       {total === 0 ? (
         <div className="mt-5 flex h-56 flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border text-center">
-          <p className="text-sm font-medium">No traffic in the last 24h</p>
+          <p className="text-sm font-medium">No traffic · {periodLabel.toLowerCase()}</p>
           <p className="max-w-sm text-xs text-muted">Requests appear here as the delivery server logs them.</p>
         </div>
       ) : (
@@ -108,9 +122,10 @@ export function TrafficChart({ buckets }: { buckets: HitBucket[] }) {
             })}
 
             {buckets.map((b, i) =>
-              i % Math.ceil(n / 8) === 0 || i === n - 1 ? (
-                <text key={i} x={xFor(i)} y={H - 8} textAnchor="middle" className="fill-muted" style={{ fontSize: 11 }}>
-                  {labelHour(b.bucket)}
+              // Um rótulo a cada `step`, mais o último; o anterior some se ficar colado nele.
+              (i % step === 0 && n - 1 - i >= step / 2) || i === n - 1 ? (
+                <text key={i} x={xFor(i)} y={H - 8} textAnchor={i === n - 1 && n > 1 ? "end" : "middle"} className="fill-muted" style={{ fontSize: 11 }}>
+                  {labelAxis(b.bucket)}
                 </text>
               ) : null,
             )}
@@ -134,7 +149,7 @@ export function TrafficChart({ buckets }: { buckets: HitBucket[] }) {
               className="pointer-events-none absolute top-2 rounded-lg border border-border bg-surface px-3 py-2 text-xs shadow-lg"
               style={{ left: `${(xFor(hover) / W) * 100}%`, transform: `translateX(${hover > n / 2 ? "-110%" : "12px"})` }}
             >
-              <p className="mb-1 font-medium">{labelHour(buckets[hover].bucket)}</p>
+              <p className="mb-1 font-medium">{labelTip(buckets[hover].bucket)}</p>
               {SERIES.map((s) => (
                 <p key={s.key} className="flex items-center gap-1.5 tabular-nums text-muted">
                   <span className="size-2 rounded-full" style={{ background: s.color }} />

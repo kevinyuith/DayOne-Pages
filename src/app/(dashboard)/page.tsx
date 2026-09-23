@@ -6,35 +6,53 @@ import { FounderBadge } from "@/components/dashboard/founder-badge";
 import { StatCard, type StatTone } from "@/components/dashboard/stat-card";
 import { TrafficChart } from "@/components/dashboard/traffic-chart";
 import { AccountIcon, BotIcon, GlobeIcon, PagesIcon, ShieldCheckIcon, ShieldXIcon } from "@/components/icons";
-import { countOverview, hitStats, hitTimeseries, listDomains, recentHits } from "@/lib/pages/queries";
+import { activeFilterCount, parseDashboardFilters, resolveRange } from "@/lib/pages/dashboard-filters";
+import { countOverview, hitCountries, hitStats, hitTimeseries, listDomains, recentHits, type HitFilter } from "@/lib/pages/queries";
 
 const num = new Intl.NumberFormat("en-US");
-const dateFmt = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" });
 const pct = (part: number, total: number) => (total > 0 ? `${Math.round((part / total) * 100)}% of total` : "—");
 
-export default async function DashboardPage() {
+/**
+ * Filtros na URL (ver dashboard-filters.ts): período, domínio, resultado,
+ * dispositivo, país e bots. Cards, gráfico e Access Logs seguem todos eles;
+ * o "Quick access" é cadastro, não tráfego, e não muda.
+ */
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}) {
   // Server Component dinâmico (a rota é force-dynamic): ler o relógio por request é intencional.
   // eslint-disable-next-line react-hooks/purity
   const nowMs = Date.now();
-  const now = new Date(nowMs);
-  const since = new Date(nowMs - 24 * 60 * 60 * 1000);
-  const [counts, domains, stats, series, hits] = await Promise.all([
+  const [sp, domains] = await Promise.all([searchParams, listDomains()]);
+  const filters = parseDashboardFilters(sp, domains.map((d) => d.id));
+  const range = resolveRange(filters.range, nowMs);
+  const hitFilter: HitFilter = {
+    domainId: filters.domain,
+    outcomes: filters.outcomes,
+    devices: filters.devices,
+    countries: filters.countries,
+    hideBots: filters.hideBots,
+  };
+  const [counts, stats, series, hits, countries] = await Promise.all([
     countOverview(),
-    listDomains(),
-    hitStats(since),
-    hitTimeseries(since, 60),
-    recentHits(20),
+    hitStats(range.since, hitFilter),
+    hitTimeseries(range.since, range.bucketMinutes, range.origin, hitFilter),
+    recentHits(20, range.since, hitFilter),
+    hitCountries(range.since, filters.domain),
   ]);
 
   const attentionCount = domains.filter((d) => d.status === "ACTIVE" && d.last_check_ok !== true).length;
-  const domainNames = domains.map((d) => d.domain);
+  const domainOptions = domains.map((d) => ({ id: d.id, domain: d.domain }));
+  const filtered = activeFilterCount(filters) > 0;
 
-  // Os 5 cards, adaptados ao DayOne (sem "Gray Page"/cloaking), agora com dado real (24h).
+  // Os 5 cards, adaptados ao DayOne (sem "Gray Page"/cloaking), com dado real do período filtrado.
   const cards: { label: string; value: number; detail: string; icon: typeof GlobeIcon; tone: StatTone }[] = [
-    { label: "Total Requests", value: stats.total, detail: "last 24h", icon: GlobeIcon, tone: "blue" },
+    { label: "Total Requests", value: stats.total, detail: range.label.toLowerCase(), icon: GlobeIcon, tone: "blue" },
     { label: "Served", value: stats.served, detail: pct(stats.served, stats.total), icon: ShieldCheckIcon, tone: "green" },
     { label: "Blocked", value: stats.blocked, detail: pct(stats.blocked, stats.total), icon: ShieldXIcon, tone: "red" },
-    { label: "Unique Visitors", value: stats.uniques, detail: "by IP · 24h", icon: AccountIcon, tone: "amber" },
+    { label: "Unique Visitors", value: stats.uniques, detail: `by IP · ${range.short}`, icon: AccountIcon, tone: "amber" },
     { label: "Bots", value: stats.bots, detail: pct(stats.bots, stats.total), icon: BotIcon, tone: "purple" },
   ];
 
@@ -58,7 +76,7 @@ export default async function DashboardPage() {
         <FounderBadge />
       </header>
 
-      <DashboardControls dateLabel={dateFmt.format(now)} domains={domainNames} />
+      <DashboardControls filters={filters} domains={domainOptions} countries={countries} />
 
       <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         {cards.map((c) => (
@@ -67,11 +85,11 @@ export default async function DashboardPage() {
       </div>
 
       <div className="mb-6">
-        <TrafficChart buckets={series} />
+        <TrafficChart buckets={series} granularity={range.granularity} periodLabel={range.label} />
       </div>
 
       <div className="mb-8">
-        <AccessLogs hits={hits} />
+        <AccessLogs hits={hits} filtered={filtered || filters.domain !== null} showDate={filters.range !== "today"} />
       </div>
 
       <section>

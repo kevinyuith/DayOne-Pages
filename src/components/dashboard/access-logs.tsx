@@ -1,4 +1,5 @@
 import { Badge } from "@/components/ui/badge";
+import { DASHBOARD_TZ } from "@/lib/pages/dashboard-filters";
 import type { HitRow } from "@/lib/pages/queries";
 
 /** Rótulo + tom do resultado de um hit. */
@@ -12,10 +13,14 @@ export const OUTCOME_BADGE: Record<string, { label: string; tone: "success" | "i
   other: { label: "Other", tone: "neutral" },
 };
 
-const timeFmt = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+const timeFmt = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false, timeZone: DASHBOARD_TZ });
+const dayFmt = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: DASHBOARD_TZ });
 
-/** Os últimos requests servidos. Sem dado, mostra um estado vazio honesto. */
-export function AccessLogs({ hits }: { hits: HitRow[] }) {
+/**
+ * Os últimos requests servidos. Sem dado, mostra um estado vazio honesto (e diz
+ * se é o filtro). `showDate` põe o dia antes da hora (períodos de mais de um dia).
+ */
+export function AccessLogs({ hits, filtered = false, showDate = false }: { hits: HitRow[]; filtered?: boolean; showDate?: boolean }) {
   return (
     <section className="rounded-xl border border-border bg-surface p-5">
       <h2 className="text-base font-semibold">Access Logs</h2>
@@ -23,8 +28,10 @@ export function AccessLogs({ hits }: { hits: HitRow[] }) {
 
       {hits.length === 0 ? (
         <div className="mt-5 flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border py-12 text-center">
-          <p className="text-sm font-medium">No activity yet</p>
-          <p className="max-w-sm text-xs text-muted">Requests show up here as the delivery server logs them.</p>
+          <p className="text-sm font-medium">{filtered ? "No matching requests" : "No activity yet"}</p>
+          <p className="max-w-sm text-xs text-muted">
+            {filtered ? "Nothing in this period matches the current filters." : "Requests show up here as the delivery server logs them."}
+          </p>
         </div>
       ) : (
         <div className="mt-4 overflow-x-auto">
@@ -44,7 +51,10 @@ export function AccessLogs({ hits }: { hits: HitRow[] }) {
                 const o = OUTCOME_BADGE[h.outcome] ?? OUTCOME_BADGE.other;
                 return (
                   <tr key={i} className="border-b border-border/60 last:border-0">
-                    <td className="py-2 pr-3 tabular-nums text-muted">{timeFmt.format(new Date(h.created_at))}</td>
+                    <td className="whitespace-nowrap py-2 pr-3 tabular-nums text-muted">
+                      {showDate ? `${dayFmt.format(new Date(h.created_at))} ` : null}
+                      {timeFmt.format(new Date(h.created_at))}
+                    </td>
                     <td className="py-2 pr-3">
                       <span className="font-mono text-xs">{h.host}</span>
                       <span className="font-mono text-xs text-muted">{h.path}</span>

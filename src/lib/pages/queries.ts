@@ -183,20 +183,40 @@ export type HitRow = {
 
 const n = (v: unknown) => Number(v ?? 0);
 
+/** Filtros das leituras do dashboard. Lista vazia = sem filtro. */
+export type HitFilter = {
+  domainId?: string | null;
+  outcomes?: string[];
+  devices?: string[];
+  countries?: string[];
+  hideBots?: boolean;
+};
+
+function filterArgs(f: HitFilter) {
+  return {
+    p_domain: f.domainId ?? null,
+    p_outcomes: f.outcomes?.length ? f.outcomes : null,
+    p_devices: f.devices?.length ? f.devices : null,
+    p_countries: f.countries?.length ? f.countries : null,
+    p_hide_bots: f.hideBots ?? false,
+  };
+}
+
 /** Contadores do período (para os cards). */
-export async function hitStats(since: Date, domainId: string | null = null): Promise<HitStats> {
-  const { data, error } = await supabaseService().rpc("hit_stats", { p_since: since.toISOString(), p_domain: domainId });
+export async function hitStats(since: Date, filter: HitFilter = {}): Promise<HitStats> {
+  const { data, error } = await supabaseService().rpc("hit_stats", { p_since: since.toISOString(), ...filterArgs(filter) });
   throwIf(error, "hitStats");
   const r = (data as Record<string, unknown>[] | null)?.[0];
   return { total: n(r?.total), served: n(r?.served), blocked: n(r?.blocked), bots: n(r?.bots), uniques: n(r?.uniques) };
 }
 
-/** Série por bucket (para o gráfico), já sem buracos. */
-export async function hitTimeseries(since: Date, bucketMinutes: number, domainId: string | null = null): Promise<HitBucket[]> {
+/** Série por bucket (para o gráfico), já sem buracos. `origin` alinha os buckets (ex.: meia-noite local). */
+export async function hitTimeseries(since: Date, bucketMinutes: number, origin: Date | null = null, filter: HitFilter = {}): Promise<HitBucket[]> {
   const { data, error } = await supabaseService().rpc("hit_timeseries", {
     p_since: since.toISOString(),
     p_bucket: `${bucketMinutes} minutes`,
-    p_domain: domainId,
+    p_origin: origin?.toISOString() ?? null,
+    ...filterArgs(filter),
   });
   throwIf(error, "hitTimeseries");
   return (data as Record<string, unknown>[] | null ?? []).map((r) => ({
@@ -207,11 +227,22 @@ export async function hitTimeseries(since: Date, bucketMinutes: number, domainId
   }));
 }
 
-/** Últimos N hits (para os Access Logs). */
-export async function recentHits(limit = 20, domainId: string | null = null): Promise<HitRow[]> {
-  const { data, error } = await supabaseService().rpc("recent_hits", { p_limit: limit, p_domain: domainId });
+/** Últimos N hits (para os Access Logs), desde `since` quando dado. */
+export async function recentHits(limit = 20, since: Date | null = null, filter: HitFilter = {}): Promise<HitRow[]> {
+  const { data, error } = await supabaseService().rpc("recent_hits", {
+    p_limit: limit,
+    p_since: since?.toISOString() ?? null,
+    ...filterArgs(filter),
+  });
   throwIf(error, "recentHits");
   return (data as HitRow[] | null) ?? [];
+}
+
+/** Países com hit no período (para o filtro de país), do mais frequente ao menos. */
+export async function hitCountries(since: Date, domainId: string | null = null): Promise<{ country: string; hits: number }[]> {
+  const { data, error } = await supabaseService().rpc("hit_countries", { p_since: since.toISOString(), p_domain: domainId });
+  throwIf(error, "hitCountries");
+  return ((data as Record<string, unknown>[] | null) ?? []).map((r) => ({ country: String(r.country), hits: n(r.hits) }));
 }
 
 /** Um hit com tudo o que pages.hits guarda (para a tela de Logs). */
