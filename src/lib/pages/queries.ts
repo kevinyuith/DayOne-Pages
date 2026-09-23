@@ -245,6 +245,24 @@ export async function hitCountries(since: Date, domainId: string | null = null):
   return ((data as Record<string, unknown>[] | null) ?? []).map((r) => ({ country: String(r.country), hits: n(r.hits) }));
 }
 
+export type UnregisteredHost = { domain: string; hits: number; bots: number; last_seen: string };
+
+/**
+ * Hosts que chegaram ao servidor (pages.hits) e não estão cadastrados, já
+ * normalizados como pages.domains (sem www.), do visto mais recente ao mais
+ * antigo. `since` null = todo o histórico. Regras em pages.unregistered_hosts.
+ */
+export async function unregisteredHosts(since: Date | null = null): Promise<UnregisteredHost[]> {
+  const { data, error } = await supabaseService().rpc("unregistered_hosts", { p_since: since?.toISOString() ?? null });
+  throwIf(error, "unregisteredHosts");
+  return ((data as Record<string, unknown>[] | null) ?? []).map((r) => ({
+    domain: String(r.domain),
+    hits: n(r.hits),
+    bots: n(r.bots),
+    last_seen: String(r.last_seen),
+  }));
+}
+
 /** Um hit com tudo o que pages.hits guarda (para a tela de Logs). */
 export type HitLogRow = HitRow & {
   id: number;

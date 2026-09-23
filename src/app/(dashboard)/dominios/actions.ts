@@ -70,6 +70,35 @@ export async function addDomain(prev: DomainFormState, fd: FormData): Promise<Do
   return { success: `${domain} cadastrado. Aponte o DNS e clique em Verificar.`, attempt };
 }
 
+/**
+ * Cadastra um host que apareceu nos logs sem cadastro (lista em /dominios e
+ * coluna Domínio dos Logs). Mesmo insert do formulário: ACTIVE, página padrão
+ * escolhida depois. Em seguida liga os hits antigos daquele host (com e sem
+ * www.) ao domínio novo, para os Logs e o dashboard contarem o histórico dele.
+ */
+export async function registerSeenDomain(host: string): Promise<ActionResult> {
+  const domain = normalizeHost(host);
+  if (!isValidDomain(domain)) return fail(`${domain || host} não é um domínio válido.`);
+
+  const db = supabaseService();
+  try {
+    const { data, error } = await db.from("domains").insert({ domain, status: "ACTIVE" }).select("id").single();
+    if (error) {
+      if (error.code === UNIQUE_VIOLATION) return fail(`${domain} já está cadastrado.`);
+      throw new Error(error.message);
+    }
+    const id = (data as { id: string }).id;
+
+    const { error: hitsError } = await db.from("hits").update({ domain_id: id }).is("domain_id", null).in("host", [domain, `www.${domain}`]);
+    revalidateDomain();
+    revalidatePath("/logs");
+    if (hitsError) return fail(`${domain} cadastrado, mas os hits antigos não foram ligados a ele (${hitsError.message}).`);
+    return { ok: true };
+  } catch (cause) {
+    return fail(errorReason(cause));
+  }
+}
+
 export type VerifyResult = ActionResult<{ healthy: boolean; via?: "cloudflare" | "direct"; error?: string }>;
 
 export async function verifyDomain(id: string): Promise<VerifyResult> {

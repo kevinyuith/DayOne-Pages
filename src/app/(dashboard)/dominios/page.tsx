@@ -5,9 +5,9 @@ import { PageHeader } from "@/components/page-header";
 import { RowAction } from "@/components/row-action";
 import { Badge, DOMAIN_STATUS_TONE } from "@/components/ui/badge";
 import { Table, Td, Th, Tr } from "@/components/ui/table";
-import { listDomains, listPageOptions } from "@/lib/pages/queries";
+import { listDomains, listPageOptions, unregisteredHosts } from "@/lib/pages/queries";
 import { DOMAIN_STATUS_LABELS, PAGE_KIND_LABELS } from "@/lib/pages/types";
-import { removeDomain, setDomainStatus, verifyDomain } from "./actions";
+import { registerSeenDomain, removeDomain, setDomainStatus, verifyDomain } from "./actions";
 import { DnsInstructions } from "./dns-instructions";
 import { DomainForm } from "./domain-form";
 
@@ -17,8 +17,14 @@ export const metadata: Metadata = {
 
 const dateFmt = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" });
 
+/** Janela da lista "Vistos nos logs, sem cadastro". */
+const SEEN_DAYS = 30;
+
 export default async function DominiosPage() {
-  const [domains, pages] = await Promise.all([listDomains(), listPageOptions()]);
+  // Server Component dinâmico (a rota é force-dynamic): ler o relógio por request é intencional.
+  // eslint-disable-next-line react-hooks/purity
+  const seenSince = new Date(Date.now() - SEEN_DAYS * 24 * 60 * 60 * 1000);
+  const [domains, pages, seen] = await Promise.all([listDomains(), listPageOptions(), unregisteredHosts(seenSince)]);
   const serverIp = process.env.SERVER_IP ?? "";
 
   return (
@@ -33,6 +39,30 @@ export default async function DominiosPage() {
         </section>
         <DnsInstructions serverIp={serverIp} />
       </div>
+
+      {seen.length > 0 ? (
+        <section className="mb-8 rounded-xl border border-border bg-surface p-5">
+          <h2 className="text-sm font-semibold">Vistos nos logs, sem cadastro</h2>
+          <p className="mt-1 text-xs text-muted">
+            Hosts que chegaram ao servidor nos últimos {SEEN_DAYS} dias e não estão cadastrados (recebem 404). Cadastre os seus; os de
+            terceiros (robôs testando o IP) podem ser ignorados.
+          </p>
+          <ul className="mt-3 divide-y divide-border/60">
+            {seen.map((h) => (
+              <li key={h.domain} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 py-2">
+                <div className="min-w-0">
+                  <p className="break-all font-mono text-sm">{h.domain}</p>
+                  <p className="text-xs text-muted">
+                    {h.hits} {h.hits === 1 ? "hit" : "hits"}
+                    {h.bots > 0 ? ` (${h.bots} de robô)` : ""} · último em {dateFmt.format(new Date(h.last_seen))}
+                  </p>
+                </div>
+                <RowAction action={registerSeenDomain.bind(null, h.domain)} label="Cadastrar" pendingLabel="Cadastrando…" />
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       {domains.length === 0 ? (
         <EmptyState title="Nenhum domínio cadastrado" description="Cadastre o primeiro domínio acima." />

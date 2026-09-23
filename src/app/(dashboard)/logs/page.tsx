@@ -4,12 +4,15 @@ import { OUTCOME_BADGE } from "@/components/dashboard/access-logs";
 import { EmptyState } from "@/components/empty-state";
 import { ChevronDownIcon } from "@/components/icons";
 import { PageHeader } from "@/components/page-header";
+import { RowAction } from "@/components/row-action";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, Td, Th, Tr } from "@/components/ui/table";
 import { connectionType } from "@/lib/connection";
 import { browserFromUA, osFromUA } from "@/lib/user-agent";
-import { listDomains, listHits } from "@/lib/pages/queries";
+import { normalizeHost } from "@/lib/pages/normalize";
+import { listDomains, listHits, unregisteredHosts } from "@/lib/pages/queries";
+import { registerSeenDomain } from "../dominios/actions";
 
 export const metadata: Metadata = {
   title: "Logs",
@@ -23,7 +26,8 @@ const loadFmt = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 1, maxim
 /**
  * Cada request registrado em pages.hits, com todas as colunas, do mais novo
  * para o mais antigo. Filtro por domínio (?domain=<id>, form GET, sem JS) e
- * paginação por cursor (?before=<id>).
+ * paginação por cursor (?before=<id>). Host sem cadastro ganha um botão para
+ * cadastrá-lo ali mesmo.
  */
 export default async function LogsPage({
   searchParams,
@@ -34,7 +38,12 @@ export default async function LogsPage({
   const domains = await listDomains();
   const selected = typeof domain === "string" && domains.some((d) => d.id === domain) ? domain : null;
   const beforeId = typeof before === "string" && /^\d+$/.test(before) ? Number(before) : null;
-  const { rows: hits, hasMore } = await listHits({ domainId: selected, beforeId, limit: PAGE_SIZE });
+  const [{ rows: hits, hasMore }, unregistered] = await Promise.all([
+    listHits({ domainId: selected, beforeId, limit: PAGE_SIZE }),
+    unregisteredHosts(),
+  ]);
+  // Hosts sem cadastro que dá para cadastrar daqui (as regras de "tem cara de domínio" ficam no SQL).
+  const registrable = new Set(unregistered.map((u) => u.domain));
 
   const pageHref = (cursor: number | null) => {
     const qs = new URLSearchParams();
@@ -125,7 +134,21 @@ export default async function LogsPage({
                       "—"
                     )}
                   </Td>
-                  <Td className="max-w-[220px] break-all font-mono text-xs text-muted">{h.domain || "—"}</Td>
+                  <Td className="min-w-[160px] max-w-[220px] break-all font-mono text-xs text-muted">
+                    {h.domain ? (
+                      h.domain
+                    ) : registrable.has(normalizeHost(h.host)) ? (
+                      <span className="flex flex-col items-start gap-1">
+                        <span className="text-foreground">{normalizeHost(h.host)}</span>
+                        <span className="font-sans text-[11px] text-amber-600 dark:text-amber-400">não cadastrado</span>
+                        <span className="break-normal font-sans">
+                          <RowAction action={registerSeenDomain.bind(null, h.host)} label="Cadastrar" pendingLabel="Cadastrando…" />
+                        </span>
+                      </span>
+                    ) : (
+                      "—"
+                    )}
+                  </Td>
                   <Td className="min-w-[120px] max-w-[220px] text-xs text-muted">
                     {h.slug ? (
                       <>
