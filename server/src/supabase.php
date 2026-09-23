@@ -76,6 +76,18 @@ function supabase_resolve(string $host, string $path): array
  */
 function supabase_log_hit(array $params): void
 {
+    supabase_fire('log_hit', $params);
+}
+
+/** Grava o aviso de carregamento de uma visita (beacon.php). Mesmas regras de supabase_log_hit. */
+function supabase_log_load(string $visitId, ?int $loadMs): void
+{
+    supabase_fire('log_load', ['p_visit_id' => $visitId, 'p_load_ms' => $loadMs]);
+}
+
+/** POST numa RPC de registro (pages.<fn>) com p_key; resposta ignorada, falha só no log. */
+function supabase_fire(string $fn, array $params): void
+{
     $cfg = config();
     if ($cfg['supabase_url'] === '' || $cfg['supabase_anon_key'] === '' || $cfg['server_key'] === '') {
         return;
@@ -86,7 +98,7 @@ function supabase_log_hit(array $params): void
         return;
     }
 
-    $ch = curl_init($cfg['supabase_url'] . '/rest/v1/rpc/log_hit');
+    $ch = curl_init($cfg['supabase_url'] . '/rest/v1/rpc/' . $fn);
     curl_setopt_array($ch, [
         CURLOPT_POST => true,
         CURLOPT_POSTFIELDS => $body,
@@ -104,6 +116,6 @@ function supabase_log_hit(array $params): void
     $raw = curl_exec($ch);
     $status = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
     if ($raw === false || ($status !== 200 && $status !== 204)) {
-        error_log("[dayone-pages] log_hit falhou (HTTP $status)");
+        error_log("[dayone-pages] $fn falhou (HTTP $status)");
     }
 }

@@ -3,12 +3,14 @@
  * O fluxo de uma request, de ponta a ponta.
  *
  *   /_health, /_purge      → handlers internos
+ *   /_dop/l                → aviso de carregamento do navegador (beacon.php)
  *   método ∉ {GET, HEAD}   → 405
  *   host inválido          → 404 (sem cache, sem Supabase)
  *   path longo demais      → 404 (idem)
  *   resolver               → HIT | MISS | STALE | UPDATING | null (503)
  *   decide                 → SERVE | REDIRECT | BLOCK | 404
  *   página servida em www. → 302 para sem www com sub0 (sub0.php)
+ *   página HTML servida    → cookie dop_v + script do aviso de carregamento
  *
  * X-Cache só sai com DEBUG_HEADERS=1. Em HEAD o corpo não vai.
  */
@@ -24,6 +26,17 @@ function dayone_handle(): void
     if ($req->rawPath === '/_health') {
         [$status, $headers, $body] = handle_health($req);
         send_response($status, $headers, $body, $req->isHead());
+        return;
+    }
+    if ($req->rawPath === BEACON_PATH) {
+        [$status, $headers, $body, $visitId, $loadMs] = handle_beacon($req, (string) file_get_contents('php://input', false, null, 0, 256));
+        send_response($status, $headers, $body, false);
+        if ($visitId !== null) {
+            if (function_exists('fastcgi_finish_request')) {
+                fastcgi_finish_request();
+            }
+            supabase_log_load($visitId, $loadMs);
+        }
         return;
     }
     if ($req->rawPath === '/_purge') {
@@ -68,6 +81,12 @@ function dayone_handle(): void
         $outcome = 'redirect';
         $route = [...$route, 'action' => 'REDIRECT', 'match_type' => 'WWW'];
     }
+    // Página servida: id de visita no cookie, para o aviso de carregamento (beacon.php).
+    $visitId = null;
+    if ($outcome === 'served' && $route !== null && beacon_applies($route, $req)) {
+        $visitId = beacon_new_visit_id();
+        $headers['Set-Cookie'] = beacon_cookie($visitId);
+    }
     if ($cfg['debug_headers']) {
         $headers['X-Cache'] = $resolved['xcache'];
     }
@@ -80,7 +99,7 @@ function dayone_handle(): void
     }
 
     $domainId = $resolved['routes'][0]['domain_id'] ?? null;
-    log_hit($req, $status, $outcome, is_string($domainId) ? $domainId : null, $route, $headers['Location'] ?? null);
+    log_hit($req, $status, $outcome, is_string($domainId) ? $domainId : null, $route, $headers['Location'] ?? null, $visitId);
 
     if ($resolved['refresh']) {
         // SWR: atualiza o cache sem ninguém esperando.

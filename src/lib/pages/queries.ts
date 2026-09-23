@@ -232,9 +232,13 @@ export type HitLogRow = HitRow & {
   query: string | null;
   /** Location devolvido quando o hit foi redirect (a URL final). */
   redirect_url: string | null;
+  /** Id da visita (cookie dop_v) quando a resposta foi página HTML com o aviso de carregamento. */
+  visit_id: string | null;
   /** Domínio cadastrado (pages.domains), não o host da request. */
   domain: string | null;
   page_name: string | null;
+  /** Aviso do navegador de que a página carregou (pages.hit_loads); null se não veio. */
+  load: { loaded_at: string; load_ms: number | null } | null;
 };
 
 /**
@@ -249,7 +253,7 @@ export async function listHits(opts: { domainId?: string | null; beforeId?: numb
     .from("hits")
     .select(
       "id, created_at, domain_id, host, path, outcome, status_code, country, device, is_bot, referrer_host, ip, user_agent, " +
-        "hostname, asn, as_name, cookies, region, route_id, page_id, slug, decision, query, redirect_url, domains(domain)",
+        "hostname, asn, as_name, cookies, region, route_id, page_id, slug, decision, query, redirect_url, visit_id, domains(domain)",
     )
     .order("id", { ascending: false })
     .limit(limit + 1);
@@ -258,7 +262,7 @@ export async function listHits(opts: { domainId?: string | null; beforeId?: numb
   const { data, error } = await q;
   throwIf(error, "listHits");
 
-  type Raw = Omit<HitLogRow, "domain" | "page_name"> & { domains: { domain: string } | null };
+  type Raw = Omit<HitLogRow, "domain" | "page_name" | "load"> & { domains: { domain: string } | null };
   const raw = (data as unknown as Raw[] | null) ?? [];
   const rows = raw.slice(0, limit);
 
@@ -271,11 +275,23 @@ export async function listHits(opts: { domainId?: string | null; beforeId?: numb
     for (const p of (pages as Pick<Page, "id" | "name">[] | null) ?? []) pageNames.set(p.id, p.name);
   }
 
+  // O aviso de carregamento fica em outra tabela (chega antes do hit, sem FK): terceira leitura.
+  const visitIds = rows.map((r) => r.visit_id).filter((id): id is string => id !== null);
+  const loads = new Map<string, { loaded_at: string; load_ms: number | null }>();
+  if (visitIds.length > 0) {
+    const { data: loaded, error: loadsError } = await db.from("hit_loads").select("visit_id, loaded_at, load_ms").in("visit_id", visitIds);
+    throwIf(loadsError, "listHits (carregamentos)");
+    for (const l of (loaded as { visit_id: string; loaded_at: string; load_ms: number | null }[] | null) ?? []) {
+      loads.set(l.visit_id, { loaded_at: l.loaded_at, load_ms: l.load_ms });
+    }
+  }
+
   return {
     rows: rows.map(({ domains, ...r }) => ({
       ...r,
       domain: domains?.domain ?? null,
       page_name: r.page_id ? (pageNames.get(r.page_id) ?? null) : null,
+      load: r.visit_id ? (loads.get(r.visit_id) ?? null) : null,
     })),
     hasMore: raw.length > limit,
   };

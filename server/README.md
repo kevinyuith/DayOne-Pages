@@ -100,6 +100,26 @@ d.setAuthTag(b.subarray(-16));
 const ts = Number(d.update(b.subarray(12, -16), undefined, "utf8") + d.final("utf8"));
 ```
 
+### Aviso de carregamento (`/_dop/l`)
+
+O hit é gravado quando a request CHEGA, então ping, `curl`, prefetch e robô
+de prévia de link também aparecem como servidos. Para saber quem de fato
+carregou a página (`src/beacon.php`):
+
+- página HTML servida (200/304) ganha o cookie `dop_v=<32 hex>` (HttpOnly,
+  10 min) e, antes do último `</body>`, um script mínimo que no evento `load`
+  faz `sendBeacon("/_dop/l", "t=<ms desde o início da navegação>")`;
+- `POST /_dop/l` responde 204 na hora e, depois, grava o id em
+  `pages.hit_loads` (RPC `log_load`); o hit leva o mesmo id em `visit_id`;
+- a tela de Logs mostra **Carregou** (✓ + tempo), "não" (o navegador não
+  avisou) ou "—" (não se aplica: redirect, 404, arquivo, registro antigo).
+
+O script é igual em toda resposta (o id vai no cookie), então o HTML continua
+cacheável e um 304 também leva id novo. O ETag das páginas ganha `-b1`
+(`BEACON_ETAG`): mudou o script, suba a versão. Navegador automatizado também
+roda JavaScript — "carregou" prova que um navegador renderizou, não que era
+uma pessoa.
+
 ## Instalação (Ubuntu/Debian)
 
 > **Só para um VPS limpo e dedicado.** Os arquivos de `deploy/` assumem que esta

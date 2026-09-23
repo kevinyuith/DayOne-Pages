@@ -10,14 +10,15 @@
  * host, path e query crua, outcome, status, país (CF-IPCountry), estado se US (cf-region),
  * dispositivo e bot (pelo User-Agent), host do referrer, IP, hostname (reverse
  * DNS do IP), ASN, User-Agent e header Cookie crus, a rota que decidiu
- * (rota, página, slug, decisão) e, se foi redirect, a URL final (Location).
+ * (rota, página, slug, decisão), se foi redirect a URL final (Location) e, se
+ * foi página HTML, o id da visita do aviso de carregamento (beacon.php).
  * Ligado/desligado por LOG_HITS (config).
  */
 declare(strict_types=1);
 
 defined('DAYONE_ENTRY') || (http_response_code(404) && exit);
 
-function log_hit(Request $req, int $status, string $outcome, ?string $domainId, ?array $route = null, ?string $redirectUrl = null): void
+function log_hit(Request $req, int $status, string $outcome, ?string $domainId, ?array $route = null, ?string $redirectUrl = null, ?string $visitId = null): void
 {
     if (!config()['log_hits'] || !is_logged_path($req->path)) {
         return;
@@ -55,6 +56,7 @@ function log_hit(Request $req, int $status, string $outcome, ?string $domainId, 
         'p_slug'          => $route['slug'] ?? null,
         'p_decision'      => hit_decision($route),
         'p_redirect_url'  => $redirectUrl,
+        'p_visit_id'      => $visitId,
     ]);
 }
 

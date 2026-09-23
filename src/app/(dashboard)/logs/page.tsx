@@ -18,6 +18,7 @@ export const metadata: Metadata = {
 const PAGE_SIZE = 100;
 
 const dateFmt = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "medium" });
+const loadFmt = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
 /**
  * Cada request registrado em pages.hits, com todas as colunas, do mais novo
@@ -75,7 +76,7 @@ export default async function LogsPage({
           description="Os requests aparecem aqui conforme o servidor de entrega os registra."
         />
       ) : (
-        <Table className="min-w-[3260px]">
+        <Table className="min-w-[3360px]">
           <thead>
             <tr>
               <Th>Data</Th>
@@ -86,6 +87,9 @@ export default async function LogsPage({
               <Th>Decisão</Th>
               <Th className="text-right">Status</Th>
               <Th>Resultado</Th>
+              <Th title="O navegador avisou que a página terminou de carregar (evento load). Ping, prefetch, robô de prévia de link e curl não avisam. — = não se aplica (redirect, 404, arquivo ou registro antigo).">
+                Carregou
+              </Th>
               <Th>País</Th>
               <Th>Estado</Th>
               <Th>Dispositivo</Th>
@@ -150,6 +154,17 @@ export default async function LogsPage({
                       <Badge tone={o.tone}>{o.label}</Badge>
                       {h.is_bot ? <span className="rounded bg-violet-500/10 px-1.5 py-0.5 text-[10px] font-medium text-violet-600 dark:text-violet-400">bot</span> : null}
                     </span>
+                  </Td>
+                  <Td className="whitespace-nowrap">
+                    {h.load ? (
+                      <Badge tone="success">✓{h.load.load_ms !== null ? ` ${loadFmt.format(h.load.load_ms / 1000)}s` : ""}</Badge>
+                    ) : h.visit_id ? (
+                      <span className="text-xs text-muted" title="O navegador não avisou: ping, prefetch, robô, JavaScript bloqueado ou saiu antes de carregar.">
+                        não
+                      </span>
+                    ) : (
+                      <span className="text-muted">—</span>
+                    )}
                   </Td>
                   <Td className="text-muted">{h.country || "—"}</Td>
                   <Td className="whitespace-nowrap text-muted">{h.region || "—"}</Td>
