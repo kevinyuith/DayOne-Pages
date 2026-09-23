@@ -1,6 +1,8 @@
 # DayOne Pages
 
-Administrador de domínios + construtor de páginas, no modelo do hidepages.com.
+A intenção principal do produto é ser um **editor de páginas**: você monta a
+página uma vez, publica em quantos domínios quiser e usa o mesmo painel para
+fazer **teste A/B** entre versões. No modelo do hidepages.com.
 
 - **Dashboard** (este repo, Next.js 16): cadastra domínios, cria páginas com
   várias slugs (HTML editado num editor de código com preview) e define, por
