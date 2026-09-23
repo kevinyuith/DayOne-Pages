@@ -9,14 +9,15 @@
  * O que grava (uma linha por request a página: .html, .php ou sem extensão):
  * host, path e query crua, outcome, status, país (CF-IPCountry), estado se US (cf-region),
  * dispositivo e bot (pelo User-Agent), host do referrer, IP, hostname (reverse
- * DNS do IP), ASN, User-Agent e header Cookie crus, e a rota que decidiu
- * (rota, página, slug, decisão). Ligado/desligado por LOG_HITS (config).
+ * DNS do IP), ASN, User-Agent e header Cookie crus, a rota que decidiu
+ * (rota, página, slug, decisão) e, se foi redirect, a URL final (Location).
+ * Ligado/desligado por LOG_HITS (config).
  */
 declare(strict_types=1);
 
 defined('DAYONE_ENTRY') || (http_response_code(404) && exit);
 
-function log_hit(Request $req, int $status, string $outcome, ?string $domainId, ?array $route = null): void
+function log_hit(Request $req, int $status, string $outcome, ?string $domainId, ?array $route = null, ?string $redirectUrl = null): void
 {
     if (!config()['log_hits'] || !is_logged_path($req->path)) {
         return;
@@ -53,6 +54,7 @@ function log_hit(Request $req, int $status, string $outcome, ?string $domainId, 
         'p_page_id'       => $route['page_id'] ?? null,
         'p_slug'          => $route['slug'] ?? null,
         'p_decision'      => hit_decision($route),
+        'p_redirect_url'  => $redirectUrl,
     ]);
 }
 

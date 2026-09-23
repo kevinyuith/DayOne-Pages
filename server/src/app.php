@@ -80,7 +80,7 @@ function dayone_handle(): void
     }
 
     $domainId = $resolved['routes'][0]['domain_id'] ?? null;
-    log_hit($req, $status, $outcome, is_string($domainId) ? $domainId : null, $route);
+    log_hit($req, $status, $outcome, is_string($domainId) ? $domainId : null, $route, $headers['Location'] ?? null);
 
     if ($resolved['refresh']) {
         // SWR: atualiza o cache sem ninguém esperando.

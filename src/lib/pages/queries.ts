@@ -230,6 +230,8 @@ export type HitLogRow = HitRow & {
   decision: string | null;
   /** Query string crua, sem o "?". */
   query: string | null;
+  /** Location devolvido quando o hit foi redirect (a URL final). */
+  redirect_url: string | null;
   /** Domínio cadastrado (pages.domains), não o host da request. */
   domain: string | null;
   page_name: string | null;
@@ -247,7 +249,7 @@ export async function listHits(opts: { domainId?: string | null; beforeId?: numb
     .from("hits")
     .select(
       "id, created_at, domain_id, host, path, outcome, status_code, country, device, is_bot, referrer_host, ip, user_agent, " +
-        "hostname, asn, as_name, cookies, region, route_id, page_id, slug, decision, query, domains(domain)",
+        "hostname, asn, as_name, cookies, region, route_id, page_id, slug, decision, query, redirect_url, domains(domain)",
     )
     .order("id", { ascending: false })
     .limit(limit + 1);

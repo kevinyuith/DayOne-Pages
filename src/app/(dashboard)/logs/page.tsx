@@ -75,7 +75,7 @@ export default async function LogsPage({
           description="Os requests aparecem aqui conforme o servidor de entrega os registra."
         />
       ) : (
-        <Table className="min-w-[3100px]">
+        <Table className="min-w-[3260px]">
           <thead>
             <tr>
               <Th>Data</Th>
@@ -136,8 +136,13 @@ export default async function LogsPage({
                       "—"
                     )}
                   </Td>
-                  <Td className="whitespace-nowrap font-mono text-xs text-muted" title={h.route_id ? `rota ${h.route_id}` : undefined}>
-                    {h.decision || "—"}
+                  <Td className="min-w-[320px] max-w-[400px] font-mono text-xs text-muted" title={h.route_id ? `rota ${h.route_id}` : undefined}>
+                    <span className="whitespace-nowrap">{h.decision || "—"}</span>
+                    {h.redirect_url ? (
+                      <span className="mt-0.5 line-clamp-3 break-all text-[11px] leading-snug text-foreground" title={h.redirect_url}>
+                        → {h.redirect_url}
+                      </span>
+                    ) : null}
                   </Td>
                   <Td className="text-right tabular-nums text-muted">{h.status_code ?? "—"}</Td>
                   <Td>
