@@ -28,7 +28,7 @@ export function DnsInstructions({ serverIp }: { serverIp: string }) {
           <em>Verificar</em> consulta.
         </li>
       </ol>
-      <p className="mt-3 text-xs text-muted">Alterações de página e de rota entram no ar em até 1 minuto (cache do servidor).</p>
+      <p className="mt-3 text-xs text-muted">Alterações de página e de rota entram no ar em até 30 segundos (cache do servidor).</p>
     </aside>
   );
 }

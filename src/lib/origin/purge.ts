@@ -1,7 +1,7 @@
 /**
  * Purge instantâneo: manda o servidor de entrega esquecer as rotas de um host.
  *
- * O servidor guarda as rotas de cada host em cache (CACHE_TTL, 1 min por
+ * O servidor guarda as rotas de cada host em cache (CACHE_TTL, 30 s por
  * padrão). Sem purge, pausar ou remover um domínio só vale quando o cache
  * vence. Com purge, a próxima request já vai ao Supabase e vê o estado novo.
  *

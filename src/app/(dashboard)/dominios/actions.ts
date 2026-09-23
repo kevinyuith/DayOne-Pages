@@ -38,7 +38,7 @@ function revalidateDomain(id?: string) {
 async function purgeAfterWrite(domain: string, done: string): Promise<ActionResult> {
   const r = await purgeHost(domain);
   if (r.ok || r.skipped) return { ok: true };
-  return fail(`${done}, mas o cache do servidor não foi limpo (${r.error}). Vale em até 1 min.`);
+  return fail(`${done}, mas o cache do servidor não foi limpo (${r.error}). Vale em até 30 s.`);
 }
 
 const UNIQUE_VIOLATION = "23505";
@@ -187,7 +187,7 @@ export async function saveFilter(prev: FilterFormState, fd: FormData): Promise<F
       .eq("id", domainId);
     if (error) throw new Error(error.message);
     revalidateDomain(domainId);
-    return { success: "Filtro salvo. Entra no ar em até 1 min (ou use Limpar cache).", attempt };
+    return { success: "Filtro salvo. Entra no ar em até 30 s (ou use Limpar cache).", attempt };
   } catch (cause) {
     return { error: errorReason(cause), attempt };
   }

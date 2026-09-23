@@ -2,7 +2,7 @@
 
 Um front controller PHP que responde por **qualquer domínio** apontado para
 esta máquina: consulta no Supabase (schema `pages`) o que aquele host + path
-deve responder, cacheia em disco por 1 minuto e serve. Se o Supabase cair,
+deve responder, cacheia em disco por 30 segundos e serve. Se o Supabase cair,
 serve a cópia que tem.
 
 Sem framework, sem composer. Requisitos: PHP 8.2+ com `curl` e `json`.
@@ -12,7 +12,7 @@ Sem framework, sem composer. Requisitos: PHP 8.2+ com `curl` e `json`.
 ```
 Cloudflare ──HTTP:80──► nginx (catch-all) ──► php-fpm ──► public/index.php
                                                               │
-                                             cache/routes/<host>/<path>.json  (rotas, TTL 60 s)
+                                             cache/routes/<host>/<path>.json  (rotas, TTL 30 s)
                                              cache/content/<slug>-<hash>.bin  (HTML por slug)
                                                               │ MISS
                                              POST {SUPABASE_URL}/rest/v1/rpc/resolve  (Content-Profile: pages)
