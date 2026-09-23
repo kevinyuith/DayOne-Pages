@@ -12,6 +12,7 @@ import { connectionType } from "@/lib/connection";
 import { browserFromUA, osFromUA } from "@/lib/user-agent";
 import { normalizeHost } from "@/lib/pages/normalize";
 import { listDomains, listHits, unregisteredHosts } from "@/lib/pages/queries";
+import { APP_TZ } from "@/lib/time-zone";
 import { registerSeenDomain } from "../dominios/actions";
 
 export const metadata: Metadata = {
@@ -20,7 +21,7 @@ export const metadata: Metadata = {
 
 const PAGE_SIZE = 100;
 
-const dateFmt = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "medium" });
+const dateFmt = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "medium", timeZone: APP_TZ });
 const loadFmt = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
 /**

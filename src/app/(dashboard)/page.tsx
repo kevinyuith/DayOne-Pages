@@ -6,7 +6,7 @@ import { FounderBadge } from "@/components/dashboard/founder-badge";
 import { StatCard, type StatTone } from "@/components/dashboard/stat-card";
 import { TrafficChart } from "@/components/dashboard/traffic-chart";
 import { AccountIcon, BotIcon, GlobeIcon, PagesIcon, ShieldCheckIcon, ShieldXIcon } from "@/components/icons";
-import { activeFilterCount, parseDashboardFilters, resolveRange } from "@/lib/pages/dashboard-filters";
+import { activeFilterCount, foldIntoLocalDays, parseDashboardFilters, resolveRange } from "@/lib/pages/dashboard-filters";
 import { countOverview, hitCountries, hitStats, hitTimeseries, listDomains, recentHits, type HitFilter } from "@/lib/pages/queries";
 
 const num = new Intl.NumberFormat("en-US");
@@ -35,13 +35,14 @@ export default async function DashboardPage({
     countries: filters.countries,
     hideBots: filters.hideBots,
   };
-  const [counts, stats, series, hits, countries] = await Promise.all([
+  const [counts, stats, hourly, hits, countries] = await Promise.all([
     countOverview(),
     hitStats(range.since, hitFilter),
     hitTimeseries(range.since, range.bucketMinutes, range.origin, hitFilter),
     recentHits(20, range.since, hitFilter),
     hitCountries(range.since, filters.domain),
   ]);
+  const series = range.granularity === "day" ? foldIntoLocalDays(hourly) : hourly;
 
   const attentionCount = domains.filter((d) => d.status === "ACTIVE" && d.last_check_ok !== true).length;
   const domainOptions = domains.map((d) => ({ id: d.id, domain: d.domain }));

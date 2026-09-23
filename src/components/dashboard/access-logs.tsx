@@ -1,5 +1,5 @@
 import { Badge } from "@/components/ui/badge";
-import { DASHBOARD_TZ } from "@/lib/pages/dashboard-filters";
+import { APP_TZ } from "@/lib/time-zone";
 import type { HitRow } from "@/lib/pages/queries";
 
 /** Rótulo + tom do resultado de um hit. */
@@ -13,8 +13,8 @@ export const OUTCOME_BADGE: Record<string, { label: string; tone: "success" | "i
   other: { label: "Other", tone: "neutral" },
 };
 
-const timeFmt = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false, timeZone: DASHBOARD_TZ });
-const dayFmt = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: DASHBOARD_TZ });
+const timeFmt = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false, timeZone: APP_TZ });
+const dayFmt = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: APP_TZ });
 
 /**
  * Os últimos requests servidos. Sem dado, mostra um estado vazio honesto (e diz

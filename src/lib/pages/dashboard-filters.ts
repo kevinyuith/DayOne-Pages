@@ -6,8 +6,8 @@
  * servidor: a barra de controles (client) usa o mesmo módulo para montar a URL.
  */
 
-/** Fuso dos períodos ("Today" começa à meia-noite daqui) e dos rótulos do gráfico. */
-export const DASHBOARD_TZ = "America/Sao_Paulo";
+import type { HitBucket } from "@/lib/pages/queries";
+import { localDateKey, localMidnight } from "@/lib/time-zone";
 
 export const RANGES = [
   { key: "today", label: "Today", short: "today" },
@@ -78,26 +78,15 @@ export function activeFilterCount(f: DashboardFilters): number {
 
 // ── Período → janela de tempo ───────────────────────────────────────────────
 
-/** Meia-noite de hoje no fuso, em ms UTC (pelo offset de agora; São Paulo não tem horário de verão). */
-function startOfLocalDay(nowMs: number, tz: string): number {
-  const now = new Date(nowMs);
-  const offset = new Intl.DateTimeFormat("en-US", { timeZone: tz, timeZoneName: "longOffset" })
-    .formatToParts(now)
-    .find((p) => p.type === "timeZoneName")?.value; // "GMT-03:00" (ou "GMT" em UTC)
-  const m = offset?.match(/GMT([+-])(\d{2}):(\d{2})/);
-  const offsetMs = m ? (m[1] === "-" ? -1 : 1) * (Number(m[2]) * 60 + Number(m[3])) * 60_000 : 0;
-  const [y, mo, d] = new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" })
-    .format(now)
-    .split("-")
-    .map(Number);
-  return Date.UTC(y, mo - 1, d) - offsetMs;
-}
-
 export type RangeWindow = {
   since: Date;
-  /** Tamanho do bucket do gráfico. */
+  /**
+   * Tamanho do bucket pedido ao banco. Sempre 1h: o banco não sabe de fuso, e
+   * um dia de NY nem sempre tem 24h (horário de verão). A série diária é
+   * montada somando as horas por dia local (`foldIntoLocalDays`).
+   */
   bucketMinutes: number;
-  /** Alinhamento dos buckets: meia-noite local, para os dias da série diária baterem. */
+  /** Alinhamento dos buckets: meia-noite local (hora cheia, já que o offset de NY é em horas inteiras). */
   origin: Date;
   granularity: "hour" | "day";
   label: string;
@@ -105,19 +94,36 @@ export type RangeWindow = {
 };
 
 export function resolveRange(range: RangeKey, nowMs: number): RangeWindow {
-  const midnight = startOfLocalDay(nowMs, DASHBOARD_TZ);
-  const DAY = 24 * 60 * 60 * 1000;
+  const midnight = localMidnight(nowMs);
   const r = RANGES.find((x) => x.key === range) ?? RANGES[1];
-  const base = { origin: new Date(midnight), label: r.label, short: r.short };
+  const base = { origin: new Date(midnight), bucketMinutes: 60, label: r.label, short: r.short };
   switch (r.key) {
     case "today":
-      return { ...base, since: new Date(midnight), bucketMinutes: 60, granularity: "hour" };
+      return { ...base, since: new Date(midnight), granularity: "hour" };
     case "7d":
       // Hoje + os 6 dias anteriores, dias inteiros.
-      return { ...base, since: new Date(midnight - 6 * DAY), bucketMinutes: 1440, granularity: "day" };
+      return { ...base, since: new Date(localMidnight(nowMs, 6)), granularity: "day" };
     case "30d":
-      return { ...base, since: new Date(midnight - 29 * DAY), bucketMinutes: 1440, granularity: "day" };
+      // Até ~720 buckets de 1h: cabe no limite de 1000 linhas do PostgREST.
+      return { ...base, since: new Date(localMidnight(nowMs, 29)), granularity: "day" };
     default:
-      return { ...base, since: new Date(nowMs - DAY), bucketMinutes: 60, granularity: "hour" };
+      return { ...base, since: new Date(nowMs - 24 * 60 * 60 * 1000), granularity: "hour" };
   }
+}
+
+/** Soma buckets de 1h por dia local; cada dia fica com o instante da sua primeira hora (a meia-noite local). */
+export function foldIntoLocalDays(buckets: HitBucket[]): HitBucket[] {
+  const days = new Map<string, HitBucket>();
+  for (const b of buckets) {
+    const key = localDateKey(Date.parse(b.bucket));
+    const day = days.get(key);
+    if (day) {
+      day.served += b.served;
+      day.blocked += b.blocked;
+      day.bots += b.bots;
+    } else {
+      days.set(key, { ...b });
+    }
+  }
+  return [...days.values()];
 }

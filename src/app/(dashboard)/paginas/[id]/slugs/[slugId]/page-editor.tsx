@@ -61,6 +61,7 @@ import {
   type PageSlugSummary,
   type PageStatus,
 } from "@/lib/pages/types";
+import { APP_TZ } from "@/lib/time-zone";
 import { createSlug, deletePage, deleteSlug, renameSlug, saveEditor, toggleSlug } from "../../../actions";
 
 /**
@@ -431,7 +432,7 @@ export function PageEditor({
   ];
 
   const baseHref = previewBase ? `https://${previewBase}/` : undefined;
-  const savedLabel = pending ? "Saving…" : dirty ? "Unsaved" : lastSavedAt ? `Saved ${lastSavedAt.toLocaleTimeString("pt-BR")}` : "Saved";
+  const savedLabel = pending ? "Saving…" : dirty ? "Unsaved" : lastSavedAt ? `Saved ${lastSavedAt.toLocaleTimeString("pt-BR", { timeZone: APP_TZ })}` : "Saved";
 
   return (
     <div className="flex h-[calc(100dvh-4rem)] flex-col gap-2">

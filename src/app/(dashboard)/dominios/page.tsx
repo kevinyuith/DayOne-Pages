@@ -7,6 +7,7 @@ import { Badge, DOMAIN_STATUS_TONE } from "@/components/ui/badge";
 import { Table, Td, Th, Tr } from "@/components/ui/table";
 import { listDomains, listPageOptions, unregisteredHosts } from "@/lib/pages/queries";
 import { DOMAIN_STATUS_LABELS, PAGE_KIND_LABELS } from "@/lib/pages/types";
+import { APP_TZ } from "@/lib/time-zone";
 import { registerSeenDomain, removeDomain, setDomainStatus, verifyDomain } from "./actions";
 import { DnsInstructions } from "./dns-instructions";
 import { DomainForm } from "./domain-form";
@@ -15,7 +16,7 @@ export const metadata: Metadata = {
   title: "Domínios",
 };
 
-const dateFmt = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" });
+const dateFmt = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short", timeZone: APP_TZ });
 
 /** Janela da lista "Vistos nos logs, sem cadastro". */
 const SEEN_DAYS = 30;

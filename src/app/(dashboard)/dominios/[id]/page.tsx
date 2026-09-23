@@ -6,6 +6,7 @@ import { RowAction } from "@/components/row-action";
 import { Badge, DOMAIN_STATUS_TONE } from "@/components/ui/badge";
 import { getDomainDetail, listPageOptions } from "@/lib/pages/queries";
 import { DOMAIN_STATUS_LABELS } from "@/lib/pages/types";
+import { APP_TZ } from "@/lib/time-zone";
 import { removeDomain, setDomainStatus, verifyDomain } from "../actions";
 import { BotBlockToggle } from "./bot-block-toggle";
 import { DefaultPageSelect } from "./default-page-select";
@@ -20,7 +21,7 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
   return { title: domain ? domain.domain : "Domínio" };
 }
 
-const dateFmt = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" });
+const dateFmt = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short", timeZone: APP_TZ });
 
 export default async function DominioDetailPage({ params }: { params: Params }) {
   const { id } = await params;

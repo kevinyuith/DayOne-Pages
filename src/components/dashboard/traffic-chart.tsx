@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { DASHBOARD_TZ } from "@/lib/pages/dashboard-filters";
+import { APP_TZ } from "@/lib/time-zone";
 import type { HitBucket } from "@/lib/pages/queries";
 
 /**
@@ -34,9 +34,9 @@ function niceCeil(v: number): number {
 }
 
 const fmt = new Intl.NumberFormat("en-US");
-// Fuso fixo: os buckets diários são meia-noite de DASHBOARD_TZ, e o SSR não depende do fuso do servidor.
-const hourFmt = new Intl.DateTimeFormat("en-US", { hour: "numeric", hourCycle: "h23", timeZone: DASHBOARD_TZ });
-const dayFmt = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: DASHBOARD_TZ });
+// Fuso fixo: os buckets diários são meia-noite de APP_TZ, e o SSR não depende do fuso do servidor.
+const hourFmt = new Intl.DateTimeFormat("en-US", { hour: "numeric", hourCycle: "h23", timeZone: APP_TZ });
+const dayFmt = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: APP_TZ });
 
 export function TrafficChart({
   buckets,
