@@ -463,6 +463,9 @@ function PageCard({
         <span className="text-muted/60">·</span>
         {PAGE_KIND_LABELS[page.kind]}
       </span>
+      <span className="text-[11px] text-muted/70">
+        {page.copies_count === 0 ? "sem cópias em domínios" : `copiado para ${page.copies_count} ${page.copies_count === 1 ? "domínio" : "domínios"}`}
+      </span>
       {subtitle ? <span className="text-[11px] text-muted/70">{subtitle}</span> : null}
       <CardMenu label={`Opções de ${page.name}`} items={menu} />
     </div>

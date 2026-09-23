@@ -7,7 +7,7 @@ import type { PageSlugSummary } from "@/lib/pages/types";
 
 /** Painel "Pages": as slugs da página, criar nova e ações sobre a atual. */
 export function PagesPanel({
-  pageId,
+  slugHref,
   slugs,
   currentSlugId,
   currentActive,
@@ -17,7 +17,8 @@ export function PagesPanel({
   onToggle,
   onRemove,
 }: {
-  pageId: string;
+  /** URL de cada slug (template e página de domínio moram em rotas diferentes). */
+  slugHref: (slugId: string) => string;
   slugs: PageSlugSummary[];
   currentSlugId: string;
   currentActive: boolean;
@@ -37,7 +38,7 @@ export function PagesPanel({
         {slugs.map((s) => (
           <li key={s.id}>
             <Link
-              href={`/paginas/${pageId}/slugs/${s.id}`}
+              href={slugHref(s.id)}
               aria-current={s.id === currentSlugId ? "page" : undefined}
               className={[
                 "block truncate rounded-lg px-2 py-1.5 font-mono text-xs",

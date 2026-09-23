@@ -192,6 +192,7 @@ function FilterForm({
 
       <fieldset className="mt-5">
         <legend className="text-xs font-semibold uppercase tracking-wide text-muted">Páginas</legend>
+        <p className="mt-1 text-xs text-muted">Só páginas deste domínio. Para usar outro template, copie-o antes em Páginas do domínio.</p>
         <div className="mt-2 grid gap-4 md:grid-cols-2">
           <Field label="Quem PASSA no filtro vê">
             <PageSelect name="filter_pass_page_id" pages={pages} value={domain.filter_pass_page_id} disabled={pending} />

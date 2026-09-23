@@ -61,8 +61,34 @@ import {
   type PageSlugSummary,
   type PageStatus,
 } from "@/lib/pages/types";
+import type { ActionResult } from "@/lib/action-result";
+import { AUTO_PLACEHOLDERS, PLACEHOLDER_FIELDS, applyPlaceholders, placeholderToken } from "@/lib/pages/placeholders";
 import { APP_TZ } from "@/lib/time-zone";
-import { createSlug, deletePage, deleteSlug, renameSlug, saveEditor, toggleSlug } from "../../../actions";
+import type { SaveEditorInput, SaveEditorResult } from "../../../actions";
+
+/**
+ * O que o editor faz com a página, sem saber onde ela mora: template
+ * (pages/page_slugs, paginas/actions.ts) ou página de domínio (domains.site,
+ * dominios/[id]/paginas/actions.ts). Vêm prontas (com `.bind`) da rota.
+ */
+export type EditorActions = {
+  save: (input: SaveEditorInput) => Promise<SaveEditorResult>;
+  createSlug: (rawSlug: string, title: string | null) => Promise<ActionResult<{ slugId: string }>>;
+  /** Quem troca o id da slug ao renomear (página de domínio: id = path) devolve o novo. */
+  renameSlug: (slugId: string, rawSlug: string) => Promise<ActionResult<{ slugId?: string }>>;
+  toggleSlug: (slugId: string, active: boolean) => Promise<ActionResult>;
+  deleteSlug: (slugId: string) => Promise<ActionResult>;
+  deletePage: () => Promise<ActionResult>;
+};
+
+export type EditorNav = {
+  backHref: string;
+  backTitle: string;
+  /** URL de uma slug, com `{slug}` no lugar do id (é trocado pelo id codificado). */
+  slugHref: string;
+  /** Para onde ir quando a página (ou a última slug) some. */
+  afterDeleteHref: string;
+};
 
 /**
  * O editor de página em formato de construtor: topbar (Preview/Publish/Saved,
@@ -91,13 +117,24 @@ export function PageEditor({
   slugs,
   slug,
   domains,
+  actions,
+  nav,
+  scope,
+  placeholders,
 }: {
   page: Page;
   slugs: PageSlugSummary[];
   slug: PageSlug;
   domains: string[];
+  actions: EditorActions;
+  nav: EditorNav;
+  /** Template (biblioteca) ou página de um domínio. */
+  scope: "template" | "domain";
+  /** Valores dos marcadores no preview (página de domínio). Template: null, o preview mostra os marcadores crus. */
+  placeholders: Record<string, string> | null;
 }) {
   const router = useRouter();
+  const slugHref = useCallback((id: string) => nav.slugHref.replace("{slug}", encodeURIComponent(id)), [nav.slugHref]);
 
   const [name, setName] = useState(page.name);
   const [kind, setKind] = useState<PageKind>(page.kind);
@@ -208,7 +245,7 @@ export function PageEditor({
       if (pending) return;
       const nStatus = override?.status ?? status;
       startTransition(async () => {
-        const result = await saveEditor({
+        const result = await actions.save({
           page: { id: page.id, name, kind, status: nStatus, expectedUpdatedAt: pageUpdatedAt },
           slug: content !== savedSnapshot.content ? { id: slug.id, content, expectedUpdatedAt: slugUpdatedAt } : null,
         });
@@ -229,7 +266,7 @@ export function PageEditor({
         router.refresh();
       });
     },
-    [pending, page.id, name, kind, status, pageUpdatedAt, content, savedSnapshot.content, slug.id, slugUpdatedAt, router],
+    [pending, actions, page.id, name, kind, status, pageUpdatedAt, content, savedSnapshot.content, slug.id, slugUpdatedAt, router],
   );
 
   // Atalhos: ⌘S salva, ⌘Z desfaz, ⌘⇧Z refaz. Captura para chegar antes do CodeMirror.
@@ -296,34 +333,45 @@ export function PageEditor({
     const value = String(new FormData(form).get("slug") ?? "");
     if (!value.trim()) return;
     startBusy(async () => {
-      const r = await createSlug(page.id, value, null);
+      const r = await actions.createSlug(value, null);
       if (!r.ok) return setMessage({ tone: "danger", text: r.reason });
       form.reset();
       setMessage(null);
-      router.push(`/paginas/${page.id}/slugs/${r.slugId}`);
+      router.push(slugHref(r.slugId));
     });
   }
   function onRenameSlug() {
     const value = window.prompt("Novo path da slug:", slug.slug);
     if (value === null || value.trim() === slug.slug) return;
-    run(() => renameSlug(slug.id, value));
+    startBusy(async () => {
+      const r = await actions.renameSlug(slug.id, value);
+      if (!r.ok) return setMessage({ tone: "danger", text: r.reason });
+      setMessage(null);
+      // Página de domínio: o id da slug é o path, então a URL muda junto.
+      if (r.slugId && r.slugId !== slug.id) router.replace(slugHref(r.slugId));
+      else router.refresh();
+    });
   }
   function onDeleteSlug() {
     if (!window.confirm(`Remover a slug ${slug.slug}? O HTML dela será perdido.`)) return;
     startBusy(async () => {
-      const r = await deleteSlug(slug.id);
+      const r = await actions.deleteSlug(slug.id);
       if (!r.ok) return setMessage({ tone: "danger", text: r.reason });
       const next = slugs.find((s) => s.id !== slug.id);
-      router.push(next ? `/paginas/${page.id}/slugs/${next.id}` : "/paginas");
+      router.push(next ? slugHref(next.id) : nav.afterDeleteHref);
     });
   }
   function onDeletePage() {
-    if (!window.confirm(`Excluir a página "${page.name}" e todas as slugs? Domínios que a usam como padrão ficarão sem página.`)) return;
+    const question =
+      scope === "template"
+        ? `Excluir o template "${page.name}" e todas as slugs? As cópias que os domínios já têm não mudam.`
+        : `Remover a página "${page.name}" deste domínio? O HTML dela será perdido.`;
+    if (!window.confirm(question)) return;
     startBusy(async () => {
-      const r = await deletePage(page.id);
+      const r = await actions.deletePage();
       if (!r.ok) return setMessage({ tone: "danger", text: r.reason });
       dirtyRef.current = false;
-      router.push("/paginas");
+      router.push(nav.afterDeleteHref);
     });
   }
 
@@ -438,13 +486,21 @@ export function PageEditor({
     <div className="flex h-[calc(100dvh-4rem)] flex-col gap-2">
       {/* Topbar */}
       <header className="flex flex-wrap items-center gap-2">
-        {/* Volta para a pasta onde a página está, não para a raiz. */}
-        <Link href={page.folder_id ? `/paginas?pasta=${page.folder_id}` : "/paginas"} title="Voltar para as páginas" className="text-sm text-muted hover:text-foreground">
+        <Link href={nav.backHref} title={nav.backTitle} className="text-sm text-muted hover:text-foreground">
           ←
         </Link>
         <input value={name} onChange={(e) => setName(e.target.value)} aria-label="Nome da página" className={`${INPUT_BASE} h-9 w-52 font-medium`} />
         <Badge tone={PAGE_STATUS_TONE[savedSnapshot.status]}>{PAGE_STATUS_LABELS[savedSnapshot.status]}</Badge>
         <span className="text-xs text-muted">· {savedLabel}</span>
+        {scope === "domain" ? (
+          <span className="text-xs text-muted" title="Página exclusiva deste domínio. O template não muda quando você edita aqui.">
+            · página de {domains[0]}
+          </span>
+        ) : (
+          <span className="text-xs text-muted" title="Template: os domínios recebem cópias. Editar aqui não muda as cópias que já existem.">
+            · template
+          </span>
+        )}
 
         <div className="ml-auto flex items-center gap-1.5">
           <IconButton title="Undo (⌘Z)" onClick={undo} disabled={!canUndo}>
@@ -453,6 +509,7 @@ export function PageEditor({
           <IconButton title="Redo (⌘⇧Z)" onClick={redo} disabled={!canRedo}>
             <RedoIcon className="size-4" />
           </IconButton>
+          <PlaceholdersMenu values={placeholders} />
           <Button size="sm" variant={previewing ? "primary" : "secondary"} onClick={() => enterPreview(!previewing)}>
             <PlayIcon className="size-4" /> Preview
           </Button>
@@ -481,14 +538,14 @@ export function PageEditor({
             <aside className="flex w-64 shrink-0 flex-col rounded-xl border border-border bg-surface">
               {panel === "pages" ? (
                 <PagesPanel
-                  pageId={page.id}
+                  slugHref={slugHref}
                   slugs={slugs}
                   currentSlugId={slug.id}
                   currentActive={slug.is_active}
                   busy={busy}
                   onNewSlug={onNewSlug}
                   onRename={onRenameSlug}
-                  onToggle={() => run(() => toggleSlug(slug.id, !slug.is_active))}
+                  onToggle={() => run(() => actions.toggleSlug(slug.id, !slug.is_active))}
                   onRemove={onDeleteSlug}
                 />
               ) : panel === "funnel" ? (
@@ -519,7 +576,11 @@ export function PageEditor({
               style={{ width: DEVICE_W[device], maxWidth: "100%" }}
             >
               {previewing ? (
-                <HtmlPreview html={previewDoc || content} baseHref={baseHref} className="h-full w-full" />
+                <HtmlPreview
+                  html={placeholders ? applyPlaceholders(previewDoc || content, placeholders) : previewDoc || content}
+                  baseHref={baseHref}
+                  className="h-full w-full"
+                />
               ) : mode === "code" ? (
                 <div className="h-full bg-surface">
                   <CodeEditor value={content} onChange={updateContent} />
@@ -676,6 +737,51 @@ function PageSettings({
         Excluir página
       </Button>
     </div>
+  );
+}
+
+/**
+ * Lista dos marcadores {{chave}} com botão de copiar. Na página de domínio
+ * mostra o valor que entra no lugar; no template, um exemplo.
+ */
+function PlaceholdersMenu({ values }: { values: Record<string, string> | null }) {
+  const [copied, setCopied] = useState<string | null>(null);
+  const rows = [
+    ...PLACEHOLDER_FIELDS.map((f) => ({ key: f.key, label: f.label, hint: f.example })),
+    ...AUTO_PLACEHOLDERS.map((f) => ({ key: f.key, label: f.label, hint: f.note })),
+  ];
+  const copy = (key: string) => {
+    void navigator.clipboard?.writeText(placeholderToken(key)).then(() => {
+      setCopied(key);
+      setTimeout(() => setCopied((c) => (c === key ? null : c)), 1200);
+    });
+  };
+  return (
+    <details className="relative">
+      <summary className="inline-flex h-8 cursor-pointer list-none items-center rounded-lg border border-border px-2.5 text-xs text-muted hover:text-foreground">
+        {"{{ }}"} Marcadores
+      </summary>
+      <div className="absolute right-0 z-20 mt-1 w-80 rounded-xl border border-border bg-surface p-2 text-xs shadow-lg">
+        <p className="px-1 pb-2 text-muted">
+          Escreva o marcador no texto ou num link (ex.: <code>mailto:{"{{email}}"}</code>). Ao servir, o domínio troca pelo valor dele.
+        </p>
+        <ul className="max-h-72 overflow-auto">
+          {rows.map((r) => {
+            const value = values ? values[r.key] : undefined;
+            return (
+              <li key={r.key} className="flex items-center gap-2 rounded-lg px-1 py-1 hover:bg-foreground/5">
+                <button type="button" onClick={() => copy(r.key)} className="font-mono text-accent" title="Copiar">
+                  {placeholderToken(r.key)}
+                </button>
+                <span className="min-w-0 flex-1 truncate text-muted" title={value ?? r.hint}>
+                  {copied === r.key ? "copiado" : values ? value || "(vazio neste domínio)" : r.label}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    </details>
   );
 }
 

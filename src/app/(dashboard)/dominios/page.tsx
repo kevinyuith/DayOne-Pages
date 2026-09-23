@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/page-header";
 import { RowAction } from "@/components/row-action";
 import { Badge, DOMAIN_STATUS_TONE } from "@/components/ui/badge";
 import { Table, Td, Th, Tr } from "@/components/ui/table";
-import { listDomains, listPageOptions, unregisteredHosts } from "@/lib/pages/queries";
+import { listDomains, listTemplates, unregisteredHosts } from "@/lib/pages/queries";
 import { DOMAIN_STATUS_LABELS, PAGE_KIND_LABELS } from "@/lib/pages/types";
 import { APP_TZ } from "@/lib/time-zone";
 import { registerSeenDomain, removeDomain, setDomainStatus, verifyDomain } from "./actions";
@@ -26,7 +26,7 @@ export default async function DominiosPage() {
   // Server Component dinâmico (a rota é force-dynamic): ler o relógio por request é intencional.
   // eslint-disable-next-line react-hooks/purity
   const seenSince = new Date(Date.now() - SEEN_DAYS * 24 * 60 * 60 * 1000);
-  const [domains, pages, seen] = await Promise.all([listDomains(), listPageOptions(), unregisteredHosts(seenSince)]);
+  const [domains, templates, seen] = await Promise.all([listDomains(), listTemplates(), unregisteredHosts(seenSince)]);
   // Só um IP de verdade vai para as instruções; qualquer outro texto na variável cai no aviso "defina SERVER_IP".
   const envIp = process.env.SERVER_IP?.trim() ?? "";
   const serverIp = isIP(envIp) ? envIp : "";
@@ -39,7 +39,7 @@ export default async function DominiosPage() {
       <div className="mb-8 grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start">
         <section className="rounded-xl border border-border bg-surface p-5">
           <h2 className="text-sm font-semibold">Adicionar domínio</h2>
-          <DomainForm pages={pages} />
+          <DomainForm templates={templates} />
         </section>
         <DnsInstructions serverIp={serverIp} />
       </div>

@@ -124,7 +124,7 @@ export function RouteForm({
             <>
               <Field label="Página" className="md:col-span-2">
                 <select name="page_id" value={pageId} onChange={(e) => setPageId(e.target.value)} className={SELECT_CLASS} disabled={pending}>
-                  {pages.length === 0 ? <option value="">— crie uma página antes —</option> : null}
+                  {pages.length === 0 ? <option value="">— copie um template para o domínio antes —</option> : null}
                   {pages.map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.name} · {PAGE_KIND_LABELS[p.kind]}

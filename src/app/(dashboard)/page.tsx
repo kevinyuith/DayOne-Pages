@@ -59,7 +59,7 @@ export default async function DashboardPage({
 
   const quickAccess = [
     { label: "Domains", value: counts.domains, detail: `${counts.domainsActive} active`, href: "/dominios", icon: GlobeIcon },
-    { label: "Pages", value: counts.pages, detail: `${counts.pagesPublished} published`, href: "/paginas", icon: PagesIcon },
+    { label: "Page templates", value: counts.pages, detail: `${counts.domainPages} copied to domains`, href: "/paginas", icon: PagesIcon },
     { label: "Routes", value: counts.routes, detail: "path rules", href: "/dominios", icon: ShieldCheckIcon },
   ];
 

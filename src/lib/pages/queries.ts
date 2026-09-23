@@ -1,5 +1,5 @@
 import { supabaseService } from "@/lib/supabase/service";
-import type { DetectionRule, Domain, DomainRoute, Folder, Page, PageRef, PageSlug, PageSlugSummary } from "./types";
+import type { DetectionRule, Domain, DomainRoute, Folder, Page, PageKind, PageRef, PageSlug, PageSlugSummary, PageStatus } from "./types";
 
 /**
  * Leituras do schema `pages`, para Server Components.
@@ -20,76 +20,157 @@ function countOf(rows: CountRow | null | undefined): number {
   return rows?.[0]?.count ?? 0;
 }
 
+/**
+ * As colunas de pages.domains menos `site`: site guarda o HTML de todas as
+ * páginas do domínio e só é lido slug a slug (domain_slug_get) ou resumido
+ * (domain_pages_summary). Nunca `select("*")` em domains.
+ */
+const DOMAIN_COLUMNS =
+  "id,domain,status,default_page_id,filter,filter_pass_page_id,filter_fail_page_id,block_bots,placeholders,settings,notes," +
+  "last_checked_at,last_check_ok,last_check_error,created_at,updated_at";
+
+/** Uma slug de página de domínio, sem o HTML. */
+export type SiteSlugSummary = {
+  slug: string;
+  title: string | null;
+  is_active: boolean;
+  content_type: string;
+  content_hash: string;
+  created_at: string;
+  updated_at: string;
+};
+
+type SiteRow = {
+  domain_id: string;
+  page_id: string;
+  name: string;
+  kind: PageKind;
+  status: PageStatus;
+  template_id: string | null;
+  created_at: string;
+  updated_at: string;
+  slugs: SiteSlugSummary[];
+};
+
+/** As páginas de domains.site, sem HTML (pages.domain_pages_summary). `null` = todos os domínios. */
+async function sitePages(domainIds: string[] | null): Promise<SiteRow[]> {
+  const { data, error } = await supabaseService().rpc("domain_pages_summary", { p_domain_ids: domainIds });
+  throwIf(error, "domain_pages_summary");
+  return (data as SiteRow[] | null) ?? [];
+}
+
+const pageRef = (r: SiteRow): PageRef => ({ id: r.page_id, name: r.name, kind: r.kind, status: r.status });
+
 export type DomainListItem = Domain & {
   default_page: PageRef | null;
   routes_count: number;
 };
 
 export async function listDomains(): Promise<DomainListItem[]> {
-  const { data, error } = await supabaseService()
-    .from("domains")
-    // domains tem 3 FKs para pages (default, filter_pass, filter_fail); nomear a FK desfaz a ambiguidade.
-    .select("*, default_page:pages!domains_default_page_id_fkey(id,name,kind,status), domain_routes(count)")
-    .order("domain");
-  throwIf(error, "listDomains");
-  return (data ?? []).map((row) => {
-    const { domain_routes, ...rest } = row as Domain & { default_page: PageRef | null; domain_routes: CountRow };
-    return { ...rest, routes_count: countOf(domain_routes) };
+  const [domains, pages] = await Promise.all([
+    supabaseService().from("domains").select(`${DOMAIN_COLUMNS}, domain_routes(count)`).order("domain"),
+    sitePages(null),
+  ]);
+  throwIf(domains.error, "listDomains");
+  const byKey = new Map(pages.map((p) => [`${p.domain_id}:${p.page_id}`, p]));
+  return (domains.data ?? []).map((row) => {
+    const { domain_routes, ...rest } = row as unknown as Domain & { domain_routes: CountRow };
+    const def = rest.default_page_id ? byKey.get(`${rest.id}:${rest.default_page_id}`) : undefined;
+    return { ...rest, default_page: def ? pageRef(def) : null, routes_count: countOf(domain_routes) };
   });
 }
 
 export type DomainRouteWithPage = DomainRoute & { page: PageRef | null };
+
+export type PageOption = PageRef & { slugs: Pick<PageSlugSummary, "id" | "slug" | "is_active">[] };
+
+/**
+ * Uma página do domínio (cópia de template guardada em domains.site). Nas
+ * slugs, `id` é o próprio path: dentro da página ele é único.
+ */
+export type DomainPage = PageOption & {
+  template_id: string | null;
+  template_name: string | null;
+  created_at: string;
+  updated_at: string;
+};
 
 export type DomainDetail = Domain & {
   default_page: PageRef | null;
   filter_pass_page: PageRef | null;
   filter_fail_page: PageRef | null;
   routes: DomainRouteWithPage[];
+  /** As páginas do domínio, na ordem em que foram copiadas. */
+  pages: DomainPage[];
 };
 
+/** Nome dos templates por id (para "copiada de X"). */
+async function templateNames(ids: string[]): Promise<Map<string, string>> {
+  const names = new Map<string, string>();
+  const unique = [...new Set(ids)];
+  if (unique.length === 0) return names;
+  const { data, error } = await supabaseService().from("pages").select("id,name").in("id", unique);
+  throwIf(error, "templateNames");
+  for (const p of (data as { id: string; name: string }[] | null) ?? []) names.set(p.id, p.name);
+  return names;
+}
+
+async function toDomainPages(rows: SiteRow[]): Promise<DomainPage[]> {
+  const names = await templateNames(rows.map((r) => r.template_id).filter((id): id is string => id !== null));
+  return rows.map((r) => ({
+    ...pageRef(r),
+    template_id: r.template_id,
+    template_name: r.template_id ? (names.get(r.template_id) ?? null) : null,
+    created_at: r.created_at,
+    updated_at: r.updated_at,
+    slugs: r.slugs.map((s) => ({ id: s.slug, slug: s.slug, is_active: s.is_active })),
+  }));
+}
+
 export async function getDomainDetail(id: string): Promise<DomainDetail | null> {
-  const { data, error } = await supabaseService()
-    .from("domains")
-    .select(
-      "*, default_page:pages!domains_default_page_id_fkey(id,name,kind,status)," +
-        "filter_pass_page:pages!domains_filter_pass_page_id_fkey(id,name,kind,status)," +
-        "filter_fail_page:pages!domains_filter_fail_page_id_fkey(id,name,kind,status)," +
-        "domain_routes(*, page:pages(id,name,kind,status))",
-    )
-    .eq("id", id)
-    .maybeSingle();
-  throwIf(error, "getDomainDetail");
-  if (!data) return null;
-  const { domain_routes, ...rest } = data as unknown as DomainDetail & { domain_routes: DomainRouteWithPage[] };
-  const routes = [...(domain_routes ?? [])].sort((a, b) => a.priority - b.priority);
-  return { ...rest, routes };
+  const [domain, rows] = await Promise.all([
+    supabaseService().from("domains").select(`${DOMAIN_COLUMNS}, domain_routes(*)`).eq("id", id).maybeSingle(),
+    sitePages([id]),
+  ]);
+  throwIf(domain.error, "getDomainDetail");
+  if (!domain.data) return null;
+  const { domain_routes, ...rest } = domain.data as unknown as Domain & { domain_routes: DomainRoute[] };
+  const pages = await toDomainPages(rows);
+  const ref = (pageId: string | null): PageRef | null => {
+    const p = pageId ? pages.find((x) => x.id === pageId) : undefined;
+    return p ? { id: p.id, name: p.name, kind: p.kind, status: p.status } : null;
+  };
+  const routes = [...(domain_routes ?? [])]
+    .sort((a, b) => a.priority - b.priority)
+    .map((r) => ({ ...r, page: ref(r.page_id) }));
+  return {
+    ...rest,
+    default_page: ref(rest.default_page_id),
+    filter_pass_page: ref(rest.filter_pass_page_id),
+    filter_fail_page: ref(rest.filter_fail_page_id),
+    routes,
+    pages,
+  };
 }
 
 export type PageListItem = Page & {
   slugs_count: number;
-  domains_count: number;
-  routes_count: number;
+  /** Quantos domínios têm uma cópia deste template. */
+  copies_count: number;
 };
 
+/** Os templates, para a tela /paginas, com quantas cópias cada um tem nos domínios. */
 export async function listPages(): Promise<PageListItem[]> {
-  const { data, error } = await supabaseService()
-    .from("pages")
-    // domains referencia pages por 3 FKs; nomeamos a de página padrão para o count não ficar ambíguo.
-    .select("*, page_slugs(count), domains!domains_default_page_id_fkey(count), domain_routes(count)")
-    .order("updated_at", { ascending: false });
-  throwIf(error, "listPages");
-  return (data ?? []).map((row) => {
-    const { page_slugs, domains, domain_routes, ...rest } = row as Page & {
-      page_slugs: CountRow;
-      domains: CountRow;
-      domain_routes: CountRow;
-    };
-    return {
-      ...rest,
-      slugs_count: countOf(page_slugs),
-      domains_count: countOf(domains),
-      routes_count: countOf(domain_routes),
-    };
+  const [templates, copies] = await Promise.all([
+    supabaseService().from("pages").select("*, page_slugs(count)").order("updated_at", { ascending: false }),
+    sitePages(null),
+  ]);
+  throwIf(templates.error, "listPages");
+  const copiesOf = new Map<string, number>();
+  for (const c of copies) if (c.template_id) copiesOf.set(c.template_id, (copiesOf.get(c.template_id) ?? 0) + 1);
+  return (templates.data ?? []).map((row) => {
+    const { page_slugs, ...rest } = row as Page & { page_slugs: CountRow };
+    return { ...rest, slugs_count: countOf(page_slugs), copies_count: copiesOf.get(rest.id) ?? 0 };
   });
 }
 
@@ -121,46 +202,80 @@ export async function getSlug(slugId: string): Promise<PageSlug | null> {
   return (data as PageSlug | null) ?? null;
 }
 
-export type PageOption = PageRef & { slugs: Pick<PageSlugSummary, "id" | "slug" | "is_active">[] };
+export type TemplateOption = PageRef & { slugs_count: number };
 
-/** Páginas para os selects (página padrão do domínio, rota). Todas, com status, para a tela avisar. */
-export async function listPageOptions(): Promise<PageOption[]> {
+/** Templates para copiar para um domínio (os arquivados ficam de fora). */
+export async function listTemplates(): Promise<TemplateOption[]> {
   const { data, error } = await supabaseService()
     .from("pages")
-    .select("id,name,kind,status, page_slugs(id,slug,is_active)")
+    .select("id,name,kind,status, page_slugs(count)")
     .neq("status", "ARCHIVED")
     .order("name");
-  throwIf(error, "listPageOptions");
+  throwIf(error, "listTemplates");
   return (data ?? []).map((row) => {
-    const { page_slugs, ...rest } = row as PageRef & { page_slugs: PageOption["slugs"] };
-    return { ...rest, slugs: [...(page_slugs ?? [])].sort((a, b) => a.slug.localeCompare(b.slug)) };
+    const { page_slugs, ...rest } = row as PageRef & { page_slugs: CountRow };
+    return { ...rest, slugs_count: countOf(page_slugs) };
   });
 }
 
-/** Domínios que usam a página (como padrão ou por rota). Para a base do preview. */
-export async function domainsUsingPage(pageId: string): Promise<string[]> {
+export type DomainPageEditorData = {
+  domain: Pick<Domain, "id" | "domain" | "placeholders">;
+  /** A página no formato do editor (os campos de template que não existem aqui vêm vazios). */
+  page: Page;
+  /** As slugs; `id` = path. */
+  slugs: PageSlugSummary[];
+  slug: PageSlug;
+};
+
+/**
+ * Uma página de domains.site aberta no editor, na slug pedida (ou na raiz,
+ * ou na primeira). null se o domínio, a página ou a slug não existem.
+ */
+export async function getDomainPageForEditor(domainId: string, pageId: string, slugPath: string | null): Promise<DomainPageEditorData | null> {
   const db = supabaseService();
-  const [byDefault, byRoute] = await Promise.all([
-    db.from("domains").select("domain").eq("default_page_id", pageId),
-    db.from("domain_routes").select("domains(domain)").eq("page_id", pageId),
+  const [domain, rows] = await Promise.all([
+    db.from("domains").select("id,domain,placeholders").eq("id", domainId).maybeSingle(),
+    sitePages([domainId]),
   ]);
-  throwIf(byDefault.error, "domainsUsingPage");
-  throwIf(byRoute.error, "domainsUsingPage");
-  const set = new Set<string>();
-  for (const r of byDefault.data ?? []) set.add((r as { domain: string }).domain);
-  for (const r of byRoute.data ?? []) {
-    // Embed many-to-one vem como objeto; sem tipos gerados o client não sabe disso.
-    const d = (r as unknown as { domains: { domain: string } | { domain: string }[] | null }).domains;
-    for (const item of Array.isArray(d) ? d : d ? [d] : []) set.add(item.domain);
-  }
-  return Array.from(set).sort();
+  throwIf(domain.error, "getDomainPageForEditor");
+  const row = rows.find((r) => r.page_id === pageId);
+  if (!domain.data || !row) return null;
+
+  const slugs: PageSlugSummary[] = row.slugs.map((s) => ({
+    id: s.slug,
+    page_id: row.page_id,
+    slug: s.slug,
+    title: s.title,
+    content_type: s.content_type,
+    content_hash: s.content_hash,
+    is_active: s.is_active,
+    published_at: null,
+    created_at: s.created_at,
+    updated_at: s.updated_at,
+  }));
+  const current = (slugPath ? slugs.find((s) => s.slug === slugPath) : undefined) ?? (slugPath ? undefined : (slugs.find((s) => s.slug === "/") ?? slugs[0]));
+  if (!current) return null;
+
+  const got = await db.rpc("domain_slug_get", { p_domain: domainId, p_page: pageId, p_slug: current.slug });
+  throwIf(got.error, "domain_slug_get");
+  const content = (got.data as { content: string }[] | null)?.[0]?.content;
+  if (content === undefined) return null;
+
+  return {
+    domain: domain.data as DomainPageEditorData["domain"],
+    page: { id: row.page_id, name: row.name, kind: row.kind, status: row.status, notes: null, folder_id: null, created_at: row.created_at, updated_at: row.updated_at },
+    slugs,
+    slug: { ...current, content },
+  };
 }
 
 export type Overview = {
   domains: number;
   domainsActive: number;
+  /** Templates. */
   pages: number;
-  pagesPublished: number;
+  /** Páginas copiadas para os domínios (domains.site). */
+  domainPages: number;
   routes: number;
 };
 
@@ -315,13 +430,19 @@ export async function listHits(opts: { domainId?: string | null; beforeId?: numb
   const raw = (data as unknown as Raw[] | null) ?? [];
   const rows = raw.slice(0, limit);
 
-  // page_id não tem FK (a página pode ter sido apagada), então o nome vem numa segunda leitura.
+  // page_id não tem FK (a página pode ter sido apagada), então o nome vem numa segunda leitura: das
+  // páginas dos domínios (domains.site) e, para hits antigos que apontam para um template, de pages.
   const pageIds = [...new Set(rows.map((r) => r.page_id).filter((id): id is string => id !== null))];
   const pageNames = new Map<string, string>();
   if (pageIds.length > 0) {
-    const { data: pages, error: pagesError } = await db.from("pages").select("id, name").in("id", pageIds);
-    throwIf(pagesError, "listHits (páginas)");
-    for (const p of (pages as Pick<Page, "id" | "name">[] | null) ?? []) pageNames.set(p.id, p.name);
+    const domainIds = [...new Set(rows.map((r) => r.domain_id).filter((id): id is string => id !== null))];
+    const [site, templates] = await Promise.all([
+      domainIds.length > 0 ? sitePages(domainIds) : Promise.resolve([]),
+      db.from("pages").select("id, name").in("id", pageIds),
+    ]);
+    throwIf(templates.error, "listHits (páginas)");
+    for (const p of (templates.data as Pick<Page, "id" | "name">[] | null) ?? []) pageNames.set(p.id, p.name);
+    for (const p of site) pageNames.set(p.page_id, p.name);
   }
 
   // O aviso de carregamento fica em outra tabela (chega antes do hit, sem FK): terceira leitura.
@@ -349,18 +470,18 @@ export async function listHits(opts: { domainId?: string | null; beforeId?: numb
 export async function countOverview(): Promise<Overview> {
   const db = supabaseService();
   const head = { count: "exact" as const, head: true };
-  const [d, da, p, pp, r] = await Promise.all([
+  const [d, da, p, site, r] = await Promise.all([
     db.from("domains").select("id", head),
     db.from("domains").select("id", head).eq("status", "ACTIVE"),
     db.from("pages").select("id", head),
-    db.from("pages").select("id", head).eq("status", "PUBLISHED"),
+    sitePages(null),
     db.from("domain_routes").select("id", head),
   ]);
   return {
     domains: d.count ?? 0,
     domainsActive: da.count ?? 0,
     pages: p.count ?? 0,
-    pagesPublished: pp.count ?? 0,
+    domainPages: site.length,
     routes: r.count ?? 0,
   };
 }

@@ -4,13 +4,14 @@ import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/page-header";
 import { RowAction } from "@/components/row-action";
 import { Badge, DOMAIN_STATUS_TONE } from "@/components/ui/badge";
-import { getDomainDetail, listPageOptions } from "@/lib/pages/queries";
+import { getDomainDetail, listTemplates } from "@/lib/pages/queries";
 import { DOMAIN_STATUS_LABELS } from "@/lib/pages/types";
 import { APP_TZ } from "@/lib/time-zone";
 import { removeDomain, setDomainStatus, verifyDomain } from "../actions";
 import { BotBlockToggle } from "./bot-block-toggle";
-import { DefaultPageSelect } from "./default-page-select";
+import { DomainPagesPanel } from "./domain-pages-panel";
 import { FilterPanel } from "./filter-panel";
+import { PlaceholdersForm } from "./placeholders-form";
 import { RoutesPanel } from "./routes-panel";
 
 type Params = Promise<{ id: string }>;
@@ -25,7 +26,7 @@ const dateFmt = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle
 
 export default async function DominioDetailPage({ params }: { params: Params }) {
   const { id } = await params;
-  const [domain, pages] = await Promise.all([getDomainDetail(id), listPageOptions()]);
+  const [domain, templates] = await Promise.all([getDomainDetail(id), listTemplates()]);
   if (!domain) notFound();
 
   return (
@@ -35,7 +36,7 @@ export default async function DominioDetailPage({ params }: { params: Params }) 
           ← Domínios
         </Link>
       </div>
-      <PageHeader title={domain.domain} description="Rotas decidem o que cada path responde. Sem rota que case, vale a página padrão." />
+      <PageHeader title={domain.domain} description="As páginas deste domínio são cópias exclusivas de templates. Rotas decidem o que cada path responde; sem rota que case, vale a página padrão." />
 
       <section className="mb-6 grid gap-4 lg:grid-cols-2">
         <div className="rounded-xl border border-border bg-surface p-5">
@@ -65,36 +66,29 @@ export default async function DominioDetailPage({ params }: { params: Params }) 
         </div>
 
         <div className="rounded-xl border border-border bg-surface p-5">
-          <h2 className="text-sm font-semibold">Página padrão</h2>
-          <p className="mt-1 text-xs text-muted">Servida quando nenhuma rota casa. O path da request vira a slug dessa página (`/` → slug `/`).</p>
+          <h2 className="text-sm font-semibold">Segurança</h2>
+          <p className="mt-1 text-xs text-muted">
+            Bloqueia crawlers e conexões automatizadas (responde 403) antes de qualquer rota. Recomendado para tráfego de Google, Taboola, Outbrain e afins. Não troca a página — só barra.
+          </p>
           <div className="mt-3">
-            <DefaultPageSelect domainId={domain.id} value={domain.default_page_id} pages={pages} />
+            <BotBlockToggle domainId={domain.id} value={domain.block_bots} />
           </div>
-          {domain.default_page && domain.default_page.status !== "PUBLISHED" ? (
-            <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">A página padrão não está publicada e não será servida.</p>
-          ) : null}
-          {!domain.default_page_id ? <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">Sem página padrão: paths sem rota respondem 404.</p> : null}
-          {domain.filter && domain.filter_fail_page_id ? (
-            <p className="mt-2 text-xs text-muted">Há um filtro ativo: quem não passa vê a página de reprovação, não esta.</p>
-          ) : null}
-        </div>
-      </section>
-
-      <section className="mb-6 rounded-xl border border-border bg-surface p-5">
-        <h2 className="text-sm font-semibold">Segurança</h2>
-        <p className="mt-1 text-xs text-muted">
-          Bloqueia crawlers e conexões automatizadas (responde 403) antes de qualquer rota. Recomendado para tráfego de Google, Taboola, Outbrain e afins. Não troca a página — só barra.
-        </p>
-        <div className="mt-3">
-          <BotBlockToggle domainId={domain.id} value={domain.block_bots} />
         </div>
       </section>
 
       <div className="mb-6">
-        <FilterPanel domain={domain} pages={pages} />
+        <DomainPagesPanel domain={domain} templates={templates} />
       </div>
 
-      <RoutesPanel domainId={domain.id} routes={domain.routes} pages={pages} />
+      <div className="mb-6">
+        <PlaceholdersForm domainId={domain.id} domain={domain.domain} values={domain.placeholders} />
+      </div>
+
+      <div className="mb-6">
+        <FilterPanel domain={domain} pages={domain.pages} />
+      </div>
+
+      <RoutesPanel domainId={domain.id} routes={domain.routes} pages={domain.pages} />
     </>
   );
 }

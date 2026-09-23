@@ -55,6 +55,7 @@ export const ROUTE_ACTION_LABELS: Record<RouteAction, string> = {
 export const REDIRECT_CODES = [301, 302, 307, 308] as const;
 export const BLOCK_CODES = [403, 404, 410, 451] as const;
 
+/** Um template (pages.pages). As páginas que os domínios servem são cópias guardadas em domains.site. */
 export type Page = {
   id: string;
   name: string;
@@ -118,6 +119,8 @@ export type Domain = {
   filter_pass_page_id: string | null;
   filter_fail_page_id: string | null;
   block_bots: boolean;
+  /** Valores dos marcadores {{chave}} das páginas do domínio (ver placeholders.ts). */
+  placeholders: Record<string, unknown>;
   settings: Record<string, unknown>;
   notes: string | null;
   last_checked_at: string | null;

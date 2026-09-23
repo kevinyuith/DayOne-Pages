@@ -223,14 +223,14 @@ export async function deleteSlug(slugId: string): Promise<ActionResult> {
   }
 }
 
+/**
+ * Exclui um template. Nenhum domínio aponta para template (eles servem as
+ * próprias cópias em domains.site), então as cópias não mudam; só perdem o
+ * nome do template de origem na tela.
+ */
 export async function deletePage(pageId: string): Promise<ActionResult> {
   const db = supabaseService();
   try {
-    const routes = await db.from("domain_routes").select("id", { count: "exact", head: true }).eq("page_id", pageId);
-    if ((routes.count ?? 0) > 0) {
-      return fail(`Esta página é usada por ${routes.count} rota(s) de domínio. Remova as rotas antes, ou arquive a página.`);
-    }
-    // domains.default_page_id é ON DELETE SET NULL: o domínio ficaria sem página padrão.
     const { error } = await db.from("pages").delete().eq("id", pageId);
     if (error) throw new Error(error.message);
     revalidatePath("/paginas");

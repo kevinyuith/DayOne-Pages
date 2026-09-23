@@ -15,6 +15,19 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - **Tudo em inglês**: tabelas, colunas, funções, parâmetros, índices, constraints, valores de CHECK/enum, `COMMENT ON`, mensagens de `RAISE` e os comentários (`--`) dos arquivos de migration e dos corpos de função. Português fica na UI e nos comentários do código TS/PHP. Quando um erro do banco chega na tela, a action traduz pelo código do erro (ex.: `23514`) em vez de mostrar a mensagem crua.
 - **Horário em UTC**: toda data é `timestamptz` (nunca `timestamp` sem fuso) e o banco roda em UTC. As funções recebem e devolvem instantes e não convertem fuso: nada de `AT TIME ZONE` nem fuso fixo no SQL. Agrupar por dia local é trabalho do frontend.
 
+## Páginas: templates e páginas do domínio
+
+- **`pages.pages` / `pages.page_slugs` guardam só templates** (a tela "Templates de página", `/paginas`). Template nunca é servido.
+- **Tudo o que um domínio serve mora na linha dele, em `pages.domains.site`** (jsonb): as páginas do domínio, cada uma com as slugs e o HTML. Elas nascem como cópia de um template (`domain_page_copy`), e daí em diante são independentes: editar a cópia não muda o template, e editar o template não muda as cópias. "Trocar template" substitui a cópia (`domain_page_replace`, mesmo id, edições perdidas).
+- `default_page_id`, `filter_pass_page_id`, `filter_fail_page_id` e `domain_routes.page_id` apontam para chaves de `site`; triggers barram página de outro domínio. Sem FK.
+- Escrever em `site` só pelas funções `pages.domain_page_*` / `pages.domain_slug_*` (travam a linha e mudam uma página ou slug por vez, com concorrência por `updated_at`). Ler sem HTML por `pages.domain_pages_summary`; nunca `select("*")` em `domains` (traria o HTML de todas as páginas).
+- O editor é um só (`PageEditor`), com as ações e os links vindos da rota: template em `/paginas/[id]/slugs/[slugId]`, página do domínio em `/dominios/[id]/paginas/[pageId]?slug=/caminho`.
+
+## Marcadores `{{chave}}`
+
+- Valores em `pages.domains.placeholders` (campos em `src/lib/pages/placeholders.ts`); `{{domain}}` e `{{year}}` são automáticos. Chaves em inglês, `snake_case`.
+- Quem troca é o servidor de entrega, ao servir (`server/src/placeholders.php`); o painel faz a mesma troca só no preview. As regras dos dois lados são iguais — mudou uma, mude a outra: só chave conhecida, valor vazio vira texto vazio, valor escapado em HTML.
+
 ## Frontend
 
 - **Fuso de exibição: Nova York** (`America/New_York`), pela constante `APP_TZ` de `src/lib/time-zone.ts`. Todo `Intl.DateTimeFormat`/`toLocale*` que mostra data ou hora passa `timeZone: APP_TZ`; nunca depender do fuso do servidor nem do navegador.

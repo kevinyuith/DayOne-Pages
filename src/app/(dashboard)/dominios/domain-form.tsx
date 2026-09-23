@@ -3,13 +3,13 @@
 import { useActionState } from "react";
 import { Button } from "@/components/ui/button";
 import { Field, INPUT_CLASS, SELECT_CLASS } from "@/components/ui/field";
-import type { PageOption } from "@/lib/pages/queries";
-import { PAGE_KIND_LABELS, PAGE_STATUS_LABELS } from "@/lib/pages/types";
+import type { TemplateOption } from "@/lib/pages/queries";
+import { PAGE_KIND_LABELS } from "@/lib/pages/types";
 import { addDomain, type DomainFormState } from "./actions";
 
 const INITIAL: DomainFormState = { attempt: 0 };
 
-export function DomainForm({ pages }: { pages: PageOption[] }) {
+export function DomainForm({ templates }: { templates: TemplateOption[] }) {
   const [state, action, pending] = useActionState(addDomain, INITIAL);
 
   return (
@@ -19,13 +19,12 @@ export function DomainForm({ pages }: { pages: PageOption[] }) {
         <Field label="Domínio" className="min-w-0 sm:flex-1">
           <input name="domain" required placeholder="exemplo.com" disabled={pending} className={INPUT_CLASS} autoCapitalize="off" spellCheck={false} />
         </Field>
-        <Field label="Página padrão" className="sm:w-64">
-          <select name="default_page_id" defaultValue="" disabled={pending} className={SELECT_CLASS}>
+        <Field label="Template (vira a página do domínio)" className="sm:w-64">
+          <select name="template_id" defaultValue="" disabled={pending} className={SELECT_CLASS}>
             <option value="">— escolher depois —</option>
-            {pages.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name} · {PAGE_KIND_LABELS[p.kind]}
-                {p.status !== "PUBLISHED" ? ` (${PAGE_STATUS_LABELS[p.status].toLowerCase()})` : ""}
+            {templates.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name} · {PAGE_KIND_LABELS[t.kind]}
               </option>
             ))}
           </select>

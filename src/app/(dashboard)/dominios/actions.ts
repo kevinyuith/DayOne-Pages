@@ -6,6 +6,7 @@ import { checkDomainHealth } from "@/lib/origin/health";
 import { purgeHost } from "@/lib/origin/purge";
 import { parseConditionsForm } from "@/lib/pages/conditions";
 import { isValidDomain, isValidSlug, normalizeHost, normalizePath } from "@/lib/pages/normalize";
+import { PLACEHOLDER_FIELDS, emptyPlaceholders } from "@/lib/pages/placeholders";
 import {
   BLOCK_CODES,
   REDIRECT_CODES,
@@ -42,6 +43,27 @@ async function purgeAfterWrite(domain: string, done: string): Promise<ActionResu
 }
 
 const UNIQUE_VIOLATION = "23505";
+const CHECK_VIOLATION = "23514";
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Os triggers de pages.domains / domain_routes recusam página que não é do
+ * domínio (check_violation). Na tela isso só acontece com a lista
+ * desatualizada (a página foi removida em outra aba).
+ */
+function ownPageError(error: { code?: string; message: string }): string | null {
+  if (error.code !== CHECK_VIOLATION) return null;
+  if (/own pages|pages of this domain|not in site/.test(error.message)) {
+    return "Essa página não é mais deste domínio (foi removida?). Recarregue a tela.";
+  }
+  return null;
+}
+
+async function domainName(id: string): Promise<string | null> {
+  const { data, error } = await supabaseService().from("domains").select("domain").eq("id", id).maybeSingle();
+  if (error) throw new Error(error.message);
+  return (data as { domain: string } | null)?.domain ?? null;
+}
 
 // ── Domínio ────────────────────────────────────────────────────────────────
 
@@ -50,17 +72,27 @@ export type DomainFormState = { error?: string; success?: string; attempt: numbe
 export async function addDomain(prev: DomainFormState, fd: FormData): Promise<DomainFormState> {
   const attempt = prev.attempt + 1;
   const domain = normalizeHost(String(fd.get("domain") ?? ""));
-  const pageId = String(fd.get("default_page_id") ?? "").trim() || null;
+  const templateId = String(fd.get("template_id") ?? "").trim() || null;
 
   if (!isValidDomain(domain)) {
     return { error: "Domínio inválido. Use o formato exemplo.com (sem http://, sem barra, sem www).", attempt };
   }
+  if (templateId && !UUID_RE.test(templateId)) return { error: "Template inválido.", attempt };
 
+  const db = supabaseService();
   try {
-    const { error } = await supabaseService().from("domains").insert({ domain, status: "ACTIVE", default_page_id: pageId });
+    const { data, error } = await db.from("domains").insert({ domain, status: "ACTIVE", placeholders: emptyPlaceholders() }).select("id").single();
     if (error) {
       if (error.code === UNIQUE_VIOLATION) return { error: `${domain} já está cadastrado.`, attempt };
       throw new Error(error.message);
+    }
+    if (templateId) {
+      // A primeira cópia vira a página padrão (domain_page_copy faz isso quando não há padrão).
+      const copy = await db.rpc("domain_page_copy", { p_domain: (data as { id: string }).id, p_template: templateId });
+      if (copy.error) {
+        revalidateDomain();
+        return { error: `${domain} cadastrado, mas a cópia do template falhou (${copy.error.message}). Escolha o template na tela do domínio.`, attempt };
+      }
     }
   } catch (cause) {
     return { error: errorReason(cause), attempt };
@@ -82,7 +114,7 @@ export async function registerSeenDomain(host: string): Promise<ActionResult> {
 
   const db = supabaseService();
   try {
-    const { data, error } = await db.from("domains").insert({ domain, status: "ACTIVE" }).select("id").single();
+    const { data, error } = await db.from("domains").insert({ domain, status: "ACTIVE", placeholders: emptyPlaceholders() }).select("id").single();
     if (error) {
       if (error.code === UNIQUE_VIOLATION) return fail(`${domain} já está cadastrado.`);
       throw new Error(error.message);
@@ -126,14 +158,121 @@ export async function verifyDomain(id: string): Promise<VerifyResult> {
   }
 }
 
+/** Página padrão do domínio: uma das páginas dele (domains.site), ou nenhuma (404). */
 export async function setDefaultPage(id: string, pageId: string | null): Promise<ActionResult> {
   try {
-    const { error } = await supabaseService().from("domains").update({ default_page_id: pageId || null }).eq("id", id);
-    if (error) throw new Error(error.message);
+    const { data, error } = await supabaseService().from("domains").update({ default_page_id: pageId || null }).eq("id", id).select("domain").single();
+    if (error) {
+      const own = ownPageError(error);
+      if (own) return fail(own);
+      throw new Error(error.message);
+    }
     revalidateDomain(id);
+    return purgeAfterWrite((data as { domain: string }).domain, "Página padrão trocada");
+  } catch (cause) {
+    return fail(errorReason(cause));
+  }
+}
+
+// ── Páginas do domínio (domains.site) ──────────────────────────────────────
+
+/**
+ * Copia um template para o domínio. A cópia é do domínio: editar uma não
+ * muda a outra. Domínio sem página padrão ganha esta como padrão.
+ */
+export async function copyTemplateToDomain(domainId: string, templateId: string): Promise<ActionResult<{ pageId: string }>> {
+  if (!UUID_RE.test(templateId)) return fail("Escolha um template.");
+  try {
+    const { data, error } = await supabaseService().rpc("domain_page_copy", { p_domain: domainId, p_template: templateId });
+    if (error) {
+      if (error.code === "P0002") return fail("Template ou domínio não encontrado.");
+      throw new Error(error.message);
+    }
+    revalidateDomain(domainId);
+    const domain = await domainName(domainId);
+    const purged = domain ? await purgeAfterWrite(domain, "Template copiado") : { ok: true as const };
+    return purged.ok ? { ok: true, pageId: String(data) } : purged;
+  } catch (cause) {
+    return fail(errorReason(cause));
+  }
+}
+
+/**
+ * Troca o conteúdo de uma página do domínio por uma cópia nova de um
+ * template. A página continua a mesma (padrão, filtro e rotas seguem nela) e
+ * mantém o status; as edições feitas nela se perdem.
+ */
+export async function replaceDomainPage(domainId: string, pageId: string, templateId: string): Promise<ActionResult> {
+  if (!UUID_RE.test(templateId)) return fail("Escolha um template.");
+  try {
+    const { error } = await supabaseService().rpc("domain_page_replace", { p_domain: domainId, p_page: pageId, p_template: templateId });
+    if (error) {
+      if (error.code === "P0002") return fail("Página ou template não encontrado.");
+      throw new Error(error.message);
+    }
+    revalidateDomain(domainId);
+    const domain = await domainName(domainId);
+    return domain ? purgeAfterWrite(domain, "Template trocado") : { ok: true };
+  } catch (cause) {
+    return fail(errorReason(cause));
+  }
+}
+
+/** Remove uma página do domínio. Recusa enquanto ela é a padrão, a do filtro ou a de alguma rota. */
+export async function removeDomainPage(domainId: string, pageId: string): Promise<ActionResult> {
+  const db = supabaseService();
+  try {
+    const [dom, routes] = await Promise.all([
+      db.from("domains").select("default_page_id, filter_pass_page_id, filter_fail_page_id").eq("id", domainId).maybeSingle(),
+      db.from("domain_routes").select("id", { count: "exact", head: true }).eq("domain_id", domainId).eq("page_id", pageId),
+    ]);
+    if (dom.error) throw new Error(dom.error.message);
+    const d = dom.data as { default_page_id: string | null; filter_pass_page_id: string | null; filter_fail_page_id: string | null } | null;
+    if (!d) return fail("Domínio não encontrado.");
+    if (d.default_page_id === pageId) return fail("Esta é a página padrão. Escolha outra como padrão antes de remover.");
+    if (d.filter_pass_page_id === pageId || d.filter_fail_page_id === pageId) return fail("O filtro do domínio usa esta página. Troque ou limpe o filtro antes.");
+    if ((routes.count ?? 0) > 0) return fail(`Há ${routes.count} rota(s) servindo esta página. Ajuste as rotas antes.`);
+
+    const { error } = await db.rpc("domain_page_remove", { p_domain: domainId, p_page: pageId });
+    if (error) {
+      const own = ownPageError(error);
+      if (own) return fail("A página ainda está em uso. Recarregue a tela.");
+      throw new Error(error.message);
+    }
+    revalidateDomain(domainId);
     return { ok: true };
   } catch (cause) {
     return fail(errorReason(cause));
+  }
+}
+
+// ── Dados do domínio para os marcadores ────────────────────────────────────
+
+export type PlaceholdersFormState = { error?: string; success?: string; attempt: number };
+
+/**
+ * Salva os dados que os marcadores {{chave}} usam (pages.domains.placeholders).
+ * Grava todos os campos da lista, vazios inclusive: campo vazio vira texto
+ * vazio na página, nunca o marcador cru.
+ */
+export async function savePlaceholders(domainId: string, prev: PlaceholdersFormState, fd: FormData): Promise<PlaceholdersFormState> {
+  const attempt = prev.attempt + 1;
+  const values: Record<string, string> = {};
+  for (const f of PLACEHOLDER_FIELDS) {
+    const v = String(fd.get(f.key) ?? "").trim();
+    if (v.length > f.max) return { error: `${f.label}: no máximo ${f.max} caracteres.`, attempt };
+    values[f.key] = v;
+  }
+  if (values.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email)) return { error: "E-mail inválido.", attempt };
+
+  try {
+    const { data, error } = await supabaseService().from("domains").update({ placeholders: values }).eq("id", domainId).select("domain").single();
+    if (error) throw new Error(error.message);
+    revalidateDomain(domainId);
+    const purged = await purgeAfterWrite((data as { domain: string }).domain, "Dados salvos");
+    return purged.ok ? { success: "Dados salvos. As páginas do domínio já usam os valores novos.", attempt } : { error: purged.reason, attempt };
+  } catch (cause) {
+    return { error: errorReason(cause), attempt };
   }
 }
 
@@ -185,7 +324,11 @@ export async function saveFilter(prev: FilterFormState, fd: FormData): Promise<F
       .from("domains")
       .update({ filter: conditions.value, filter_pass_page_id: passPageId, filter_fail_page_id: failPageId })
       .eq("id", domainId);
-    if (error) throw new Error(error.message);
+    if (error) {
+      const own = ownPageError(error);
+      if (own) return { error: own, attempt };
+      throw new Error(error.message);
+    }
     revalidateDomain(domainId);
     return { success: "Filtro salvo. Entra no ar em até 30 s (ou use Limpar cache).", attempt };
   } catch (cause) {
@@ -345,6 +488,8 @@ export async function saveRoute(prev: RouteFormState, fd: FormData): Promise<Rou
     const { data, error } = await query;
     if (error) {
       if (error.code === UNIQUE_VIOLATION) return { error: `Já existe uma rota com prioridade ${priority} neste domínio.`, attempt };
+      const own = ownPageError(error);
+      if (own) return { error: own, attempt };
       // Regex que o JS aceita e o Postgres (POSIX) recusa: o trigger devolve check_violation citando path_pattern.
       if (error.code === "23514" && error.message.includes("path_pattern")) return { error: "Regex inválida para o banco (POSIX).", attempt };
       throw new Error(error.message);
