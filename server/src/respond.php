@@ -11,6 +11,7 @@
  *             Slug com funil em modo servidor (funnel.php): só a etapa atual
  *             sai, o ETag ganha o id da etapa e a resposta varia por Cookie.
  *             Página HTML ganha o aviso de carregamento (beacon.php).
+ *             Marcadores {{chave}} viram os dados do domínio (placeholders.php).
  *   REDIRECT  Location = redirect_url (+ query original se preserve_query).
  *   BLOCK     o status configurado, com uma página mínima.
  *
@@ -105,11 +106,15 @@ function serve_slug(array $route, Request $req): array
     $beacon = beacon_applies($route, $req);
     $tag = $beacon ? BEACON_ETAG : '';
 
+    // Marcadores {{chave}}: o hash dos valores entra no ETag (placeholders.php).
+    $values = placeholder_values($route);
+    $ptag = placeholders_etag($values);
+
     // Slug que o cache já marcou como "não é funil em modo servidor": o ETag é
     // só o hash e o 304 sai sem ler o conteúdo do disco. Cache antigo (sem a
     // marca) ou funil: lê o conteúdo, porque a etapa entra no ETag.
     if (($route['funnel'] ?? null) === false) {
-        $headers['ETag'] = '"' . $hash . $tag . '"';
+        $headers['ETag'] = '"' . $hash . $ptag . $tag . '"';
         if ($req->ifNoneMatch !== null && etag_matches($req->ifNoneMatch, $headers['ETag'])) {
             return [304, $headers, null];
         }
@@ -124,7 +129,7 @@ function serve_slug(array $route, Request $req): array
     // Funil em modo servidor: a etapa entra no ETag (cada etapa é um corpo
     // diferente na MESMA URL) e a resposta passa a variar por Cookie.
     $funnel = funnel_apply($body, $req->cookies);
-    $etag = '"' . $hash . ($funnel ? '-' . $funnel['step'] : '') . $tag . '"';
+    $etag = '"' . $hash . ($funnel ? '-' . $funnel['step'] : '') . $ptag . $tag . '"';
     if ($funnel) {
         $body = $funnel['html'];
         $headers['Vary'] .= ', Cookie';
@@ -135,6 +140,7 @@ function serve_slug(array $route, Request $req): array
         return [304, $headers, null];
     }
 
+    $body = placeholders_apply($body, $values, $headers['Content-Type']);
     return [200, $headers, $beacon ? beacon_inject($body) : $body];
 }
 

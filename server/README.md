@@ -120,6 +120,24 @@ cacheável e um 304 também leva id novo. O ETag das páginas ganha `-b1`
 roda JavaScript — "carregou" prova que um navegador renderizou, não que era
 uma pessoa.
 
+### Marcadores `{{chave}}` (`src/placeholders.php`)
+
+Cada domínio guarda os próprios dados (nome da empresa, telefone, e-mail,
+endereço…) em `pages.domains.placeholders`, e o `resolve` devolve esses
+valores (mais `domain`) em toda rota. Ao servir, `{{chave}}` vira o valor;
+`{{year}}` é o ano corrente (UTC).
+
+- só chave conhecida é trocada (espaços dentro valem: `{{ phone }}`);
+  `{{ qualquer_outra }}` fica intacta, então página com Vue/Alpine não quebra;
+- valor vazio vira texto vazio;
+- HTML/XML: valor escapado; `text/plain`: cru; CSS/JS/JSON: nada muda;
+- o ETag ganha `-p<8 hex>` (hash dos valores): mudou um dado do domínio, a
+  cópia do navegador deixa de valer. Rota sem `placeholders` (cache de antes,
+  `resolve` antigo) não troca nada e não mexe no ETag.
+
+A lista de campos do painel e o preview do editor ficam em
+`src/lib/pages/placeholders.ts`, com as mesmas regras.
+
 ## Instalação (Ubuntu/Debian)
 
 > **Só para um VPS limpo e dedicado.** Os arquivos de `deploy/` assumem que esta
