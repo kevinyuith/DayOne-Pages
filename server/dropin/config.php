@@ -28,8 +28,8 @@ return [
 
     // Cache em disco. A pasta é criada sozinha; o usuário do site precisa poder escrever aqui.
     'CACHE_DIR'         => __DIR__ . '/_cache',
-    'CACHE_TTL'         => 300,      // segundos: os "5 minutos"
-    'NEGATIVE_TTL'      => 300,      // domínio desconhecido
+    'CACHE_TTL'         => 60,       // segundos: 1 minuto
+    'NEGATIVE_TTL'      => 60,       // domínio desconhecido ou pausado
     'STALE_MAX_AGE'     => 604800,   // por quanto tempo a cópia expirada serve se o Supabase cair
 
     'SUPABASE_TIMEOUT'  => 5,

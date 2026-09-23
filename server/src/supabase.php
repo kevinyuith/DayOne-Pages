@@ -9,7 +9,7 @@
  *
  * `Content-Profile: pages` porque a função não mora no schema `public`.
  * Chave inválida → 403 do PostgREST → tratamos como erro (nunca como 404
- * negativo, senão uma chave rotacionada apagaria todos os sites por 5 min).
+ * negativo, senão uma chave rotacionada apagaria todos os sites até o cache negativo vencer).
  */
 declare(strict_types=1);
 

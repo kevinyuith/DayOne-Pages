@@ -89,8 +89,8 @@ function config(): array
         'server_id'         => (string) $get('SERVER_ID', ''),
         'purge_token'       => (string) $get('PURGE_TOKEN', ''),
         'cache_dir'         => (string) $get('CACHE_DIR', DAYONE_ROOT . '/cache'),
-        'cache_ttl'         => $int('CACHE_TTL', 300),
-        'negative_ttl'      => $int('NEGATIVE_TTL', 300),
+        'cache_ttl'         => $int('CACHE_TTL', 60),
+        'negative_ttl'      => $int('NEGATIVE_TTL', 60),
         'stale_max_age'     => $int('STALE_MAX_AGE', 604800),
         'swr'               => $int('SWR', 0) === 1,
         'max_path_len'      => $int('MAX_PATH_LEN', 200),
@@ -98,7 +98,7 @@ function config(): array
         'supabase_timeout'  => $int('SUPABASE_TIMEOUT', 5),
         'debug_headers'     => $int('DEBUG_HEADERS', 1) === 1,
         'log_hits'          => $int('LOG_HITS', 1) === 1,
-        'hits_timeout'      => $int('HITS_TIMEOUT', 3),
+        'hits_timeout'      => $int('HITS_TIMEOUT', 5),
         'sub0_key'          => (string) $get('SUB0_KEY', 'DAYONE'),
     ];
     return $config;

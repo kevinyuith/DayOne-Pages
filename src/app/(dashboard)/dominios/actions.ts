@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { errorReason, fail, type ActionResult } from "@/lib/action-result";
 import { checkDomainHealth } from "@/lib/origin/health";
+import { purgeHost } from "@/lib/origin/purge";
 import { parseConditionsForm } from "@/lib/pages/conditions";
 import { isValidDomain, isValidSlug, normalizeHost, normalizePath } from "@/lib/pages/normalize";
 import {
@@ -27,6 +28,17 @@ function revalidateDomain(id?: string) {
   revalidatePath("/dominios");
   if (id) revalidatePath(`/dominios/${id}`);
   revalidatePath("/");
+}
+
+/**
+ * Depois de pausar ou ativar um domínio: purga o cache do servidor para
+ * valer na hora. A escrita no banco já aconteceu; se o purge falhar, o
+ * estado novo vale quando o cache vencer — a mensagem diz isso.
+ */
+async function purgeAfterWrite(domain: string, done: string): Promise<ActionResult> {
+  const r = await purgeHost(domain);
+  if (r.ok || r.skipped) return { ok: true };
+  return fail(`${done}, mas o cache do servidor não foi limpo (${r.error}). Vale em até 1 min.`);
 }
 
 const UNIQUE_VIOLATION = "23505";
@@ -146,7 +158,7 @@ export async function saveFilter(prev: FilterFormState, fd: FormData): Promise<F
       .eq("id", domainId);
     if (error) throw new Error(error.message);
     revalidateDomain(domainId);
-    return { success: "Filtro salvo. Entra no ar em até 5 min (ou use Limpar cache).", attempt };
+    return { success: "Filtro salvo. Entra no ar em até 1 min (ou use Limpar cache).", attempt };
   } catch (cause) {
     return { error: errorReason(cause), attempt };
   }
@@ -170,10 +182,10 @@ export async function clearFilter(domainId: string): Promise<ActionResult> {
 export async function setDomainStatus(id: string, status: DomainStatus): Promise<ActionResult> {
   if (status !== "ACTIVE" && status !== "PAUSED") return fail("Status inválido.");
   try {
-    const { error } = await supabaseService().from("domains").update({ status }).eq("id", id);
+    const { data, error } = await supabaseService().from("domains").update({ status }).eq("id", id).select("domain").single();
     if (error) throw new Error(error.message);
     revalidateDomain(id);
-    return { ok: true };
+    return purgeAfterWrite(data.domain, status === "ACTIVE" ? "Domínio ativado" : "Domínio pausado");
   } catch (cause) {
     return fail(errorReason(cause));
   }
@@ -182,9 +194,12 @@ export async function setDomainStatus(id: string, status: DomainStatus): Promise
 export async function removeDomain(id: string): Promise<ActionResult> {
   try {
     // As rotas caem em cascata (FK ON DELETE CASCADE).
-    const { error } = await supabaseService().from("domains").delete().eq("id", id);
+    const { data, error } = await supabaseService().from("domains").delete().eq("id", id).select("domain").single();
     if (error) throw new Error(error.message);
     revalidateDomain(id);
+    // Sem aviso se o purge falhar: a tela de detalhe precisa do ok para sair
+    // de um registro que não existe mais. No pior caso vale quando o cache vencer.
+    await purgeHost(data.domain);
     return { ok: true };
   } catch (cause) {
     return fail(errorReason(cause));
