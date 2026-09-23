@@ -7,7 +7,7 @@
  * fire-and-forget: qualquer erro vai só para o log.
  *
  * O que grava (uma linha por request a página: .html, .php ou sem extensão):
- * host, path, outcome, status, país (CF-IPCountry), estado se US (cf-region),
+ * host, path e query crua, outcome, status, país (CF-IPCountry), estado se US (cf-region),
  * dispositivo e bot (pelo User-Agent), host do referrer, IP, hostname (reverse
  * DNS do IP), ASN, User-Agent e header Cookie crus, e a rota que decidiu
  * (rota, página, slug, decisão). Ligado/desligado por LOG_HITS (config).
@@ -31,8 +31,9 @@ function log_hit(Request $req, int $status, string $outcome, ?string $domainId, 
 
     supabase_log_hit([
         'p_domain'        => $domainId,
-        'p_host'          => $req->host !== '' ? $req->host : $req->rawHost,
+        'p_host'          => visited_host($req),
         'p_path'          => $req->path,
+        'p_query'         => $req->rawQuery,
         'p_outcome'       => $outcome,
         'p_status'        => $status,
         'p_country'       => $req->country,
@@ -63,6 +64,16 @@ function hit_decision(?array $route): string
     }
     $parts = array_filter([(string) ($route['action'] ?? ''), (string) ($route['match_type'] ?? '')], fn (string $p) => $p !== '');
     return implode(' · ', $parts);
+}
+
+/**
+ * Host como o visitante acessou ("www.x.com" continua com www), sem porta nem
+ * ponto final. $req->host é o normalizado (sem www), que serve para achar o domínio.
+ */
+function visited_host(Request $req): string
+{
+    $host = rtrim(strtolower(trim(explode(':', $req->rawHost, 2)[0])), '.');
+    return $host !== '' ? $host : $req->host;
 }
 
 /** Só páginas: .html, .php ou último segmento sem ponto ("/", "/oferta"). Arquivos e sondas (.js, .env, .json…) ficam de fora. */

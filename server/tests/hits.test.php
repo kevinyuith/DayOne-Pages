@@ -55,3 +55,7 @@ same('decide: rota do redirect', 'r1', decide([$redirect], $human)[4]['route_id'
 same('decide: bot gate', 'BLOCK · BOTGATE', hit_decision(decide([$gate, $redirect], $crawler)[4]));
 same('decide: nenhuma casou', null, decide([$redirect], make_request())[4]);
 same('decide: sem rotas', null, decide([], make_request())[4]);
+
+// Host gravado no hit: como o visitante acessou (mantém www), sem porta/ponto final.
+same('host visitado: com www', 'www.example.com', visited_host(make_request(['HTTP_HOST' => 'WWW.Example.com:443'])));
+same('host visitado: sem www', 'example.com', visited_host(make_request(['HTTP_HOST' => 'example.com.'])));

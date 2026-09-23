@@ -8,8 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, Td, Th, Tr } from "@/components/ui/table";
 import { connectionType } from "@/lib/connection";
-import { ipv6Prefix64 } from "@/lib/net";
-import { browserFromUA } from "@/lib/user-agent";
+import { browserFromUA, osFromUA } from "@/lib/user-agent";
 import { listDomains, listHits } from "@/lib/pages/queries";
 
 export const metadata: Metadata = {
@@ -76,11 +75,12 @@ export default async function LogsPage({
           description="Os requests aparecem aqui conforme o servidor de entrega os registra."
         />
       ) : (
-        <Table className="min-w-[2900px]">
+        <Table className="min-w-[3100px]">
           <thead>
             <tr>
               <Th>Data</Th>
               <Th>Request</Th>
+              <Th>Parâmetros</Th>
               <Th>Domínio</Th>
               <Th>Slug</Th>
               <Th>Decisão</Th>
@@ -90,9 +90,9 @@ export default async function LogsPage({
               <Th>Estado</Th>
               <Th>Dispositivo</Th>
               <Th>Navegador</Th>
+              <Th title="Pelo User-Agent. macOS, Windows 11 e Chrome no Android escondem a versão real; aí só aparece o nome.">Sistema</Th>
               <Th>Referrer</Th>
               <Th>IP</Th>
-              <Th title="Primeiros 64 bits do IPv6: iguais para a mesma conexão, mesmo quando o final do IP muda">Rede IPv6</Th>
               <Th>Hostname</Th>
               <Th>ASN</Th>
               <Th title="Estimada pelo ASN (aproximada). O servidor não distingue WiFi de cabo.">Conexão</Th>
@@ -103,7 +103,6 @@ export default async function LogsPage({
           <tbody className="sensitive">
             {hits.map((h) => {
               const o = OUTCOME_BADGE[h.outcome] ?? OUTCOME_BADGE.other;
-              const net = ipv6Prefix64(h.ip);
               return (
                 <Tr key={h.id}>
                   <Td className="whitespace-nowrap tabular-nums text-muted" title={`#${h.id}`}>
@@ -112,6 +111,15 @@ export default async function LogsPage({
                   <Td className="max-w-[280px] break-all">
                     <span className="font-mono text-xs">{h.host}</span>
                     <span className="font-mono text-xs text-muted">{h.path}</span>
+                  </Td>
+                  <Td className="min-w-[200px] max-w-[320px] font-mono text-[11px] leading-snug text-muted">
+                    {h.query ? (
+                      <span className="line-clamp-3 whitespace-pre-line break-all" title={h.query}>
+                        {Array.from(new URLSearchParams(h.query), ([k, v]) => `${k}=${v}`).join("\n")}
+                      </span>
+                    ) : (
+                      "—"
+                    )}
                   </Td>
                   <Td className="max-w-[220px] break-all font-mono text-xs text-muted">{h.domain || "—"}</Td>
                   <Td className="min-w-[120px] max-w-[220px] text-xs text-muted">
@@ -142,9 +150,9 @@ export default async function LogsPage({
                   <Td className="whitespace-nowrap text-muted">{h.region || "—"}</Td>
                   <Td className="text-muted">{h.device || "—"}</Td>
                   <Td className="whitespace-nowrap text-muted">{browserFromUA(h.user_agent) ?? "—"}</Td>
+                  <Td className="whitespace-nowrap text-muted">{osFromUA(h.user_agent) ?? "—"}</Td>
                   <Td className="max-w-[180px] break-all text-muted">{h.referrer_host || "—"}</Td>
                   <Td className="whitespace-nowrap font-mono text-xs text-muted">{h.ip || "—"}</Td>
-                  <Td className="whitespace-nowrap font-mono text-xs text-muted">{net ? `${net}::/64` : "—"}</Td>
                   <Td className="max-w-[220px] break-all font-mono text-xs text-muted">{h.hostname || "—"}</Td>
                   <Td className="min-w-[160px] max-w-[240px] text-xs text-muted">
                     {h.asn ? (

@@ -42,3 +42,35 @@ export function browserFromUA(ua: string | null): string | null {
   }
   return "Outro";
 }
+
+const WINDOWS_NT: Record<string, string> = { "10.0": "10/11", "6.3": "8.1", "6.2": "8", "6.1": "7" };
+
+/**
+ * Sistema e versão a partir do User-Agent: "iOS 26.6", "Android 14",
+ * "Windows 10/11", "macOS". Os navegadores CONGELAM parte disso, e aí a versão
+ * não aparece em vez de aparecer errada: macOS vem sempre 10.15.7, Chrome no
+ * Android manda "Android 10; K", Windows 11 diz NT 10.0. No iOS 26 o token do
+ * sistema ficou em 18.x, mas o Version/ do Safari acompanha o sistema.
+ */
+export function osFromUA(ua: string | null): string | null {
+  if (!ua) return null;
+
+  const apple = ua.match(/\b(iPhone|iPad|iPod)\b.*?\bOS (\d+)[_.](\d+)/);
+  if (apple) {
+    const name = apple[1] === "iPad" ? "iPadOS" : "iOS";
+    const safari = ua.match(/\bVersion\/(\d+)\.(\d+)/);
+    if (safari && Number(safari[1]) >= 26) return `${name} ${safari[1]}.${safari[2]}`;
+    return `${name} ${apple[2]}.${apple[3]}`;
+  }
+
+  const android = ua.match(/\bAndroid (\d+(?:\.\d+)?)(;\s*K\))?/);
+  if (android) return android[2] ? "Android" : `Android ${android[1]}`;
+  if (/\bAndroid\b/.test(ua)) return "Android";
+
+  const windows = ua.match(/\bWindows NT (\d+\.\d+)/);
+  if (windows) return WINDOWS_NT[windows[1]] ? `Windows ${WINDOWS_NT[windows[1]]}` : "Windows";
+  if (/\bCrOS\b/.test(ua)) return "ChromeOS";
+  if (/\bMac OS X\b|\bMacintosh\b/.test(ua)) return "macOS";
+  if (/\bLinux\b/.test(ua)) return "Linux";
+  return null;
+}
