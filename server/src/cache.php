@@ -133,6 +133,12 @@ function strip_content(array $routes): array
 {
     foreach ($routes as &$route) {
         unset($route['content']);
+        if (is_array($route['split'] ?? null)) {
+            foreach ($route['split'] as &$c) {
+                unset($c['content']);
+            }
+            unset($c);
+        }
     }
     return $routes;
 }
@@ -181,6 +187,11 @@ function cache_has_all_content(array $routes): bool
         }
         if (!is_file(content_file((string) $route['slug_id'], (string) ($route['content_hash'] ?? '')))) {
             return false;
+        }
+        foreach (is_array($route['split'] ?? null) ? $route['split'] : [] as $c) {
+            if (!empty($c['slug_id']) && !is_file(content_file((string) $c['slug_id'], (string) ($c['content_hash'] ?? '')))) {
+                return false;
+            }
         }
     }
     return true;

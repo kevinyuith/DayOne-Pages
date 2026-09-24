@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/page-header";
-import { getFunnelBoard, listTemplates } from "@/lib/pages/queries";
+import { getFunnelBoard, listDomains, listTemplates } from "@/lib/pages/queries";
 import { localMidnight } from "@/lib/time-zone";
 import { FunnelList } from "./funnel-list";
 
@@ -21,7 +21,7 @@ export default async function FunilPage({ searchParams }: { searchParams: Promis
   // Server Component dinâmico (a rota é force-dynamic): ler o relógio por request é intencional.
   // eslint-disable-next-line react-hooks/purity
   const nowMs = Date.now();
-  const [board, templates] = await Promise.all([getFunnelBoard(new Date(localMidnight(nowMs, days - 1))), listTemplates()]);
+  const [board, templates, domains] = await Promise.all([getFunnelBoard(new Date(localMidnight(nowMs, days - 1))), listTemplates(), listDomains()]);
 
   return (
     <>
@@ -29,7 +29,8 @@ export default async function FunilPage({ searchParams }: { searchParams: Promis
       <FunnelList
         rows={board.rows}
         stats={board.stats}
-        templates={templates.filter((t) => t.kind !== "FUNNEL").map((t) => ({ id: t.id, name: t.name }))}
+        templates={templates}
+        domains={domains.filter((d) => d.status !== "ARCHIVED").map((d) => ({ id: d.id, domain: d.domain }))}
         days={days}
         initialOpen={f ?? null}
       />

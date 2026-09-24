@@ -85,6 +85,11 @@ function supabase_log_load(string $visitId, ?int $loadMs): void
     supabase_fire('log_load', ['p_visit_id' => $visitId, 'p_load_ms' => $loadMs]);
 }
 
+function supabase_log_click(string $visitId): void
+{
+    supabase_fire('log_click', ['p_visit_id' => $visitId]);
+}
+
 /** @param array{host: string, path: string, step: string, kind: string, event: string, visitor: string} $e */
 function supabase_log_funnel_event(array $e): void
 {

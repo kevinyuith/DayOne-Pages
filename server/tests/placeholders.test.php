@@ -63,7 +63,7 @@ check('etag muda com o dado', $a !== placeholders_etag(placeholder_values(['plac
 check('etag muda com o idioma', $a !== placeholders_etag(placeholder_values($base, make_request(['HTTP_ACCEPT_LANGUAGE' => 'es']), $noon)));
 check('etag muda com o dia', $a !== placeholders_etag(placeholder_values($base, make_request(), $noon->modify('+1 day'))));
 
-// serve_slug de ponta a ponta: corpo trocado e ETag com o sufixo, antes do -b1 do aviso.
+// serve_slug de ponta a ponta: corpo trocado e ETag com o sufixo, antes do -b2 do aviso.
 $slug = 'ph-test-' . bin2hex(random_bytes(4));
 cache_put_content($slug, 'ph1', '<html><body><h1>{{company.name}}</h1><p>{{lang}}</p></body></html>');
 $route = ['slug_id' => $slug, 'content_hash' => 'ph1', 'content_type' => 'text/html; charset=utf-8', 'funnel' => false,

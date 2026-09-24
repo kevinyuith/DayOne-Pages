@@ -181,9 +181,8 @@ export type FunnelBoardPage = {
   /** A slug com as etapas (a `/`, ou a primeira) e o id dela, para abrir o editor. */
   slug: string;
   slugId: string | null;
-  versions: ScannedVersion[];
-  /** Em quantos domínios a página tem cópia (é nas cópias que o teste roda). */
-  copies: number;
+  /** O % (0–100) da página no teste A/B do funil; os do funil somam 100. 0 = pausada. */
+  weight: number;
 };
 
 /** Uma linha da tela Funil: o funil do dayone-main (null = páginas de funil sem funil) e as páginas dele. */
@@ -191,51 +190,47 @@ export type FunnelBoardRow = { funnel: MainFunnel | null; pages: FunnelBoardPage
 
 /**
  * A tela Funil: os funis do dayone-main (F1, F2…) na ordem do código, cada um
- * com as páginas ligadas a ele (pages.funnel_id) e as amostras delas. Páginas
- * de funil sem funil (o funil sumiu do dayone-main) vêm numa linha final
- * com `funnel: null`. `stats` soma o teste A/B de todas as cópias nos
- * domínios desde `since`, por id da amostra (as cópias mantêm os ids).
+ * com as páginas ligadas a ele (pages.funnel_id) e o % de cada uma no teste
+ * A/B entre elas. Páginas de funil sem funil (o
+ * funil sumiu do dayone-main) vêm numa linha final com `funnel: null`.
+ * `stats` é por página da biblioteca, desde `since`: carregamentos reais das
+ * cópias nos domínios (views) e quantos clicaram para fora (clicks).
  */
 export async function getFunnelBoard(since: Date): Promise<{ rows: FunnelBoardRow[]; stats: Record<string, VersionStats> }> {
   const db = supabaseService();
-  const [funnels, pages, copies, stats] = await Promise.all([
+  const [funnels, pages, stats] = await Promise.all([
     db.rpc("main_funnels"),
-    db.from("pages").select("id, name, kind, status, funnel_id, page_slugs(id, slug)").or("funnel_id.not.is.null,kind.eq.FUNNEL").order("created_at"),
-    sitePages(null),
-    db.rpc("funnel_stats", { p_domain_ids: null, p_since: since.toISOString() }),
+    db.from("pages").select("id, name, kind, status, funnel_id, traffic_weight, page_slugs(id, slug)").or("funnel_id.not.is.null,kind.eq.FUNNEL").order("created_at"),
+    db.rpc("page_stats", { p_since: since.toISOString() }),
   ]);
   throwIf(funnels.error, "main_funnels");
   throwIf(pages.error, "getFunnelBoard");
-  throwIf(stats.error, "funnel_stats");
+  throwIf(stats.error, "page_stats");
 
-  type Row = { id: string; name: string; kind: PageKind; status: PageStatus; funnel_id: string | null; page_slugs: { id: string; slug: string }[] };
+  type Row = { id: string; name: string; kind: PageKind; status: PageStatus; funnel_id: string | null; traffic_weight: number; page_slugs: { id: string; slug: string }[] };
   const rows = (pages.data ?? []) as unknown as Row[];
   // A slug de cada página: a `/`, senão a primeira em ordem.
   const root = new Map(rows.map((r) => [r.id, [...r.page_slugs].sort((a, b) => (a.slug === "/" ? -1 : b.slug === "/" ? 1 : a.slug.localeCompare(b.slug)))[0] ?? null]));
-  const slugIds = [...root.values()].filter((s): s is { id: string; slug: string } => s !== null).map((s) => s.id);
-  const html = new Map<string, string>();
-  if (slugIds.length) {
-    const got = await db.from("page_slugs").select("id, content").in("id", slugIds);
-    throwIf(got.error, "getFunnelBoard(html)");
-    for (const s of (got.data ?? []) as { id: string; content: string }[]) html.set(s.id, s.content ?? "");
-  }
-  const copiesOf = new Map<string, number>();
-  for (const c of copies) if (c.template_id) copiesOf.set(c.template_id, (copiesOf.get(c.template_id) ?? 0) + 1);
-
   const toPage = (r: Row): FunnelBoardPage => {
     const s = root.get(r.id) ?? null;
-    return { id: r.id, name: r.name, status: r.status, slug: s?.slug ?? "/", slugId: s?.id ?? null, versions: s ? scanFunnel(html.get(s.id) ?? "") : [], copies: copiesOf.get(r.id) ?? 0 };
+    return {
+      id: r.id,
+      name: r.name,
+      status: r.status,
+      slug: s?.slug ?? "/",
+      slugId: s?.id ?? null,
+      weight: r.traffic_weight,
+    };
   };
   const list = ((funnels.data ?? []) as MainFunnel[]).map((f) => ({ funnel: f, pages: rows.filter((r) => r.funnel_id === f.id).map(toPage) }));
   const known = new Set(list.map((l) => l.funnel.id));
   const orphans = rows.filter((r) => !r.funnel_id || !known.has(r.funnel_id)).map(toPage);
 
-  const byStep: Record<string, VersionStats> = {};
-  for (const s of (stats.data as { step_id: string; views: number; clicks: number }[] | null) ?? []) {
-    const cur = byStep[s.step_id] ?? { views: 0, clicks: 0 };
-    byStep[s.step_id] = { views: cur.views + Number(s.views), clicks: cur.clicks + Number(s.clicks) };
+  const byPage: Record<string, VersionStats> = {};
+  for (const s of (stats.data as { template_id: string; views: number; clicks: number }[] | null) ?? []) {
+    byPage[s.template_id] = { views: Number(s.views), clicks: Number(s.clicks) };
   }
-  return { rows: orphans.length ? [...list, { funnel: null, pages: orphans }] : list, stats: byStep };
+  return { rows: orphans.length ? [...list, { funnel: null, pages: orphans }] : list, stats: byPage };
 }
 
 /** Visitantes únicos que viram / clicaram cada amostra (por id da amostra). */

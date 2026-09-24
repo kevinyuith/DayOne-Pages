@@ -30,13 +30,17 @@ function dayone_handle(): void
         return;
     }
     if ($req->rawPath === BEACON_PATH) {
-        [$status, $headers, $body, $visitId, $loadMs] = handle_beacon($req, (string) file_get_contents('php://input', false, null, 0, 256));
+        [$status, $headers, $body, $visitId, $loadMs, $click] = handle_beacon($req, (string) file_get_contents('php://input', false, null, 0, 256));
         send_response($status, $headers, $body, false);
         if ($visitId !== null) {
             if (function_exists('fastcgi_finish_request')) {
                 fastcgi_finish_request();
             }
-            supabase_log_load($visitId, $loadMs);
+            if ($click) {
+                supabase_log_click($visitId);
+            } else {
+                supabase_log_load($visitId, $loadMs);
+            }
         }
         return;
     }

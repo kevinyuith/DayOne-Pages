@@ -7,11 +7,16 @@ import { Button } from "@/components/ui/button";
 import { Field, INPUT_CLASS, SELECT_CLASS, TEXTAREA_CLASS } from "@/components/ui/field";
 import { applyPlaceholderFindings, detectPlaceholders, type PlaceholderFinding } from "@/lib/pages/detect-placeholders";
 import { importHtml } from "@/lib/pages/import-html";
-import type { PageListItem } from "@/lib/pages/queries";
 import { PAGE_KIND_LABELS, type PageKind } from "@/lib/pages/types";
 import { createPage, fetchTemplateFromUrl, type CreatePageState } from "./actions";
 
 const INITIAL: CreatePageState = { attempt: 0 };
+
+/** Um template que dá para copiar. */
+type TemplateChoice = { id: string; name: string; kind: PageKind; slugs_count: number };
+
+/** Página nova de um funil do dayone-main (tela Funnel): nasce com kind FUNNEL, ligada a ele. */
+export type FunnelTarget = { id: string; defaultName: string };
 
 type Source = "template" | "link" | "html" | "blank";
 
@@ -26,14 +31,19 @@ const OPTIONS: { key: Source; label: string; hint: string; Icon: typeof FilePlus
  * "Criar template": primeiro a origem (outro template, link, HTML colado ou
  * do zero), depois o nome. `folderId` é a pasta onde o template nasce
  * (a aberta na tela); em sucesso a action redireciona para o editor.
+ *
+ * Com `funnel` (tela Funnel), é o mesmo fluxo para uma página do funil: nasce
+ * com kind FUNNEL, ligada ao funil, e "do zero" já vem com Pre Lander + Lander.
  */
 export function CreatePageForm({
   folderId = null,
   templates,
+  funnel = null,
   onCancel,
 }: {
   folderId?: string | null;
-  templates: PageListItem[];
+  templates: TemplateChoice[];
+  funnel?: FunnelTarget | null;
   onCancel?: () => void;
 }) {
   const [source, setSource] = useState<Source | null>(null);
@@ -55,7 +65,9 @@ export function CreatePageForm({
                 <Icon className="mt-0.5 size-5 shrink-0 text-accent" />
                 <span>
                   <span className="block text-sm font-semibold">{label}</span>
-                  <span className="mt-0.5 block text-xs text-muted">{disabled ? "No templates yet." : hint}</span>
+                  <span className="mt-0.5 block text-xs text-muted">
+                    {disabled ? "No templates yet." : funnel && key === "blank" ? "Starts with a Pre Lander and a Lander." : hint}
+                  </span>
                 </span>
               </button>
             );
@@ -72,26 +84,29 @@ export function CreatePageForm({
     );
   }
 
-  return <SourceForm key={source} source={source} folderId={folderId} templates={templates} onBack={() => setSource(null)} onCancel={onCancel} />;
+  return <SourceForm key={source} source={source} folderId={folderId} templates={templates} funnel={funnel} onBack={() => setSource(null)} onCancel={onCancel} />;
 }
 
 function SourceForm({
   source,
   folderId,
   templates,
+  funnel,
   onBack,
   onCancel,
 }: {
   source: Source;
   folderId: string | null;
-  templates: PageListItem[];
+  templates: TemplateChoice[];
+  funnel: FunnelTarget | null;
   onBack: () => void;
   onCancel?: () => void;
 }) {
   const [state, action, pending] = useActionState(createPage, INITIAL);
-  const [name, setName] = useState("");
-  const [nameTouched, setNameTouched] = useState(false);
-  const [kind, setKind] = useState<PageKind>("OTHER");
+  // Página de funil: o nome sugerido é o do funil ("F7 · GELATIN TRICK") e a origem não o troca.
+  const [name, setName] = useState(funnel?.defaultName ?? "");
+  const [nameTouched, setNameTouched] = useState(funnel !== null);
+  const [kind, setKind] = useState<PageKind>(funnel ? "FUNNEL" : "OTHER");
   const [templateId, setTemplateId] = useState("");
 
   // "Copiar através de link": busca no servidor, ajusta os endereços aqui e mostra o preview.
@@ -122,7 +137,7 @@ function SourceForm({
     const t = templates.find((p) => p.id === id);
     if (t) {
       suggestName(`${t.name} (copy)`);
-      setKind(t.kind);
+      if (!funnel) setKind(t.kind);
     }
   };
 
@@ -150,6 +165,7 @@ function SourceForm({
     <form action={action} className="flex flex-col gap-3">
       <input type="hidden" name="source" value={source === "link" ? "html" : source} />
       {folderId ? <input type="hidden" name="folder_id" value={folderId} /> : null}
+      {funnel ? <input type="hidden" name="funnel_id" value={funnel.id} /> : null}
 
       <div className="flex items-center gap-2 text-sm">
         <button type="button" onClick={onBack} disabled={pending} className="text-muted hover:text-foreground">
@@ -232,7 +248,7 @@ function SourceForm({
 
       {/* Sem campo de tipo: cópia herda o do template de origem; o resto nasce como "Outra". */}
       <input type="hidden" name="kind" value={kind} />
-      <Field label="Template name">
+      <Field label={funnel ? "Page name" : "Template name"}>
         <input
           name="name"
           required
@@ -256,7 +272,7 @@ function SourceForm({
       ) : null}
       <div className="mt-1 flex gap-2">
         <Button type="submit" disabled={blocked}>
-          {pending ? "Creating…" : "Create template"}
+          {pending ? "Creating…" : funnel ? "Create page" : "Create template"}
         </Button>
         {onCancel ? (
           <Button variant="ghost" onClick={onCancel} disabled={pending}>

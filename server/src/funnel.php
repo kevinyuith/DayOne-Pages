@@ -318,6 +318,69 @@ function ab_cookie(string $value): string
     return AB_COOKIE . "=$value; Path=/; Max-Age=2592000; HttpOnly; Secure; SameSite=Lax";
 }
 
+// ── Teste A/B entre as páginas de um funil ─────────────────────────────────
+
+/** Cookie do sorteio entre páginas: os ids (uuid) das páginas de domínio já sorteadas para o visitante. */
+const SPLIT_COOKIE = 'dop_pg';
+const SPLIT_MAX_IDS = 10;
+
+/**
+ * A rota resolveu para uma página que é cópia de uma página de funil, e o
+ * domínio tem outras cópias do mesmo funil no mesmo path (`split`, vindo do
+ * pages.resolve): fica a que o cookie dop_pg já tem para este visitante (se
+ * não estiver pausada), senão uma sorteada pelos pesos (todos 0 = partes
+ * iguais). Devolve a rota com a página escolhida no lugar e o valor novo do
+ * cookie (null = não mudou). Sem split, a rota volta como está.
+ *
+ * @return array{0: array, 1: ?string}
+ */
+function split_pick(array $route, array $cookies, ?callable $rand = null): array
+{
+    $split = $route['split'] ?? null;
+    if (!is_array($split) || count($split) < 2) {
+        return [$route, null];
+    }
+    $raw = (string) ($cookies[SPLIT_COOKIE] ?? '');
+    $known = preg_match('/^[0-9a-f-]{36}(,[0-9a-f-]{36})*$/', $raw) === 1 ? explode(',', $raw) : [];
+    $candidates = array_values(array_filter($split, fn ($c) => is_array($c) && is_string($c['page_id'] ?? null) && !empty($c['slug_id'])));
+    if (count($candidates) < 2) {
+        return [$route, null];
+    }
+    foreach ($candidates as &$c) {
+        $c['weight'] = max(0, min(100, (int) ($c['weight'] ?? 0)));
+    }
+    unset($c);
+    $total = array_sum(array_column($candidates, 'weight'));
+
+    $pick = null;
+    foreach ($candidates as $c) {
+        if (in_array($c['page_id'], $known, true) && ($c['weight'] > 0 || $total === 0)) {
+            $pick = $c;
+            break;
+        }
+    }
+    $pick ??= ab_pick($candidates, $rand);
+
+    $ids = array_column($candidates, 'page_id');
+    $keep = array_values(array_filter($known, fn ($id) => !in_array($id, $ids, true)));
+    $value = implode(',', array_slice([$pick['page_id'], ...$keep], 0, SPLIT_MAX_IDS));
+
+    $chosen = [...$route];
+    foreach (['page_id', 'slug_id', 'content_type', 'content_hash', 'funnel'] as $k) {
+        if (array_key_exists($k, $pick)) {
+            $chosen[$k] = $pick[$k];
+        }
+    }
+    unset($chosen['split']);
+    $chosen['split_count'] = count($candidates);
+    return [$chosen, $value === $raw ? null : $value];
+}
+
+function split_cookie(string $value): string
+{
+    return SPLIT_COOKIE . "=$value; Path=/; Max-Age=2592000; HttpOnly; Secure; SameSite=Lax";
+}
+
 /**
  * O miolo de uma etapa tem código? Comentário, espaço e &nbsp; não contam (no
  * editor e no runtime, um nó de texto só com espaço/NBSP também não).

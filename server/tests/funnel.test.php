@@ -65,30 +65,30 @@ cache_put_content($tmpSlug, 'abc123', $server);
 $route = ['slug_id' => $tmpSlug, 'content_hash' => 'abc123', 'content_type' => 'text/html; charset=utf-8'];
 [$status, $headers, $body] = serve_slug($route, make_request([]));
 same('serve_slug 200 na inicial', 200, $status);
-same('ETag com a etapa (+ versão do aviso de carregamento)', '"abc123-p_pre-b1"', $headers['ETag']);
+same('ETag com a etapa (+ versão do aviso de carregamento)', '"abc123-p_pre-b2"', $headers['ETag']);
 check('Vary inclui Cookie', str_contains($headers['Vary'], 'Cookie'));
 check('corpo só com a presell', str_contains((string) $body, 'Presell') && !str_contains((string) $body, 'VSL'));
-[$status] = serve_slug($route, make_request(['HTTP_IF_NONE_MATCH' => '"abc123-p_pre-b1"']));
+[$status] = serve_slug($route, make_request(['HTTP_IF_NONE_MATCH' => '"abc123-p_pre-b2"']));
 same('304 na mesma etapa', 304, $status);
-[$status, $headers] = serve_slug($route, make_request(['HTTP_IF_NONE_MATCH' => '"abc123-p_pre-b1"', 'HTTP_COOKIE' => 'dop_step=p_vsl']));
+[$status, $headers] = serve_slug($route, make_request(['HTTP_IF_NONE_MATCH' => '"abc123-p_pre-b2"', 'HTTP_COOKIE' => 'dop_step=p_vsl']));
 same('etapa diferente com ETag antigo → 200', 200, $status);
-same('ETag da nova etapa', '"abc123-p_vsl-b1"', $headers['ETag']);
+same('ETag da nova etapa', '"abc123-p_vsl-b2"', $headers['ETag']);
 cache_put_content($tmpSlug, 'def456', $browser);
 [$status, $headers] = serve_slug(['slug_id' => $tmpSlug, 'content_hash' => 'def456', 'content_type' => ''], make_request([]));
-same('modo navegador: ETag só o hash (+ versão do aviso)', '"def456-b1"', $headers['ETag']);
+same('modo navegador: ETag só o hash (+ versão do aviso)', '"def456-b2"', $headers['ETag']);
 check('modo navegador: Vary sem Cookie', !str_contains($headers['Vary'], 'Cookie'));
 // Marca "funnel=false" no cache de rotas: 304 sem ler o conteúdo (o arquivo pode até sumir).
 $flagged = ['slug_id' => $tmpSlug, 'content_hash' => 'ghost99', 'content_type' => '', 'funnel' => false];
-[$status, $headers] = serve_slug($flagged, make_request(['HTTP_IF_NONE_MATCH' => '"ghost99-b1"']));
+[$status, $headers] = serve_slug($flagged, make_request(['HTTP_IF_NONE_MATCH' => '"ghost99-b2"']));
 same('funnel=false: 304 sem conteúdo em disco', 304, $status);
-same('funnel=false: ETag só o hash (+ versão do aviso)', '"ghost99-b1"', $headers['ETag']);
+same('funnel=false: ETag só o hash (+ versão do aviso)', '"ghost99-b2"', $headers['ETag']);
 [$status] = serve_slug($flagged, make_request([]));
 same('funnel=false sem ETag do cliente: precisa do conteúdo (503 sem ele)', 503, $status);
 // Marca "funnel=true" (ou ausente): lê o conteúdo e aplica a etapa.
 cache_put_content($tmpSlug, 'abc123', $server); // o put de def456 apagou as versões antigas
 [$status, $headers] = serve_slug($route + ['funnel' => true], make_request(['HTTP_IF_NONE_MATCH' => '"abc123"']));
 same('funnel=true: ETag do cliente sem etapa não bate → 200', 200, $status);
-same('funnel=true: ETag com etapa', '"abc123-p_pre-b1"', $headers['ETag']);
+same('funnel=true: ETag com etapa', '"abc123-p_pre-b2"', $headers['ETag']);
 
 // ── HTML hostil ao tokenizador: comentário, string JS, wrapper, hidden="hidden" ──
 $hostile = '<section class="wrap">'

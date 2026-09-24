@@ -63,11 +63,11 @@ cache_put_content($abSlug, 'ab01', $ab);
 $abRoute = ['slug_id' => $abSlug, 'content_hash' => 'ab01', 'content_type' => 'text/html', 'funnel' => true];
 [$status, $headers, $body] = serve_slug($abRoute, make_request(['HTTP_COOKIE' => "dop_ab=$uid:p_pb"]));
 same('serve: 200', 200, $status);
-same('serve: ETag com a amostra', '"ab01-p_pb-b1"', $headers['ETag']);
+same('serve: ETag com a amostra', '"ab01-p_pb-b2"', $headers['ETag']);
 check('serve: Vary com Cookie', str_contains($headers['Vary'], 'Cookie'));
 check('serve: sem Set-Cookie quando o cookie já está certo', !isset($headers['Set-Cookie']));
 check('serve: corpo só com a amostra B', str_contains((string) $body, 'PRE-B') && !str_contains((string) $body, 'PRE-A'));
-same('serve: 304 com a mesma amostra', 304, serve_slug($abRoute, make_request(['HTTP_COOKIE' => "dop_ab=$uid:p_pb", 'HTTP_IF_NONE_MATCH' => '"ab01-p_pb-b1"']))[0]);
+same('serve: 304 com a mesma amostra', 304, serve_slug($abRoute, make_request(['HTTP_COOKIE' => "dop_ab=$uid:p_pb", 'HTTP_IF_NONE_MATCH' => '"ab01-p_pb-b2"']))[0]);
 [$status, $headers] = serve_slug($abRoute, make_request());
 check('serve: visitante novo ganha Set-Cookie dop_ab', is_array($headers['Set-Cookie'] ?? null) && str_starts_with($headers['Set-Cookie'][0], 'dop_ab='), json_encode($headers['Set-Cookie'] ?? null));
 
@@ -75,7 +75,7 @@ check('serve: visitante novo ganha Set-Cookie dop_ab', is_array($headers['Set-Co
 $plainFunnel = $abDoc('<section data-dop-page="p_x" data-dop-kind="presell" data-dop-start><h1>P</h1></section><section data-dop-page="p_y" hidden><h1>L</h1></section>');
 cache_put_content($abSlug, 'ab02', $plainFunnel);
 [$status, $headers, $body] = serve_slug(['slug_id' => $abSlug, 'content_hash' => 'ab02', 'content_type' => 'text/html', 'funnel' => true], make_request());
-same('sem teste: ETag só hash', '"ab02-b1"', $headers['ETag']);
+same('sem teste: ETag só hash', '"ab02-b2"', $headers['ETag']);
 check('sem teste: Vary sem Cookie', !str_contains($headers['Vary'], 'Cookie'));
 check('sem teste: body com data-dop-ev (conta visitas/cliques)', str_contains((string) $body, 'data-dop-ev'));
 check('sem teste: cookie de visitante', str_starts_with((string) ($headers['Set-Cookie'][0] ?? ''), 'dop_ab='));
@@ -84,7 +84,7 @@ check('sem teste: cookie de visitante', str_starts_with((string) ($headers['Set-
 $both = str_replace('<body>', '<body data-dop-funnel="server">', $ab);
 cache_put_content($abSlug, 'ab03', $both);
 [$status, $headers, $body] = serve_slug(['slug_id' => $abSlug, 'content_hash' => 'ab03', 'content_type' => 'text/html', 'funnel' => true], make_request(['HTTP_COOKIE' => "dop_ab=$uid:p_pb; dop_step=p_la"]));
-same('servidor + A/B: ETag amostra + etapa', '"ab03-p_pb-p_la-b1"', $headers['ETag']);
+same('servidor + A/B: ETag amostra + etapa', '"ab03-p_pb-p_la-b2"', $headers['ETag']);
 check('servidor + A/B: só o Lander no corpo', str_contains((string) $body, 'LAN-A') && !str_contains((string) $body, 'PRE-'));
 check('servidor + A/B: data-dop-cur e data-dop-ev no body', str_contains((string) $body, 'data-dop-ev') && str_contains((string) $body, 'data-dop-cur="p_la"'));
 

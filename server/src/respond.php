@@ -51,7 +51,17 @@ function decide(array $routes, Request $req): array
 
         switch ($action) {
             case 'SERVE':
+                // Teste A/B entre as páginas de um funil: a rota passa a ser a página sorteada.
+                [$route, $splitCookie] = split_pick($route, $req->cookies);
                 $r = serve_slug($route, $req);
+                if (isset($route['split_count'])) {
+                    if (!str_contains((string) ($r[1]['Vary'] ?? ''), 'Cookie')) {
+                        $r[1]['Vary'] = trim(($r[1]['Vary'] ?? '') . ', Cookie', ', ');
+                    }
+                    if ($splitCookie !== null) {
+                        $r[1]['Set-Cookie'] = [...(array) ($r[1]['Set-Cookie'] ?? []), split_cookie($splitCookie)];
+                    }
+                }
                 return [$r[0], $r[1], $r[2], serve_outcome($r[0]), $route];
             case 'REDIRECT':
                 $r = redirect_to($route, $req);

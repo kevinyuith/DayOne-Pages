@@ -125,7 +125,6 @@ export function PageEditor({
   placeholders,
   funnelStats = null,
   templates = [],
-  initialSampleId = null,
 }: {
   page: Page;
   slugs: PageSlugSummary[];
@@ -141,8 +140,6 @@ export function PageEditor({
   funnelStats?: StepStats | null;
   /** Templates que podem virar amostra do funil ("De um template…"). */
   templates?: { id: string; name: string }[];
-  /** A amostra do funil que a canvas mostra ao abrir (a tela Funil manda a clicada). */
-  initialSampleId?: string | null;
 }) {
   const router = useRouter();
   const slugHref = useCallback((id: string) => nav.slugHref.replace("{slug}", encodeURIComponent(id)), [nav.slugHref]);
@@ -166,7 +163,7 @@ export function PageEditor({
   const [hiddenCount, setHiddenCount] = useState(0);
   const [panel, setPanel] = useState<RailPanel | null>("pages");
   const [showMarkers, setShowMarkers] = useState(true);
-  const [currentPageId, setCurrentPageId] = useState<string | null>(initialSampleId);
+  const [currentPageId, setCurrentPageId] = useState<string | null>(null);
   const [previewDoc, setPreviewDoc] = useState("");
   const [outline, setOutline] = useState<{ links: LinkEntry[]; layers: LayerNode[]; pages: SubPage[]; funnelMode: FunnelMode }>({
     links: [],

@@ -35,7 +35,7 @@ same('beacon com cookie inválido: nada a gravar', null, handle_beacon($post('do
 same('beacon com id maiúsculo: nada a gravar', null, handle_beacon($post('dop_v=' . strtoupper($id)), 't=1')[3]);
 same('beacon: t absurdo vira null', null, handle_beacon($post("dop_v=$id"), 't=99999999')[4]);
 same('beacon: t negativo vira null', null, handle_beacon($post("dop_v=$id"), 't=-5')[4]);
-same('beacon: sem t, id vale', [$id, null], array_slice(handle_beacon($post("dop_v=$id"), ''), 3));
+same('beacon: sem t, id vale', [$id, null], array_slice(handle_beacon($post("dop_v=$id"), ''), 3, 2));
 same('beacon por GET: 404', 404, handle_beacon(make_request(['REQUEST_URI' => '/_dop/l', 'HTTP_COOKIE' => "dop_v=$id"]), '')[0]);
 
 // serve_slug: HTML ganha o script e o ETag a versão; o que não é página fica igual.
@@ -43,7 +43,7 @@ $bSlug = '22222222-2222-2222-2222-222222222222';
 cache_put_content($bSlug, 'bb01', '<html><body>oi</body></html>');
 [$status, $headers, $body] = serve_slug(['slug_id' => $bSlug, 'content_hash' => 'bb01', 'content_type' => 'text/html'], make_request());
 same('serve html: corpo com o script', '<html><body>oi' . BEACON_SCRIPT . '</body></html>', $body);
-same('serve html: ETag com versão', '"bb01-b1"', $headers['ETag']);
+same('serve html: ETag com versão', '"bb01-b2"', $headers['ETag']);
 same('serve html: ETag velho (sem versão) → 200', 200, serve_slug(['slug_id' => $bSlug, 'content_hash' => 'bb01', 'content_type' => 'text/html'], make_request(['HTTP_IF_NONE_MATCH' => '"bb01"']))[0]);
 [$status, $headers, $body] = serve_slug(['slug_id' => $bSlug, 'content_hash' => 'bb01', 'content_type' => 'text/css'], make_request(['REQUEST_URI' => '/app.css']));
 same('serve css: corpo intacto', '<html><body>oi</body></html>', $body);

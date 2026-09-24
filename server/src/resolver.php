@@ -81,6 +81,16 @@ function refresh_routes(string $host, string $path): ?array
             // servidor, nem amostras A/B), o 304 sai sem ler o conteúdo do disco (ver serve_slug).
             $row['funnel'] = funnel_has_sections((string) $row['content']) || funnel_is_server_mode((string) $row['content']);
         }
+        // Teste A/B entre páginas: o conteúdo de cada página do sorteio vai para o cache também.
+        if (is_array($row['split'] ?? null)) {
+            foreach ($row['split'] as &$c) {
+                if (is_array($c) && !empty($c['slug_id']) && isset($c['content']) && !empty($c['content_hash'])) {
+                    cache_put_content((string) $c['slug_id'], (string) $c['content_hash'], (string) $c['content']);
+                    $c['funnel'] = funnel_has_sections((string) $c['content']) || funnel_is_server_mode((string) $c['content']);
+                }
+            }
+            unset($c);
+        }
     }
     unset($row);
 

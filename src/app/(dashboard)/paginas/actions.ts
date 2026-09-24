@@ -4,9 +4,11 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { errorReason, fail, type ActionResult } from "@/lib/action-result";
 import { fetchPublicHtml } from "@/lib/pages/fetch-page";
+import { loadFunnelWeights, writeFunnelWeights } from "@/lib/pages/funnel-weights";
 import { isValidSlug, normalizePath } from "@/lib/pages/normalize";
 import { STARTER_HTML } from "@/lib/pages/starter-template";
 import { funnelStarterHtml, refreshPageIds } from "@/lib/pages/subpages";
+import { normalizeShares, setShare } from "@/lib/pages/traffic";
 import { isFolderColor, isFolderScope, isPageKind, isPageStatus, type FolderScope, type Page, type PageKind, type PageStatus } from "@/lib/pages/types";
 import { supabaseService } from "@/lib/supabase/service";
 
@@ -51,8 +53,10 @@ const SOURCES = ["blank", "template", "html"] as const;
 type CreateSource = (typeof SOURCES)[number];
 
 /**
- * Cria um template, como rascunho, na pasta aberta:
- * - `blank`: do zero (modelo inicial, slug `/`);
+ * Cria um template, como rascunho, na pasta aberta — ou, com `funnel_id`
+ * (tela Funnel), uma página daquele funil do dayone-main (kind FUNNEL):
+ * - `blank`: do zero (modelo inicial, slug `/`; página de funil: Pre Lander +
+ *   Lander);
  * - `template`: copia outro template com todas as slugs (ids novos para as
  *   sub-páginas do funil, como em Duplicar);
  * - `html`: o HTML colado, ou o que "copiar de um link" trouxe (já com os
@@ -63,6 +67,7 @@ export async function createPage(prev: CreatePageState, fd: FormData): Promise<C
   const name = String(fd.get("name") ?? "").trim();
   const kind = String(fd.get("kind") ?? "OTHER");
   const folderId = optionalId(fd.get("folder_id"));
+  const funnelId = optionalId(fd.get("funnel_id"));
   const source = String(fd.get("source") ?? "blank") as CreateSource;
 
   if (name.length < NAME_MIN || name.length > NAME_MAX) {
@@ -70,6 +75,7 @@ export async function createPage(prev: CreatePageState, fd: FormData): Promise<C
   }
   if (!isPageKind(kind)) return { error: "Invalid type.", attempt };
   if (folderId === undefined) return { error: "Invalid folder.", attempt };
+  if (funnelId === undefined) return { error: "Invalid funnel.", attempt };
   if (!(SOURCES as readonly string[]).includes(source)) return { error: "Invalid source.", attempt };
 
   const db = supabaseService();
@@ -97,13 +103,21 @@ export async function createPage(prev: CreatePageState, fd: FormData): Promise<C
     const sourceUrl = String(fd.get("source_url") ?? "").trim();
     if (/^https?:\/\//i.test(sourceUrl)) notes = `Copied from ${sourceUrl.slice(0, 500)}`;
   } else {
-    slugs = [{ slug: "/", title: name, content: STARTER_HTML }];
+    slugs = [{ slug: "/", title: name, content: funnelId ? funnelStarterHtml(name) : STARTER_HTML }];
   }
 
   let pageId: string;
   try {
-    const { data, error } = await db.from("pages").insert({ name, kind, status: "DRAFT", folder_id: folderId, notes }).select("id").single();
-    if (error) throw new Error(error.message);
+    // Página de funil: kind FUNNEL, ligada ao funil e fora das pastas de templates.
+    const { data, error } = await db
+      .from("pages")
+      .insert({ name, kind: funnelId ? "FUNNEL" : kind, status: "DRAFT", folder_id: funnelId ? null : folderId, funnel_id: funnelId, notes })
+      .select("id")
+      .single();
+    if (error) {
+      if (error.code === "23503" && funnelId) return { error: "This funnel no longer exists.", attempt };
+      throw new Error(error.message);
+    }
     pageId = (data as { id: string }).id;
 
     const { error: slugError } = await db.from("page_slugs").insert(slugs.map((s) => ({ ...s, page_id: pageId })));
@@ -111,51 +125,11 @@ export async function createPage(prev: CreatePageState, fd: FormData): Promise<C
       await db.from("pages").delete().eq("id", pageId);
       throw new Error(slugError.message);
     }
-  } catch (cause) {
-    return { error: errorReason(cause), attempt };
-  }
 
-  revalidateLibrary();
-  redirect(`/paginas/${pageId}`);
-}
-
-export type CreateFunnelState = { error?: string; attempt: number };
-
-/**
- * Cria uma página de funil (template com kind FUNNEL), como rascunho, com a
- * slug `/`: Pre Lander e Lander com o código inicial — ou, com `template_id`,
- * o Lander vem da slug `/` desse template. Com `funnel_id`, já nasce ligada ao
- * funil do dayone-main (F1, F2…). Em sucesso abre o editor.
- */
-export async function createFunnel(prev: CreateFunnelState, fd: FormData): Promise<CreateFunnelState> {
-  const attempt = prev.attempt + 1;
-  const name = String(fd.get("name") ?? "").trim();
-  const funnelId = optionalId(fd.get("funnel_id"));
-  const templateId = optionalId(fd.get("template_id"));
-  if (name.length < NAME_MIN || name.length > NAME_MAX) return { error: `Enter a name of ${NAME_MIN} to ${NAME_MAX} characters.`, attempt };
-  if (funnelId === undefined) return { error: "Invalid funnel.", attempt };
-  if (templateId === undefined) return { error: "Invalid template.", attempt };
-
-  const db = supabaseService();
-  let lander: string | undefined;
-  if (templateId) {
-    const got = await templateRootHtml(templateId);
-    if (!got.ok) return { error: got.reason, attempt };
-    lander = got.html;
-  }
-
-  let pageId: string;
-  try {
-    const { data, error } = await db.from("pages").insert({ name, kind: "FUNNEL", status: "DRAFT", funnel_id: funnelId }).select("id").single();
-    if (error) {
-      if (error.code === "23503") return { error: "This funnel no longer exists.", attempt };
-      throw new Error(error.message);
-    }
-    pageId = (data as { id: string }).id;
-    const { error: slugError } = await db.from("page_slugs").insert({ page_id: pageId, slug: "/", title: name, content: funnelStarterHtml(name, lander) });
-    if (slugError) {
-      await db.from("pages").delete().eq("id", pageId);
-      throw new Error(slugError.message);
+    // Teste A/B do funil (os % somam 100): a página nova entra com a parte dela e as outras encolhem na proporção.
+    if (funnelId) {
+      const weights = await loadFunnelWeights(funnelId);
+      await writeFunnelWeights(weights, setShare(weights, pageId, 100 / Object.keys(weights).length));
     }
   } catch (cause) {
     return { error: errorReason(cause), attempt };
@@ -342,8 +316,16 @@ export async function deleteSlug(slugId: string): Promise<ActionResult> {
 export async function deletePage(pageId: string): Promise<ActionResult> {
   const db = supabaseService();
   try {
+    const cur = await db.from("pages").select("funnel_id").eq("id", pageId).maybeSingle();
+    if (cur.error) throw new Error(cur.error.message);
     const { error } = await db.from("pages").delete().eq("id", pageId);
     if (error) throw new Error(error.message);
+    // Página de funil: as que ficaram voltam a somar 100%, na proporção que tinham.
+    const funnelId = (cur.data as { funnel_id: string | null } | null)?.funnel_id;
+    if (funnelId) {
+      const weights = await loadFunnelWeights(funnelId);
+      await writeFunnelWeights(weights, normalizeShares(weights));
+    }
     revalidateLibrary();
     revalidatePath("/dominios", "layout");
     return { ok: true };
