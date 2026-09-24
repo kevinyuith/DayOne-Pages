@@ -4,6 +4,7 @@
  *
  *   /_health, /_purge      → handlers internos
  *   /_dop/l                → aviso de carregamento do navegador (beacon.php)
+ *   /_dop/e                → aviso de visita/clique de amostra do funil (beacon.php)
  *   método ∉ {GET, HEAD}   → 405
  *   host inválido          → 404 (sem cache, sem Supabase)
  *   path longo demais      → 404 (idem)
@@ -36,6 +37,17 @@ function dayone_handle(): void
                 fastcgi_finish_request();
             }
             supabase_log_load($visitId, $loadMs);
+        }
+        return;
+    }
+    if ($req->rawPath === FUNNEL_EVENT_PATH) {
+        [$status, $headers, $body, $event] = handle_funnel_event($req, (string) file_get_contents('php://input', false, null, 0, 1024));
+        send_response($status, $headers, $body, false);
+        if ($event !== null) {
+            if (function_exists('fastcgi_finish_request')) {
+                fastcgi_finish_request();
+            }
+            supabase_log_funnel_event($event);
         }
         return;
     }
@@ -85,7 +97,7 @@ function dayone_handle(): void
     $visitId = null;
     if ($outcome === 'served' && $route !== null && beacon_applies($route, $req)) {
         $visitId = beacon_new_visit_id();
-        $headers['Set-Cookie'] = beacon_cookie($visitId);
+        $headers['Set-Cookie'] = [...(array) ($headers['Set-Cookie'] ?? []), beacon_cookie($visitId)];
     }
     if ($cfg['debug_headers']) {
         $headers['X-Cache'] = $resolved['xcache'];

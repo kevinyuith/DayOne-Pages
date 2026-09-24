@@ -25,13 +25,16 @@ import { INPUT_CLASS, SELECT_CLASS } from "@/components/ui/field";
 import type { ActionResult } from "@/lib/action-result";
 import { childFolders, folderMap, folderOptions, folderPath, folderPathLabel, isInside } from "@/lib/pages/folders";
 import type { PageListItem } from "@/lib/pages/queries";
-import { FOLDER_COLORS, FOLDER_COLOR_LABELS, PAGE_KIND_LABELS, PAGE_STATUS_LABELS, type Folder, type FolderColor } from "@/lib/pages/types";
+import { SUB_KIND_LABELS, PAGE_KINDS_SUB } from "@/lib/pages/subpages";
+import { FOLDER_COLORS, FOLDER_COLOR_LABELS, PAGE_KIND_LABELS, PAGE_STATUS_LABELS, type Folder, type FolderColor, type FolderScope } from "@/lib/pages/types";
 import { createFolder, deleteFolder, deletePage, duplicatePage, moveFolder, movePage, renameFolder, renamePage, setFolderColor } from "./actions";
+import { CreateFunnelForm } from "./create-funnel-form";
 import { CreatePageForm } from "./create-page-form";
 
 /**
  * A tela /paginas no modelo do hidepages: cards, pastas aninhadas, breadcrumb,
- * busca, menu "…" em cada card e arrastar-e-soltar para mover.
+ * busca, menu "…" em cada card e arrastar-e-soltar para mover. A tela /funil
+ * é a mesma, com `scope="FUNNEL"`: só funis, com a árvore de pastas dela.
  *
  * A pasta aberta vem da URL (`?pasta=<id>`), então cada pasta tem link. O
  * servidor manda TODAS as pastas e páginas (são poucas centenas no máximo) e
@@ -40,7 +43,36 @@ import { CreatePageForm } from "./create-page-form";
  * manter estado próprio além do que está sendo arrastado/editado.
  */
 
-const ROOT_LABEL = "Templates";
+/** O que muda entre as duas telas da biblioteca. */
+const SCOPE_TEXT: Record<
+  FolderScope,
+  { base: string; root: string; create: string; search: string; one: string; many: string; newTitle: string; emptyRoot: string; emptyFolder: string; deleteQ: (name: string) => string }
+> = {
+  TEMPLATE: {
+    base: "/paginas",
+    root: "Templates",
+    create: "Create template",
+    search: "Search templates or folders…",
+    one: "template",
+    many: "templates",
+    newTitle: "New template",
+    emptyRoot: "No templates yet. Create the first one: it starts as a draft with the slug /.",
+    emptyFolder: "This folder is empty. Create a template here or drag templates and folders into it.",
+    deleteQ: (name) => `Delete the template "${name}" and all its slugs? The copies domains already have won't change.`,
+  },
+  FUNNEL: {
+    base: "/funil",
+    root: "Funnels",
+    create: "Create funnel",
+    search: "Search funnels or folders…",
+    one: "funnel",
+    many: "funnels",
+    newTitle: "New funnel",
+    emptyRoot: "No funnels yet. Create the first one: Pre Lander → Lander → Backredirect, with samples for A/B tests.",
+    emptyFolder: "This folder is empty. Create a funnel here or drag funnels and folders into it.",
+    deleteQ: (name) => `Delete the funnel "${name}"? The copies domains already have (and their A/B tests) won't change.`,
+  },
+};
 
 const FOLDER_COLOR_CLASS: Record<FolderColor, string> = {
   blue: "text-blue-500",
@@ -73,7 +105,22 @@ type DialogState =
 
 const DRAG_MIME = "application/x-dayone-item";
 
-export function PagesBrowser({ folders, pages, currentFolderId }: { folders: Folder[]; pages: PageListItem[]; currentFolderId: string | null }) {
+export function PagesBrowser({
+  folders,
+  pages,
+  currentFolderId,
+  scope = "TEMPLATE",
+  templates = [],
+}: {
+  folders: Folder[];
+  pages: PageListItem[];
+  currentFolderId: string | null;
+  scope?: FolderScope;
+  /** Funil: os templates que podem virar o Lander de um funil novo. */
+  templates?: { id: string; name: string }[];
+}) {
+  const T = SCOPE_TEXT[scope];
+  const ROOT_LABEL = T.root;
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -118,7 +165,7 @@ export function PagesBrowser({ folders, pages, currentFolderId }: { folders: Fol
     [start],
   );
 
-  const targetLabel = useCallback((id: string | null) => (id ? (map.get(id)?.name ?? "folder") : ROOT_LABEL), [map]);
+  const targetLabel = useCallback((id: string | null) => (id ? (map.get(id)?.name ?? "folder") : ROOT_LABEL), [map, ROOT_LABEL]);
 
   /** Pode soltar `item` na pasta `target` (null = raiz)? Não na mesma pasta, nem uma pasta dentro dela mesma. */
   const canDropItem = useCallback(
@@ -185,12 +232,12 @@ export function PagesBrowser({ folders, pages, currentFolderId }: { folders: Fol
 
   // ── Ações dos menus ────────────────────────────────────────────────────────
   const onDeletePage = (p: PageListItem) => {
-    if (!window.confirm(`Delete the template "${p.name}" and all its slugs? The copies domains already have won't change.`)) return;
-    run(() => deletePage(p.id), () => setNotice("Template deleted."));
+    if (!window.confirm(T.deleteQ(p.name))) return;
+    run(() => deletePage(p.id), () => setNotice(scope === "FUNNEL" ? "Funnel deleted." : "Template deleted."));
   };
   const onDeleteFolder = (f: Folder) => {
     const dest = f.parent_id ? `"${map.get(f.parent_id)?.name ?? "parent folder"}"` : "the root";
-    if (!window.confirm(`Delete the folder "${f.name}"? The templates and subfolders inside it will move to ${dest}.`)) return;
+    if (!window.confirm(`Delete the folder "${f.name}"? The ${T.many} and subfolders inside it will move to ${dest}.`)) return;
     run(() => deleteFolder(f.id), () => setNotice("Folder deleted."));
   };
   const onDuplicate = (p: PageListItem) => run(() => duplicatePage(p.id), () => setNotice(`"${p.name}" duplicated as a draft.`));
@@ -204,13 +251,13 @@ export function PagesBrowser({ folders, pages, currentFolderId }: { folders: Fol
       {/* Breadcrumb + busca + nova pasta */}
       <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <nav aria-label="Folders" className="flex min-w-0 flex-wrap items-center gap-1 text-sm">
-          <Crumb href="/paginas" active={currentId === null} highlight={dropKey === "crumb:root"} {...dropProps(null, "crumb:root")}>
+          <Crumb href={T.base} active={currentId === null} highlight={dropKey === "crumb:root"} {...dropProps(null, "crumb:root")}>
             {ROOT_LABEL}
           </Crumb>
           {trail.map((f) => (
             <span key={f.id} className="flex items-center gap-1">
               <ChevronRightIcon className="size-3.5 text-muted/60" />
-              <Crumb href={`/paginas?pasta=${f.id}`} active={f.id === currentId} highlight={dropKey === `crumb:${f.id}`} {...dropProps(f.id, `crumb:${f.id}`)}>
+              <Crumb href={`${T.base}?pasta=${f.id}`} active={f.id === currentId} highlight={dropKey === `crumb:${f.id}`} {...dropProps(f.id, `crumb:${f.id}`)}>
                 {f.name}
               </Crumb>
             </span>
@@ -223,7 +270,7 @@ export function PagesBrowser({ folders, pages, currentFolderId }: { folders: Fol
               type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search templates or folders…"
+              placeholder={T.search}
               aria-label="Search"
               className={`${INPUT_CLASS} pl-8`}
             />
@@ -258,7 +305,7 @@ export function PagesBrowser({ folders, pages, currentFolderId }: { folders: Fol
             className="flex min-h-56 flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-accent/50 bg-accent/5 p-4 text-accent transition-colors hover:border-accent hover:bg-accent/10"
           >
             <FilePlusIcon className="size-12" strokeWidth={1.25} />
-            <span className="text-sm font-semibold">Create template</span>
+            <span className="text-sm font-semibold">{T.create}</span>
           </button>
         ) : null}
 
@@ -270,6 +317,7 @@ export function PagesBrowser({ folders, pages, currentFolderId }: { folders: Fol
             subtitle={searching ? folderPathLabel(map, f.parent_id, ROOT_LABEL) : null}
             dimmed={dragging?.type === "folder" && dragging.id === f.id}
             highlight={dropKey === `folder:${f.id}`}
+            href={`${T.base}?pasta=${f.id}`}
             dragProps={dragProps({ type: "folder", id: f.id })}
             dropProps={dropProps(f.id, `folder:${f.id}`)}
             menu={[
@@ -285,11 +333,12 @@ export function PagesBrowser({ folders, pages, currentFolderId }: { folders: Fol
           <PageCard
             key={p.id}
             page={p}
+            href={`${T.base}/${p.id}`}
             subtitle={searching ? folderPathLabel(map, p.folder_id, ROOT_LABEL) : null}
             dimmed={dragging?.type === "page" && dragging.id === p.id}
             dragProps={dragProps({ type: "page", id: p.id })}
             menu={[
-              { label: "Open", icon: <ExternalIcon className="size-4" />, href: `/paginas/${p.id}` },
+              { label: "Open", icon: <ExternalIcon className="size-4" />, href: `${T.base}/${p.id}` },
               { label: "Rename", icon: <PencilIcon className="size-4" />, onClick: () => setDialog({ kind: "rename-page", page: p }) },
               { label: "Duplicate", icon: <DuplicateIcon className="size-4" />, onClick: () => onDuplicate(p) },
               { label: "Move to…", icon: <MoveIcon className="size-4" />, onClick: () => setDialog({ kind: "move", item: { type: "page", id: p.id }, name: p.name, from: p.folder_id }) },
@@ -301,7 +350,7 @@ export function PagesBrowser({ folders, pages, currentFolderId }: { folders: Fol
 
       {empty ? (
         <p className="mt-4 text-sm text-muted">
-          {current ? "This folder is empty. Create a template here or drag templates and folders into it." : "No templates yet. Create the first one: it starts as a draft with the slug /."}
+          {current ? T.emptyFolder : T.emptyRoot}
         </p>
       ) : null}
       {searching && shownFolders.length + shownPages.length === 0 ? <p className="mt-4 text-sm text-muted">Nothing with that name.</p> : null}
@@ -309,12 +358,16 @@ export function PagesBrowser({ folders, pages, currentFolderId }: { folders: Fol
       {/* ── Diálogos ─────────────────────────────────────────────────────── */}
       <Dialog
         open={dialog?.kind === "create-page"}
-        title="New template"
+        title={T.newTitle}
         description={current ? `It will be created in "${current.name}".` : "It will be created in the root."}
         onClose={closeDialog}
         className="sm:max-w-2xl"
       >
-        <CreatePageForm folderId={currentId} templates={pages} onCancel={closeDialog} />
+        {scope === "FUNNEL" ? (
+          <CreateFunnelForm folderId={currentId} templates={templates} onCancel={closeDialog} />
+        ) : (
+          <CreatePageForm folderId={currentId} templates={pages} onCancel={closeDialog} />
+        )}
       </Dialog>
 
       <NameDialog
@@ -325,7 +378,7 @@ export function PagesBrowser({ folders, pages, currentFolderId }: { folders: Fol
         submitLabel="Create folder"
         maxLength={80}
         onClose={closeDialog}
-        onSubmit={(name) => run(() => createFolder(currentId, name), () => setNotice(`Folder "${name}" created.`))}
+        onSubmit={(name) => run(() => createFolder(currentId, name, scope), () => setNotice(`Folder "${name}" created.`))}
       />
 
       <NameDialog
@@ -341,7 +394,7 @@ export function PagesBrowser({ folders, pages, currentFolderId }: { folders: Fol
 
       <NameDialog
         open={dialog?.kind === "rename-page"}
-        title="Rename template"
+        title={scope === "FUNNEL" ? "Rename funnel" : "Rename template"}
         label="Name"
         submitLabel="Rename"
         minLength={2}
@@ -355,6 +408,7 @@ export function PagesBrowser({ folders, pages, currentFolderId }: { folders: Fol
         open={dialog?.kind === "move"}
         state={dialog?.kind === "move" ? dialog : null}
         folders={folders}
+        rootLabel={ROOT_LABEL}
         onClose={closeDialog}
         onMove={(target) => {
           if (dialog?.kind !== "move") return;
@@ -410,6 +464,7 @@ const CARD = "group relative flex min-h-56 flex-col items-center justify-center 
 
 function FolderCard({
   folder,
+  href,
   count,
   subtitle,
   dimmed,
@@ -419,6 +474,7 @@ function FolderCard({
   menu,
 }: {
   folder: Folder;
+  href: string;
   count: number;
   subtitle: string | null;
   dimmed: boolean;
@@ -434,7 +490,7 @@ function FolderCard({
       data-folder-card={folder.id}
       className={`${CARD} ${highlight ? "border-accent bg-accent/10 ring-2 ring-accent" : "border-border hover:border-accent/50"} ${dimmed ? "opacity-40" : ""}`}
     >
-      <Link href={`/paginas?pasta=${folder.id}`} draggable={false} className="absolute inset-0 rounded-xl" aria-label={`Open folder ${folder.name}`} />
+      <Link href={href} draggable={false} className="absolute inset-0 rounded-xl" aria-label={`Open folder ${folder.name}`} />
       <FolderIcon className={`size-16 ${folderColorClass(folder.color)}`} strokeWidth={1.25} />
       <span className="line-clamp-2 text-sm font-semibold">{folder.name}</span>
       <span className="text-[11px] text-muted">{subtitle ?? `${count} ${count === 1 ? "item" : "items"}`}</span>
@@ -445,12 +501,14 @@ function FolderCard({
 
 function PageCard({
   page,
+  href,
   subtitle,
   dimmed,
   dragProps,
   menu,
 }: {
   page: PageListItem;
+  href: string;
   subtitle: string | null;
   dimmed: boolean;
   dragProps: CardDragProps;
@@ -460,7 +518,7 @@ function PageCard({
   const Icon = draft ? FileEditIcon : FileIcon;
   return (
     <div {...dragProps} data-page-card={page.id} className={`${CARD} border-border hover:border-accent/50 ${dimmed ? "opacity-40" : ""}`}>
-      <Link href={`/paginas/${page.id}`} draggable={false} className="absolute inset-0 rounded-xl" aria-label={`Open ${page.name}`} />
+      <Link href={href} draggable={false} className="absolute inset-0 rounded-xl" aria-label={`Open ${page.name}`} />
       <Icon className={`size-16 ${draft ? "text-muted" : "text-foreground"}`} strokeWidth={1.25} />
       <span className="line-clamp-2 text-sm font-semibold">{page.name}</span>
       <span className="flex items-center gap-1.5 text-[11px] text-muted">
@@ -469,6 +527,7 @@ function PageCard({
         <span className="text-muted/60">·</span>
         {PAGE_KIND_LABELS[page.kind]}
       </span>
+      {page.versions ? <span className="text-[11px] text-muted">{funnelSummary(page.versions)}</span> : null}
       <span className="text-[11px] text-muted/70">
         {page.copies_count === 0 ? "no copies on domains" : `copied to ${page.copies_count} ${page.copies_count === 1 ? "domain" : "domains"}`}
       </span>
@@ -613,16 +672,18 @@ function MoveDialog({
   open,
   state,
   folders,
+  rootLabel,
   onClose,
   onMove,
 }: {
   open: boolean;
   state: Extract<DialogState, { kind: "move" }> | null;
   folders: Folder[];
+  rootLabel: string;
   onClose: () => void;
   onMove: (target: string | null) => void;
 }) {
-  const options = useMemo(() => folderOptions(folders, state?.item.type === "folder" ? state.item.id : null, ROOT_LABEL), [folders, state]);
+  const options = useMemo(() => folderOptions(folders, state?.item.type === "folder" ? state.item.id : null, rootLabel), [folders, state, rootLabel]);
   return (
     <Dialog open={open} title={`Move "${state?.name ?? ""}"`} description="Choose the destination folder." onClose={onClose}>
       <form
@@ -653,4 +714,13 @@ function MoveDialog({
       </form>
     </Dialog>
   );
+}
+
+/** "Pre Lander · Lander ×2 · Backredirect": as etapas ativas do funil, com quantas amostras cada uma tem. */
+function funnelSummary(versions: NonNullable<PageListItem["versions"]>): string {
+  const parts = PAGE_KINDS_SUB.map((k) => {
+    const n = versions.filter((v) => v.kind === k && v.active).length;
+    return n === 0 ? null : n === 1 ? SUB_KIND_LABELS[k] : `${SUB_KIND_LABELS[k]} ×${n}`;
+  }).filter(Boolean);
+  return parts.length ? parts.join(" · ") : "no steps";
 }

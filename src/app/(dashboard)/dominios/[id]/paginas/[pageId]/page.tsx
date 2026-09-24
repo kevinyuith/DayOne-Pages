@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { PageEditor } from "@/app/(dashboard)/paginas/[id]/slugs/[slugId]/page-editor";
 import { placeholderValues } from "@/lib/pages/placeholders";
-import { getDomainPageForEditor } from "@/lib/pages/queries";
+import { funnelStatsByStep, getDomainPageForEditor, listTemplates } from "@/lib/pages/queries";
+import { localMidnight } from "@/lib/time-zone";
 import { removeDomainPage } from "../../../actions";
 import { createDomainSlug, deleteDomainSlug, renameDomainSlug, saveDomainPage, toggleDomainSlug } from "../actions";
 
@@ -22,7 +23,15 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
  */
 export default async function DomainPageEditorPage({ params, searchParams }: { params: Params; searchParams: SearchParams }) {
   const [{ id, pageId }, { slug }] = await Promise.all([params, searchParams]);
-  const data = await getDomainPageForEditor(id, pageId, typeof slug === "string" ? slug : null);
+  // Server Component dinâmico: ler o relógio por request é intencional.
+  // eslint-disable-next-line react-hooks/purity
+  const nowMs = Date.now();
+  const [data, templates, stats] = await Promise.all([
+    getDomainPageForEditor(id, pageId, typeof slug === "string" ? slug : null),
+    listTemplates(),
+    // Teste A/B: visitantes únicos de cada amostra nos últimos 30 dias (de Nova York, com hoje).
+    funnelStatsByStep([id], new Date(localMidnight(nowMs, 29))),
+  ]);
   if (!data) notFound();
 
   return (
@@ -36,6 +45,8 @@ export default async function DomainPageEditorPage({ params, searchParams }: { p
       scope="domain"
       // Preview como um visitante de língua inglesa; no ar, lang/language/date seguem o navegador de quem visita.
       placeholders={placeholderValues({ domain: data.domain.domain, stored: data.domain.placeholders, path: data.slug.slug, lang: "en" })}
+      funnelStats={Object.fromEntries(stats.get(id) ?? [])}
+      templates={templates.filter((t) => t.kind !== "FUNNEL").map((t) => ({ id: t.id, name: t.name }))}
       actions={{
         save: saveDomainPage.bind(null, id),
         createSlug: createDomainSlug.bind(null, id, pageId),

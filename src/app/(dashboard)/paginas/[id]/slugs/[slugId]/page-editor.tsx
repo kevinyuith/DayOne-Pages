@@ -8,7 +8,7 @@ import { Inspector, type InspectorCallbacks, type InspectorTab, type LinkDestina
 import { LayersPanel } from "@/components/editor/panels/layers-panel";
 import { LinksPanel } from "@/components/editor/panels/links-panel";
 import { PagesPanel } from "@/components/editor/panels/pages-panel";
-import { SubPagesPanel, type SubPagesActions } from "@/components/editor/panels/subpages-panel";
+import { SubPagesPanel, type StepStats, type SubPagesActions } from "@/components/editor/panels/subpages-panel";
 import { WidgetsPanel } from "@/components/editor/panels/widgets-panel";
 import { Rail, type RailPanel } from "@/components/editor/rail";
 import { VisualCanvas, type CanvasHandle } from "@/components/editor/visual-canvas";
@@ -35,14 +35,20 @@ import { NEXT_STEP } from "@/lib/pages/runtime";
 import { isFullDocument, wrapFragment } from "@/lib/pages/starter-template";
 import {
   activateStep,
+  addVersion,
   deactivateStep,
   getFunnelMode,
   listPages,
+  pageAsVersion,
   pageById,
   pageHref,
   previewFrom,
+  removeVersion,
+  replaceVersionContent,
   setFunnelMode,
   setTriggers,
+  setWeight,
+  splitEvenly,
   startPage,
   type FunnelMode,
   type SubPage,
@@ -60,7 +66,7 @@ import {
 import type { ActionResult } from "@/lib/action-result";
 import { AUTO_PLACEHOLDERS, PLACEHOLDER_FIELDS, applyPlaceholders, placeholderToken } from "@/lib/pages/placeholders";
 import { APP_TZ } from "@/lib/time-zone";
-import type { SaveEditorInput, SaveEditorResult } from "../../../actions";
+import { templateRootHtml, type SaveEditorInput, type SaveEditorResult } from "../../../actions";
 
 /**
  * O que o editor faz com a página, sem saber onde ela mora: template
@@ -117,6 +123,8 @@ export function PageEditor({
   nav,
   scope,
   placeholders,
+  funnelStats = null,
+  templates = [],
 }: {
   page: Page;
   slugs: PageSlugSummary[];
@@ -128,6 +136,10 @@ export function PageEditor({
   scope: "template" | "domain";
   /** Valores dos marcadores no preview (página de domínio). Template: null, o preview mostra os marcadores crus. */
   placeholders: Record<string, string> | null;
+  /** Página de domínio: visitas/cliques de cada amostra do funil (30 dias). Template: null. */
+  funnelStats?: StepStats | null;
+  /** Templates que podem virar amostra do funil ("De um template…"). */
+  templates?: { id: string; name: string }[];
 }) {
   const router = useRouter();
   const slugHref = useCallback((id: string) => nav.slugHref.replace("{slug}", encodeURIComponent(id)), [nav.slugHref]);
@@ -441,9 +453,10 @@ export function PageEditor({
 
   const togglePanel = (p: RailPanel) => setPanel((cur) => (cur === p ? null : p));
 
-  // ── Funil (Pre Lander → Lander → Backredirect) ─────────────────────────────
-  // Ativar/desativar muda a estrutura do body → reindexa uids. Quem escolhe a
-  // etapa mostrada é `currentPageId`; a canvas cai na inicial se ela sumir.
+  // ── Funil (Pre Lander → Lander → Backredirect, com amostras) ───────────────
+  // Mudanças de estrutura reindexam uids. Quem escolhe a amostra mostrada é
+  // `currentPageId`; a canvas cai na inicial se ela sumir.
+  const showCreated = (created: string) => created && setCurrentPageId(created);
   const subPages: SubPagesActions = {
     select: (id) => {
       setCurrentPageId(id);
@@ -453,17 +466,34 @@ export function PageEditor({
     activate: (kind) => {
       let created = "";
       applyDocChange((d) => void (created = activateStep(d, kind)), { reindex: true });
-      if (created) setCurrentPageId(created);
+      showCreated(created);
     },
     deactivate: (kind) => applyDocChange((d) => deactivateStep(d, kind), { reindex: true }),
-    setTriggers: (id, t) => applyDocChange((d) => setTriggers(d, id, t)),
+    addVersion: (kind, opts) => {
+      let created = "";
+      const html = opts.html !== undefined ? pageAsVersion(opts.html) : undefined;
+      applyDocChange((d) => void (created = addVersion(d, kind, { from: opts.from, html })), { reindex: true });
+      showCreated(created);
+    },
+    removeVersion: (id) => applyDocChange((d) => removeVersion(d, id), { reindex: true }),
+    replaceVersion: (id, html) => {
+      const content = pageAsVersion(html);
+      applyDocChange((d) => replaceVersionContent(d, id, content), { reindex: true });
+      setCurrentPageId(id);
+    },
+    setWeight: (id, w) => applyDocChange((d) => setWeight(d, id, w)),
+    splitEvenly: (kind) => applyDocChange((d) => splitEvenly(d, kind)),
+    setTriggers: (ids, t) => applyDocChange((d) => ids.forEach((id) => setTriggers(d, id, t))),
     setMode: (m) => applyDocChange((d) => setFunnelMode(d, m)),
+    loadTemplate: templateRootHtml,
   };
 
   const activeSteps = outline.pages.filter((p) => p.active);
+  // Destino direto só para etapa de amostra única: com teste A/B, o servidor serve uma só e o link poderia apontar para a que saiu.
+  const directSteps = activeSteps.filter((p) => activeSteps.filter((q) => q.kind === p.kind).length === 1);
   const destinations: LinkDestination[] = [
-    ...(activeSteps.length > 1 ? [{ label: "Next step (#next-step)", href: NEXT_STEP, group: "This slug's funnel (same URL)" }] : []),
-    ...activeSteps.filter((p) => p.id !== currentPageId).map((p) => ({ label: p.name, href: pageHref(p.id), group: "This slug's funnel (same URL)" })),
+    ...(new Set(activeSteps.map((p) => p.kind)).size > 1 ? [{ label: "Next step (#next-step)", href: NEXT_STEP, group: "This slug's funnel (same URL)" }] : []),
+    ...directSteps.filter((p) => p.id !== currentPageId).map((p) => ({ label: p.name, href: pageHref(p.id), group: "This slug's funnel (same URL)" })),
     ...slugs.filter((s) => s.id !== slug.id && s.is_active).map((s) => ({ label: s.slug, href: s.slug, group: "This page's slugs (changes the URL)" })),
   ];
 
@@ -485,8 +515,8 @@ export function PageEditor({
             · page on {domains[0]}
           </span>
         ) : (
-          <span className="text-xs text-muted" title="Template: domains get copies. Editing here doesn't change the copies that already exist.">
-            · template
+          <span className="text-xs text-muted" title="Library: domains get copies. Editing here doesn't change the copies that already exist.">
+            · {page.kind === "FUNNEL" ? "funnel" : "template"}
           </span>
         )}
 
@@ -537,7 +567,15 @@ export function PageEditor({
                   onRemove={onDeleteSlug}
                 />
               ) : panel === "funnel" ? (
-                <SubPagesPanel pages={outline.pages} currentId={currentPageId} mode={outline.funnelMode} canEdit={fullDoc} actions={subPages} />
+                <SubPagesPanel
+                  pages={outline.pages}
+                  currentId={currentPageId}
+                  mode={outline.funnelMode}
+                  canEdit={fullDoc}
+                  actions={subPages}
+                  stats={funnelStats}
+                  templates={templates}
+                />
               ) : panel === "widgets" ? (
                 <WidgetsPanel canInsert={fullDoc} onInsert={insertWidget} />
               ) : panel === "layers" ? (

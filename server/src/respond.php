@@ -126,12 +126,26 @@ function serve_slug(array $route, Request $req): array
         return [503, ['Content-Type' => 'text/html; charset=utf-8', 'Cache-Control' => 'no-store', 'Retry-After' => '10'], plain_page('One moment', 'Updating the page. Please try again in a few seconds.')];
     }
 
+    // Teste A/B: cada etapa com várias amostras fica com a sorteada para este
+    // visitante (cookie dop_ab); a combinação entra no ETag.
+    $ab = ab_apply($body, $req->cookies);
+    $abTag = '';
+    if ($ab) {
+        $body = $ab['html'];
+        $abTag = $ab['tag'] !== '' ? '-' . $ab['tag'] : '';
+        if ($ab['cookie'] !== null) {
+            $headers['Set-Cookie'] = [ab_cookie($ab['cookie'])];
+        }
+    }
+
     // Funil em modo servidor: a etapa entra no ETag (cada etapa é um corpo
-    // diferente na MESMA URL) e a resposta passa a variar por Cookie.
+    // diferente na MESMA URL). Com teste A/B ou funil, a resposta varia por Cookie.
     $funnel = funnel_apply($body, $req->cookies);
-    $etag = '"' . $hash . ($funnel ? '-' . $funnel['step'] : '') . $ptag . $tag . '"';
+    $etag = '"' . $hash . $abTag . ($funnel ? '-' . $funnel['step'] : '') . $ptag . $tag . '"';
     if ($funnel) {
         $body = $funnel['html'];
+    }
+    if ($funnel || $abTag !== '') {
         $headers['Vary'] .= ', Cookie';
     }
     $headers['ETag'] = $etag;

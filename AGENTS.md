@@ -44,7 +44,10 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 - Sempre as mesmas três etapas, nesta ordem: **Pre Lander** (`presell`) → **Lander** (`main`) → **Backredirect**. Não há outros tipos, nomes livres nem etapas extras. Uma slug sem seções é só o Lander.
 - Etapa **sem código** (sem seção, ou seção vazia/só comentário) é **inativa** e nunca aparece. O visitante vê primeiro: 1) o Pre Lander, se ativo; 2) senão, o Lander. `#next-step` leva do Pre Lander ao Lander; o Backredirect só aparece pelo voltar/exit intent.
-- A regra vale igual em três lugares — mudou um, mude os outros: `src/lib/pages/subpages.ts` (editor), `src/lib/pages/runtime.ts` (modo navegador) e `server/src/funnel.php` (modo servidor, com testes em `server/tests/funnel.test.php`).
+- A regra vale igual em três lugares — mudou um, mude os outros: `src/lib/pages/subpages.ts` (editor), `src/lib/pages/runtime.ts` (modo navegador) e `server/src/funnel.php` (modo servidor, com testes em `server/tests/funnel.test.php`). Sem DOM (servidor do painel), a leitura é `src/lib/pages/funnel-scan.ts`, igual ao `funnel_sections` do PHP.
+- **Biblioteca de funis** (tela Funil, `/funil`): funil = template com `kind = 'FUNNEL'` (a tela Templates mostra o resto). Cada tela tem a sua árvore de pastas (`folders.scope`: `TEMPLATE` | `FUNNEL`; subpasta herda o escopo da mãe). O domínio recebe uma cópia do funil como de qualquer template (`domain_page_copy`).
+- **Teste A/B = amostras de uma etapa**: seções irmãs do mesmo tipo ("Lander A", "Lander B"…), cada uma com `data-dop-weight` (0–100; 0 = pausada). Quem sorteia é o servidor de entrega (`ab_apply` em `funnel.php`), uma por etapa e por visitante, fixa no cookie `dop_ab` (`<visitante>:<ids>`), e serve SÓ a sorteada (em qualquer modo); a combinação entra no ETag e a resposta varia por Cookie. Sem o servidor (preview), vale a primeira amostra ativa.
+- **Resultado do teste**: o runtime manda `view`/`click` de cada amostra para `/_dop/e` (beacon.php) só quando o `<body>` tem `data-dop-ev`, que só o servidor põe — preview e canvas nunca contam. O banco guarda a primeira vez de cada visitante (`pages.funnel_events`, via `log_funnel_event` com a chave do servidor) e soma por `funnel_stats`: visitas e cliques são visitantes únicos.
 
 ## Frontend
 

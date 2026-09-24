@@ -85,6 +85,15 @@ function supabase_log_load(string $visitId, ?int $loadMs): void
     supabase_fire('log_load', ['p_visit_id' => $visitId, 'p_load_ms' => $loadMs]);
 }
 
+/** @param array{host: string, path: string, step: string, kind: string, event: string, visitor: string} $e */
+function supabase_log_funnel_event(array $e): void
+{
+    supabase_fire('log_funnel_event', [
+        'p_host' => $e['host'], 'p_path' => $e['path'], 'p_step' => $e['step'],
+        'p_kind' => $e['kind'], 'p_event' => $e['event'], 'p_visitor' => $e['visitor'],
+    ]);
+}
+
 /** POST numa RPC de registro (pages.<fn>) com p_key; resposta ignorada, falha só no log. */
 function supabase_fire(string $fn, array $params): void
 {

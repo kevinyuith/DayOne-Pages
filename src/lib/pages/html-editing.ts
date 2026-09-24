@@ -37,6 +37,16 @@ export const PAGE_NAME_ATTR = "data-dop-name";
 export const PAGE_KIND_ATTR = "data-dop-kind";
 export const PAGE_START_ATTR = "data-dop-start";
 export const PAGE_TRIGGER_ATTR = "data-dop-trigger";
+/**
+ * Peso (0–100) de uma amostra no teste A/B: com duas ou mais seções do mesmo
+ * tipo, o servidor sorteia uma por visitante na proporção dos pesos.
+ */
+export const PAGE_WEIGHT_ATTR = "data-dop-weight";
+/**
+ * No <body>, posto SÓ pelo servidor de entrega: liga o aviso de visita/clique
+ * de cada amostra (`/_dop/e`). Preview e canvas não têm, então não contam.
+ */
+export const FUNNEL_EVENTS_ATTR = "data-dop-ev";
 /** Marca (SÓ no editor) qual sub-página a canvas está mostrando. Sai no serialize. */
 export const PAGE_CURRENT_ATTR = "data-dop-current";
 /**

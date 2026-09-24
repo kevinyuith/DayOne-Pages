@@ -71,3 +71,44 @@ function handle_beacon(Request $req, string $body): array
     $ms = is_string($t) && ctype_digit($t) && (int) $t <= 600000 ? (int) $t : null;
     return [204, ['Cache-Control' => 'no-store'], null, $visitId, $ms];
 }
+
+// ── Aviso de visita/clique das amostras do funil (teste A/B) ────────────────
+
+const FUNNEL_EVENT_PATH = '/_dop/e';
+
+/**
+ * POST /_dop/e ("e=v|c&p=<id da amostra>&k=<etapa>&s=<path>") → 204 na hora +
+ * o evento para gravar depois da resposta (pages.log_funnel_event). O runtime
+ * só manda com data-dop-ev no <body>, que o servidor põe (ab_apply). Sem o
+ * cookie dop_ab válido, de robô ou malformado: 204 e nada a gravar. Outro
+ * método: 404.
+ *
+ * @return array{0: int, 1: array<string,string>, 2: ?string, 3: ?array{host: string, path: string, step: string, kind: string, event: string, visitor: string}}
+ */
+function handle_funnel_event(Request $req, string $body): array
+{
+    if ($req->method !== 'POST') {
+        return [...not_found(), null];
+    }
+    $ok = [204, ['Cache-Control' => 'no-store'], null];
+    [$visitor] = ab_parse_cookie((string) ($req->cookies[AB_COOKIE] ?? ''));
+    if ($visitor === null || is_bot_ua($req->userAgent)) {
+        return [...$ok, null];
+    }
+    parse_str($body, $form);
+    $event = ['v' => 'view', 'c' => 'click'][(string) ($form['e'] ?? '')] ?? null;
+    $step = (string) ($form['p'] ?? '');
+    $kind = (string) ($form['k'] ?? '');
+    $path = normalize_path((string) ($form['s'] ?? ''));
+    $host = normalize_host($req->rawHost);
+    if (
+        $event === null
+        || preg_match('/^p_[a-z0-9]{1,16}$/', $step) !== 1
+        || !in_array($kind, ['presell', 'main', 'backredirect'], true)
+        || !str_starts_with($path, '/') || strlen($path) > 512
+        || !is_valid_host($host)
+    ) {
+        return [...$ok, null];
+    }
+    return [...$ok, ['host' => $host, 'path' => $path, 'step' => $step, 'kind' => $kind, 'event' => $event, 'visitor' => $visitor]];
+}

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { getPageWithSlugs, getSlug } from "@/lib/pages/queries";
+import { getPageWithSlugs, getSlug, listTemplates } from "@/lib/pages/queries";
 import { createSlug, deletePage, deleteSlug, renameSlug, saveEditor, toggleSlug } from "../../../actions";
 import { PageEditor } from "./page-editor";
 
@@ -15,8 +15,10 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
 /** O editor aberto num template. A página de um domínio usa o mesmo editor em /dominios/[id]/paginas/[pageId]. */
 export default async function SlugEditorPage({ params }: { params: Params }) {
   const { id, slugId } = await params;
-  const [page, slug] = await Promise.all([getPageWithSlugs(id), getSlug(slugId)]);
+  const [page, slug, templates] = await Promise.all([getPageWithSlugs(id), getSlug(slugId), listTemplates()]);
   if (!page || !slug || slug.page_id !== page.id) notFound();
+  // Funil: o editor volta para a tela do funil (etapas, amostras e o teste A/B).
+  const funnel = page.kind === "FUNNEL";
 
   return (
     <PageEditor
@@ -26,6 +28,7 @@ export default async function SlugEditorPage({ params }: { params: Params }) {
       domains={[]}
       scope="template"
       placeholders={null}
+      templates={templates.filter((t) => t.kind !== "FUNNEL" && t.id !== page.id).map((t) => ({ id: t.id, name: t.name }))}
       actions={{
         save: saveEditor,
         createSlug: createSlug.bind(null, page.id),
@@ -36,10 +39,10 @@ export default async function SlugEditorPage({ params }: { params: Params }) {
       }}
       nav={{
         // Volta para a pasta onde o template está, não para a raiz.
-        backHref: page.folder_id ? `/paginas?pasta=${page.folder_id}` : "/paginas",
-        backTitle: "Back to templates",
+        backHref: funnel ? `/funil/${page.id}` : page.folder_id ? `/paginas?pasta=${page.folder_id}` : "/paginas",
+        backTitle: funnel ? "Back to the funnel" : "Back to templates",
         slugHref: `/paginas/${page.id}/slugs/{slug}`,
-        afterDeleteHref: "/paginas",
+        afterDeleteHref: funnel ? "/funil" : "/paginas",
       }}
     />
   );

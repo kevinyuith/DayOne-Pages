@@ -1,5 +1,6 @@
 import { supabaseService } from "@/lib/supabase/service";
-import type { DetectionRule, Domain, DomainRoute, Folder, Page, PageKind, PageRef, PageSlug, PageSlugSummary, PageStatus } from "./types";
+import { scanFunnel, type ScannedVersion } from "./funnel-scan";
+import type { DetectionRule, Domain, DomainRoute, Folder, FolderScope, Page, PageKind, PageRef, PageSlug, PageSlugSummary, PageStatus } from "./types";
 
 /**
  * Leituras do schema `pages`, para Server Components.
@@ -144,28 +145,122 @@ export type PageListItem = Page & {
   slugs_count: number;
   /** Quantos domínios têm uma cópia deste template. */
   copies_count: number;
+  /** Funil: as amostras da slug `/` (para o card). Template: null. */
+  versions: ScannedVersion[] | null;
 };
 
-/** Os templates, para a tela /paginas, com quantas cópias cada um tem nos domínios. */
-export async function listPages(): Promise<PageListItem[]> {
-  const [templates, copies] = await Promise.all([
-    supabaseService().from("pages").select("*, page_slugs(count)").order("updated_at", { ascending: false }),
-    sitePages(null),
-  ]);
+/**
+ * Os itens de uma tela da biblioteca, com quantas cópias cada um tem nos
+ * domínios: TEMPLATE = /paginas (tudo menos funil), FUNNEL = /funil.
+ */
+export async function listPages(scope: FolderScope = "TEMPLATE"): Promise<PageListItem[]> {
+  const base = supabaseService().from("pages").select("*, page_slugs(count)").order("updated_at", { ascending: false });
+  const [templates, copies] = await Promise.all([scope === "FUNNEL" ? base.eq("kind", "FUNNEL") : base.neq("kind", "FUNNEL"), sitePages(null)]);
   throwIf(templates.error, "listPages");
   const copiesOf = new Map<string, number>();
   for (const c of copies) if (c.template_id) copiesOf.set(c.template_id, (copiesOf.get(c.template_id) ?? 0) + 1);
-  return (templates.data ?? []).map((row) => {
+  const rows = (templates.data ?? []).map((row) => {
     const { page_slugs, ...rest } = row as Page & { page_slugs: CountRow };
-    return { ...rest, slugs_count: countOf(page_slugs), copies_count: copiesOf.get(rest.id) ?? 0 };
+    return { ...rest, slugs_count: countOf(page_slugs), copies_count: copiesOf.get(rest.id) ?? 0, versions: null as ScannedVersion[] | null };
   });
+  if (scope === "FUNNEL" && rows.length) {
+    const { data, error } = await supabaseService().from("page_slugs").select("page_id, content").eq("slug", "/").in("page_id", rows.map((r) => r.id));
+    throwIf(error, "listPages(funnel)");
+    const html = new Map(((data ?? []) as { page_id: string; content: string }[]).map((r) => [r.page_id, r.content]));
+    for (const r of rows) r.versions = scanFunnel(html.get(r.id) ?? "");
+  }
+  return rows;
 }
 
-/** Todas as pastas (são poucas; a árvore é montada na tela). */
-export async function listFolders(): Promise<Folder[]> {
-  const { data, error } = await supabaseService().from("folders").select("*").order("name");
+/** As pastas de uma tela (são poucas; a árvore é montada na tela). */
+export async function listFolders(scope: FolderScope = "TEMPLATE"): Promise<Folder[]> {
+  const { data, error } = await supabaseService().from("folders").select("*").eq("scope", scope).order("name");
   throwIf(error, "listFolders");
   return (data ?? []) as Folder[];
+}
+
+// ── Funil: amostras e resultados do teste A/B ────────────────────────────────
+
+/** Visitantes únicos que viram / clicaram cada amostra (por id da amostra). */
+export type VersionStats = { views: number; clicks: number };
+
+/** Resultados por amostra de um domínio (todos os paths somados), desde `since`. */
+export async function funnelStatsByStep(domainIds: string[], since: Date): Promise<Map<string, Map<string, VersionStats>>> {
+  const out = new Map<string, Map<string, VersionStats>>();
+  if (!domainIds.length) return out;
+  const { data, error } = await supabaseService().rpc("funnel_stats", { p_domain_ids: domainIds, p_since: since.toISOString() });
+  throwIf(error, "funnel_stats");
+  for (const r of (data as { domain_id: string; step_id: string; views: number; clicks: number }[] | null) ?? []) {
+    const byStep = out.get(r.domain_id) ?? new Map<string, VersionStats>();
+    const cur = byStep.get(r.step_id) ?? { views: 0, clicks: 0 };
+    byStep.set(r.step_id, { views: cur.views + Number(r.views), clicks: cur.clicks + Number(r.clicks) });
+    out.set(r.domain_id, byStep);
+  }
+  return out;
+}
+
+export type FunnelCopy = {
+  domain_id: string;
+  domain: string;
+  page_id: string;
+  page_name: string;
+  status: PageStatus;
+  /** A slug do funil na cópia (a `/`, ou a primeira com etapas) e as amostras dela. */
+  slug: string;
+  versions: ScannedVersion[];
+  stats: Map<string, VersionStats>;
+};
+
+export type FunnelDetail = {
+  page: PageWithSlugs;
+  /** As amostras da slug `/` do funil na biblioteca. */
+  versions: ScannedVersion[];
+  copies: FunnelCopy[];
+};
+
+/** Um funil da biblioteca, as cópias dele nos domínios e o teste A/B de cada cópia desde `since`. */
+export async function getFunnelDetail(id: string, since: Date): Promise<FunnelDetail | null> {
+  const db = supabaseService();
+  const page = await getPageWithSlugs(id);
+  if (!page) return null;
+  const [root, copies, domains] = await Promise.all([
+    db.from("page_slugs").select("content").eq("page_id", id).eq("slug", "/").maybeSingle(),
+    sitePages(null),
+    db.from("domains").select("id,domain"),
+  ]);
+  throwIf(root.error, "getFunnelDetail");
+  throwIf(domains.error, "getFunnelDetail(domains)");
+  const names = new Map(((domains.data ?? []) as { id: string; domain: string }[]).map((d) => [d.id, d.domain]));
+  const mine = copies.filter((c) => c.template_id === id);
+  const stats = await funnelStatsByStep([...new Set(mine.map((c) => c.domain_id))], since);
+
+  const out: FunnelCopy[] = [];
+  for (const c of mine) {
+    // A slug com etapas: a `/` se tiver, senão a primeira que tiver.
+    const order = [...c.slugs].sort((a, b) => (a.slug === "/" ? -1 : b.slug === "/" ? 1 : a.slug.localeCompare(b.slug)));
+    let found: { slug: string; versions: ScannedVersion[] } | null = null;
+    for (const s of order) {
+      const got = await db.rpc("domain_slug_get", { p_domain: c.domain_id, p_page: c.page_id, p_slug: s.slug });
+      throwIf(got.error, "domain_slug_get");
+      const versions = scanFunnel((got.data as { content: string }[] | null)?.[0]?.content ?? "");
+      if (versions.length) {
+        found = { slug: s.slug, versions };
+        break;
+      }
+    }
+    out.push({
+      domain_id: c.domain_id,
+      domain: names.get(c.domain_id) ?? c.domain_id,
+      page_id: c.page_id,
+      page_name: c.name,
+      status: c.status,
+      slug: found?.slug ?? "/",
+      versions: found?.versions ?? [],
+      stats: stats.get(c.domain_id) ?? new Map(),
+    });
+  }
+  out.sort((a, b) => a.domain.localeCompare(b.domain));
+  return { page, versions: scanFunnel((root.data as { content: string } | null)?.content ?? ""), copies: out };
 }
 
 export type PageWithSlugs = Page & { slugs: PageSlugSummary[] };

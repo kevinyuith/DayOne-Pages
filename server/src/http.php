@@ -113,7 +113,14 @@ function send_response(int $status, array $headers, ?string $body, bool $head): 
 {
     http_response_code($status);
     foreach ($headers as $name => $value) {
-        header("$name: $value");
+        // Lista (ex.: dois Set-Cookie): um header por item.
+        if (is_array($value)) {
+            foreach ($value as $one) {
+                header("$name: $one", false);
+            }
+        } else {
+            header("$name: $value");
+        }
     }
     if ($body !== null) {
         header('Content-Length: ' . strlen($body));

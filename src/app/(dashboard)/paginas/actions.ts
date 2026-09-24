@@ -6,8 +6,8 @@ import { errorReason, fail, type ActionResult } from "@/lib/action-result";
 import { fetchPublicHtml } from "@/lib/pages/fetch-page";
 import { isValidSlug, normalizePath } from "@/lib/pages/normalize";
 import { STARTER_HTML } from "@/lib/pages/starter-template";
-import { refreshPageIds } from "@/lib/pages/subpages";
-import { isFolderColor, isPageKind, isPageStatus, type Page, type PageKind, type PageStatus } from "@/lib/pages/types";
+import { funnelStarterHtml, refreshPageIds } from "@/lib/pages/subpages";
+import { isFolderColor, isFolderScope, isPageKind, isPageStatus, type FolderScope, type Page, type PageKind, type PageStatus } from "@/lib/pages/types";
 import { supabaseService } from "@/lib/supabase/service";
 
 /**
@@ -23,6 +23,12 @@ import { supabaseService } from "@/lib/supabase/service";
  * volta a cada Cmd+S. O editor atualiza o próprio estado com o que a action
  * devolve.
  */
+
+/** A biblioteca tem duas telas sobre as mesmas tabelas: Templates (/paginas) e Funil (/funil). */
+function revalidateLibrary() {
+  revalidatePath("/paginas", "layout");
+  revalidatePath("/funil", "layout");
+}
 
 /** Teto do HTML de uma slug. O limite do transporte está em next.config (8 MB). */
 const MAX_CONTENT_BYTES = 5 * 1024 * 1024;
@@ -109,8 +115,60 @@ export async function createPage(prev: CreatePageState, fd: FormData): Promise<C
     return { error: errorReason(cause), attempt };
   }
 
-  revalidatePath("/paginas");
+  revalidateLibrary();
   redirect(`/paginas/${pageId}`);
+}
+
+export type CreateFunnelState = { error?: string; attempt: number };
+
+/**
+ * Cria um funil (template com kind FUNNEL, tela Funil), como rascunho, na
+ * pasta aberta, com a slug `/`: Pre Lander e Lander com o código inicial —
+ * ou, com `template_id`, o Lander vem da slug `/` desse template.
+ */
+export async function createFunnel(prev: CreateFunnelState, fd: FormData): Promise<CreateFunnelState> {
+  const attempt = prev.attempt + 1;
+  const name = String(fd.get("name") ?? "").trim();
+  const folderId = optionalId(fd.get("folder_id"));
+  const templateId = optionalId(fd.get("template_id"));
+  if (name.length < NAME_MIN || name.length > NAME_MAX) return { error: `Enter a name of ${NAME_MIN} to ${NAME_MAX} characters.`, attempt };
+  if (folderId === undefined) return { error: "Invalid folder.", attempt };
+  if (templateId === undefined) return { error: "Invalid template.", attempt };
+
+  const db = supabaseService();
+  let lander: string | undefined;
+  if (templateId) {
+    const got = await templateRootHtml(templateId);
+    if (!got.ok) return { error: got.reason, attempt };
+    lander = got.html;
+  }
+
+  let pageId: string;
+  try {
+    const { data, error } = await db.from("pages").insert({ name, kind: "FUNNEL", status: "DRAFT", folder_id: folderId }).select("id").single();
+    if (error) throw new Error(error.message);
+    pageId = (data as { id: string }).id;
+    const { error: slugError } = await db.from("page_slugs").insert({ page_id: pageId, slug: "/", title: name, content: funnelStarterHtml(name, lander) });
+    if (slugError) {
+      await db.from("pages").delete().eq("id", pageId);
+      throw new Error(slugError.message);
+    }
+  } catch (cause) {
+    return { error: errorReason(cause), attempt };
+  }
+
+  revalidateLibrary();
+  redirect(`/funil/${pageId}`);
+}
+
+/** O HTML da slug `/` de um template (ou da primeira), para virar Lander ou amostra de um funil. */
+export async function templateRootHtml(templateId: string): Promise<ActionResult<{ html: string }>> {
+  if (!UUID_RE.test(templateId)) return fail("Choose a template.");
+  const { data, error } = await supabaseService().from("page_slugs").select("slug, content").eq("page_id", templateId);
+  if (error) return fail(error.message);
+  const rows = (data ?? []) as { slug: string; content: string }[];
+  const root = rows.find((r) => r.slug === "/") ?? rows[0];
+  return root ? { ok: true, html: root.content ?? "" } : fail("Template not found.");
 }
 
 /**
@@ -205,7 +263,7 @@ export async function createSlug(pageId: string, rawSlug: string, title: string 
       if (error.code === "23505") return fail("This page already has a slug with that path.");
       throw new Error(error.message);
     }
-    revalidatePath("/paginas", "layout");
+    revalidateLibrary();
     return { ok: true, slugId: (data as { id: string }).id };
   } catch (cause) {
     return fail(errorReason(cause));
@@ -231,7 +289,7 @@ export async function renameSlug(slugId: string, rawSlug: string): Promise<Actio
       if (error.code === "23505") return fail("This page already has a slug with that path.");
       throw new Error(error.message);
     }
-    revalidatePath("/paginas", "layout");
+    revalidateLibrary();
     return { ok: true };
   } catch (cause) {
     return fail(errorReason(cause));
@@ -242,7 +300,7 @@ export async function toggleSlug(slugId: string, active: boolean): Promise<Actio
   try {
     const { error } = await supabaseService().from("page_slugs").update({ is_active: active }).eq("id", slugId);
     if (error) throw new Error(error.message);
-    revalidatePath("/paginas", "layout");
+    revalidateLibrary();
     return { ok: true };
   } catch (cause) {
     return fail(errorReason(cause));
@@ -265,7 +323,7 @@ export async function deleteSlug(slugId: string): Promise<ActionResult> {
 
     const { error } = await db.from("page_slugs").delete().eq("id", slugId);
     if (error) throw new Error(error.message);
-    revalidatePath("/paginas", "layout");
+    revalidateLibrary();
     return { ok: true };
   } catch (cause) {
     return fail(errorReason(cause));
@@ -282,7 +340,7 @@ export async function deletePage(pageId: string): Promise<ActionResult> {
   try {
     const { error } = await db.from("pages").delete().eq("id", pageId);
     if (error) throw new Error(error.message);
-    revalidatePath("/paginas");
+    revalidateLibrary();
     revalidatePath("/dominios", "layout");
     return { ok: true };
   } catch (cause) {
@@ -298,7 +356,7 @@ export async function renamePage(pageId: string, rawName: string): Promise<Actio
   try {
     const { error } = await supabaseService().from("pages").update({ name }).eq("id", pageId);
     if (error) throw new Error(error.message);
-    revalidatePath("/paginas", "layout");
+    revalidateLibrary();
     return { ok: true };
   } catch (cause) {
     return fail(errorReason(cause));
@@ -312,7 +370,7 @@ export async function movePage(pageId: string, folderId: string | null): Promise
   try {
     const { error } = await supabaseService().from("pages").update({ folder_id: target }).eq("id", pageId);
     if (error) throw new Error(error.message);
-    revalidatePath("/paginas");
+    revalidateLibrary();
     return { ok: true };
   } catch (cause) {
     return fail(errorReason(cause));
@@ -356,7 +414,7 @@ export async function duplicatePage(pageId: string): Promise<ActionResult<{ page
         throw new Error(error.message);
       }
     }
-    revalidatePath("/paginas");
+    revalidateLibrary();
     return { ok: true, pageId: newId };
   } catch (cause) {
     return fail(errorReason(cause));
@@ -372,15 +430,16 @@ function folderName(raw: string): string | null {
   return name.length >= 1 && name.length <= FOLDER_NAME_MAX ? name : null;
 }
 
-export async function createFolder(parentId: string | null, rawName: string): Promise<ActionResult<{ folderId: string }>> {
+export async function createFolder(parentId: string | null, rawName: string, scope: FolderScope = "TEMPLATE"): Promise<ActionResult<{ folderId: string }>> {
   const name = folderName(rawName);
   if (!name) return fail(`Enter a name of 1 to ${FOLDER_NAME_MAX} characters.`);
   const parent = optionalId(parentId);
   if (parent === undefined) return fail("Invalid folder.");
+  if (!isFolderScope(scope)) return fail("Invalid screen.");
   try {
-    const { data, error } = await supabaseService().from("folders").insert({ name, parent_id: parent }).select("id").single();
+    const { data, error } = await supabaseService().from("folders").insert({ name, parent_id: parent, scope }).select("id").single();
     if (error) throw new Error(error.message);
-    revalidatePath("/paginas");
+    revalidateLibrary();
     return { ok: true, folderId: (data as { id: string }).id };
   } catch (cause) {
     return fail(errorReason(cause));
@@ -393,7 +452,7 @@ export async function renameFolder(folderId: string, rawName: string): Promise<A
   try {
     const { error } = await supabaseService().from("folders").update({ name }).eq("id", folderId);
     if (error) throw new Error(error.message);
-    revalidatePath("/paginas");
+    revalidateLibrary();
     return { ok: true };
   } catch (cause) {
     return fail(errorReason(cause));
@@ -405,7 +464,7 @@ export async function setFolderColor(folderId: string, color: string | null): Pr
   try {
     const { error } = await supabaseService().from("folders").update({ color }).eq("id", folderId);
     if (error) throw new Error(error.message);
-    revalidatePath("/paginas");
+    revalidateLibrary();
     return { ok: true };
   } catch (cause) {
     return fail(errorReason(cause));
@@ -420,10 +479,10 @@ export async function moveFolder(folderId: string, parentId: string | null): Pro
   try {
     const { error } = await supabaseService().from("folders").update({ parent_id: parent }).eq("id", folderId);
     if (error) {
-      if (error.code === "23514") return fail("A folder can't be inside one of its subfolders.");
+      if (error.code === "23514") return fail("A folder can't be inside one of its subfolders (or a folder from the other screen).");
       throw new Error(error.message);
     }
-    revalidatePath("/paginas");
+    revalidateLibrary();
     return { ok: true };
   } catch (cause) {
     return fail(errorReason(cause));
@@ -449,7 +508,7 @@ export async function deleteFolder(folderId: string): Promise<ActionResult> {
 
     const { error } = await db.from("folders").delete().eq("id", folderId);
     if (error) throw new Error(error.message);
-    revalidatePath("/paginas");
+    revalidateLibrary();
     return { ok: true };
   } catch (cause) {
     return fail(errorReason(cause));

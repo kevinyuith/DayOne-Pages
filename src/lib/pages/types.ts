@@ -8,7 +8,8 @@ import type { RouteConditions } from "./conditions";
  * usa o mapa de rótulos. Não há terceiro lugar.
  */
 
-export const PAGE_KINDS = ["PRESELL", "ADVERTORIAL", "VSL", "CHECKOUT", "SAFE", "OTHER"] as const;
+/** FUNNEL = um funil (Pre Lander → Lander → Backredirect, com amostras): fica na tela Funil, não em Templates. */
+export const PAGE_KINDS = ["PRESELL", "ADVERTORIAL", "VSL", "CHECKOUT", "SAFE", "OTHER", "FUNNEL"] as const;
 export type PageKind = (typeof PAGE_KINDS)[number];
 export const PAGE_KIND_LABELS: Record<PageKind, string> = {
   PRESELL: "Presell",
@@ -17,6 +18,7 @@ export const PAGE_KIND_LABELS: Record<PageKind, string> = {
   CHECKOUT: "Checkout",
   SAFE: "Institutional",
   OTHER: "Other",
+  FUNNEL: "Funnel",
 };
 
 export const PAGE_STATUSES = ["DRAFT", "PUBLISHED", "ARCHIVED"] as const;
@@ -84,11 +86,19 @@ export function isFolderColor(v: unknown): v is FolderColor {
 }
 
 /** Pasta da tela de páginas (aninhável: parent_id). */
+/** Em qual tela a pasta (e o que ela guarda) aparece: Templates ou Funil. Cada tela tem a sua árvore. */
+export const FOLDER_SCOPES = ["TEMPLATE", "FUNNEL"] as const;
+export type FolderScope = (typeof FOLDER_SCOPES)[number];
+export function isFolderScope(v: unknown): v is FolderScope {
+  return typeof v === "string" && (FOLDER_SCOPES as readonly string[]).includes(v);
+}
+
 export type Folder = {
   id: string;
   name: string;
   parent_id: string | null;
   color: FolderColor | null;
+  scope: FolderScope;
   created_at: string;
   updated_at: string;
 };

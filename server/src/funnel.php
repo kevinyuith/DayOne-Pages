@@ -30,6 +30,11 @@
  * ela fecha quando a profundidade volta à de abertura. O conteúdo de cada
  * etapa fica intacto.
  *
+ * AMOSTRAS (teste A/B, ver ab_apply): antes de tudo, cada etapa com duas ou
+ * mais amostras ativas (seções do mesmo tipo) fica com UMA, sorteada na
+ * proporção dos data-dop-weight e fixa por visitante no cookie dop_ab. As
+ * outras saem do HTML — em qualquer modo, não só no servidor.
+ *
  * Sem modo servidor, devolve null e o HTML vai como está. Modo servidor sem
  * nenhuma etapa encontrada também devolve null, mas registra no log: é sinal
  * de HTML que o tokenizador não entendeu. Sem etapa ativa, null (nada a cortar).
@@ -39,6 +44,18 @@ declare(strict_types=1);
 defined('DAYONE_ENTRY') || (http_response_code(404) && exit);
 
 const FUNNEL_COOKIE = 'dop_step';
+/** Cookie do teste A/B: "<visitante 16 hex>:<id>,<id>…" — as amostras sorteadas para ele. */
+const AB_COOKIE = 'dop_ab';
+const AB_MAX_IDS = 24;
+const AB_DEFAULT_WEIGHT = 50;
+/** No <body>: liga o aviso de visita/clique das amostras no runtime (beacon.php, /_dop/e). */
+const FUNNEL_EVENTS_ATTR = 'data-dop-ev';
+
+/** O HTML tem seções de etapa? (barato: uma regex) */
+function funnel_has_sections(string $html): bool
+{
+    return preg_match('/<section\b[^>]*\bdata-dop-page\s*=/i', $html) === 1;
+}
 
 /** O body pede modo servidor? (barato: uma regex no HTML) */
 function funnel_is_server_mode(string $html): bool
@@ -103,14 +120,8 @@ function funnel_apply(string $html, array $cookies): ?array
         }
     }
 
-    // A etapa servida não pode vir `hidden` (o atributo é o fallback sem JS do
-    // modo navegador). Cobre hidden, hidden="", hidden='', hidden=hidden, hidden="hidden".
-    $out = preg_replace_callback(
-        '/<section\b[^>]*\bdata-dop-page\s*=\s*"' . preg_quote($cur['id'], '/') . '"[^>]*>/i',
-        fn ($m) => preg_replace('/\s+hidden(?:\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s>\/]+))?(?=[\s>\/])/i', '', $m[0]) ?? $m[0],
-        $out,
-        1,
-    ) ?? $out;
+    // A etapa servida não pode vir `hidden` (o atributo é o fallback sem JS do modo navegador).
+    $out = funnel_unhide($out, $cur['id']);
 
     $esc = fn (string $v): string => htmlspecialchars($v, ENT_QUOTES, 'UTF-8');
     $attrs = ' data-dop-cur="' . $esc($cur['id']) . '"'
@@ -127,7 +138,7 @@ function funnel_apply(string $html, array $cookies): ?array
 /**
  * As seções de etapa, na ordem do documento, com os offsets no HTML ORIGINAL.
  *
- * @return list<array{id: string, kind: string, start: bool, trigger: string, active: bool, from: int, to: int}>
+ * @return list<array{id: string, kind: string, start: bool, trigger: string, weight: int, active: bool, from: int, to: int}>
  */
 function funnel_sections(string $html): array
 {
@@ -152,6 +163,7 @@ function funnel_sections(string $html): array
                     'kind' => in_array($kind, ['presell', 'backredirect'], true) ? $kind : 'main',
                     'start' => preg_match('/\bdata-dop-start\b/i', $attrs) === 1,
                     'trigger' => preg_match('/\bdata-dop-trigger\s*=\s*"([^"]*)"/i', $attrs, $t) === 1 ? $t[1] : '',
+                    'weight' => preg_match('/\bdata-dop-weight\s*=\s*"(\d{1,3})"/i', $attrs, $w) === 1 ? min(100, (int) $w[1]) : AB_DEFAULT_WEIGHT,
                     'active' => false,
                     'from' => $offset,
                     'to' => $offset + $len,
@@ -171,6 +183,139 @@ function funnel_sections(string $html): array
         }
     }
     return $out;
+}
+
+/** Tira o `hidden` da seção `id`. Cobre hidden, hidden="", hidden='', hidden=hidden, hidden="hidden". */
+function funnel_unhide(string $html, string $id): string
+{
+    return preg_replace_callback(
+        '/<section\b[^>]*\bdata-dop-page\s*=\s*"' . preg_quote($id, '/') . '"[^>]*>/i',
+        fn ($m) => preg_replace('/\s+hidden(?:\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s>\/]+))?(?=[\s>\/])/i', '', $m[0]) ?? $m[0],
+        $html,
+        1,
+    ) ?? $html;
+}
+
+/**
+ * Teste A/B: em cada etapa com duas ou mais amostras ATIVAS, fica uma — a que
+ * o cookie dop_ab já tem para este visitante, senão uma sorteada na proporção
+ * dos pesos (todos 0 = partes iguais). As outras saem do HTML. Também liga o
+ * aviso de visita/clique (data-dop-ev no <body>) em toda página com etapas.
+ *
+ * `tag` entra no ETag (cada combinação é um corpo diferente na mesma URL);
+ * `cookie` é o valor novo do dop_ab, ou null se não mudou. `$rand(max)`
+ * devolve um inteiro em [0, max) — os testes passam um fixo.
+ *
+ * @return array{html: string, tag: string, cookie: ?string}|null  null = sem etapas
+ */
+function ab_apply(string $html, array $cookies, ?callable $rand = null): ?array
+{
+    if (!funnel_has_sections($html)) {
+        return null;
+    }
+    $pages = funnel_sections($html);
+    if ($pages === []) {
+        return null;
+    }
+    $raw = (string) ($cookies[AB_COOKIE] ?? '');
+    [$uid, $known] = ab_parse_cookie($raw);
+
+    $byKind = [];
+    foreach ($pages as $p) {
+        if ($p['active']) {
+            $byKind[$p['kind']][] = $p;
+        }
+    }
+    $chosen = [];
+    $inTests = [];
+    $drop = [];
+    foreach (['presell', 'main', 'backredirect'] as $kind) {
+        $versions = $byKind[$kind] ?? [];
+        if (count($versions) < 2) {
+            continue;
+        }
+        // Peso 0 = amostra pausada: nem quem já tinha caído nela continua.
+        $total = array_sum(array_column($versions, 'weight'));
+        $pick = null;
+        foreach ($versions as $v) {
+            $inTests[$v['id']] = true;
+            if ($pick === null && in_array($v['id'], $known, true) && ($v['weight'] > 0 || $total === 0)) {
+                $pick = $v;
+            }
+        }
+        $pick ??= ab_pick($versions, $rand);
+        $chosen[] = $pick['id'];
+        foreach ($versions as $v) {
+            if ($v['id'] !== $pick['id']) {
+                $drop[$v['id']] = true;
+            }
+        }
+    }
+
+    $out = $html;
+    foreach (array_reverse($pages) as $p) {
+        if (isset($drop[$p['id']])) {
+            $out = substr($out, 0, $p['from']) . substr($out, $p['to']);
+        }
+    }
+    // A amostra sorteada da etapa inicial fica visível sem JS (o editor marcou a primeira).
+    $startKind = isset($byKind['presell']) ? 'presell' : 'main';
+    foreach ($chosen as $id) {
+        foreach ($byKind[$startKind] ?? [] as $v) {
+            if ($v['id'] === $id) {
+                $out = funnel_unhide($out, $id);
+            }
+        }
+    }
+    $out = preg_replace_callback('/<body\b([^>]*)>/i', fn ($m) => '<body' . $m[1] . ' ' . FUNNEL_EVENTS_ATTR . '>', $out, 1) ?? $out;
+
+    // Cookie: o visitante (novo, se não tinha) + as sorteadas daqui + as de outras páginas.
+    $uid ??= bin2hex(random_bytes(8));
+    $ids = $chosen;
+    foreach ($known as $id) {
+        if (!isset($inTests[$id]) && !in_array($id, $ids, true)) {
+            $ids[] = $id;
+        }
+    }
+    $value = $uid . ($ids !== [] ? ':' . implode(',', array_slice($ids, 0, AB_MAX_IDS)) : '');
+
+    return ['html' => $out, 'tag' => implode('.', $chosen), 'cookie' => $value === $raw ? null : $value];
+}
+
+/**
+ * "<16 hex>:<id>,<id>" → [visitante, ids]. Valor malformado → [null, []].
+ *
+ * @return array{0: ?string, 1: list<string>}
+ */
+function ab_parse_cookie(string $raw): array
+{
+    if (preg_match('/^([0-9a-f]{16})(?::((?:p_[a-z0-9]{1,16})(?:,p_[a-z0-9]{1,16})*))?$/', $raw, $m) !== 1) {
+        return [null, []];
+    }
+    return [$m[1], isset($m[2]) && $m[2] !== '' ? explode(',', $m[2]) : []];
+}
+
+/** Sorteia uma amostra na proporção dos pesos (todos 0 = partes iguais). */
+function ab_pick(array $versions, ?callable $rand): array
+{
+    $rand ??= fn (int $max): int => random_int(0, $max - 1);
+    $total = array_sum(array_column($versions, 'weight'));
+    if ($total <= 0) {
+        return $versions[$rand(count($versions))];
+    }
+    $r = $rand($total);
+    foreach ($versions as $v) {
+        $r -= $v['weight'];
+        if ($r < 0) {
+            return $v;
+        }
+    }
+    return $versions[count($versions) - 1];
+}
+
+function ab_cookie(string $value): string
+{
+    return AB_COOKIE . "=$value; Path=/; Max-Age=2592000; HttpOnly; Secure; SameSite=Lax";
 }
 
 /**

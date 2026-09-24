@@ -15,6 +15,13 @@
  *   <section data-dop-page="p_ef56" data-dop-name="Backredirect" data-dop-kind="backredirect" data-dop-trigger="back exit" hidden>…</section>
  *   <script data-dop-runtime>…</script>
  *
+ * AMOSTRAS (teste A/B): uma etapa pode ter várias versões — seções irmãs do
+ * mesmo tipo, cada uma com `data-dop-weight` (0–100). Elas são "Lander A",
+ * "Lander B"… pela ordem no documento. O servidor de entrega sorteia UMA por
+ * etapa para cada visitante (cookie `dop_ab`, fixo) na proporção dos pesos e
+ * serve só ela; sem o servidor (preview), vale a primeira amostra ativa. A
+ * etapa está ativa se alguma amostra dela tem código.
+ *
  * O `hidden` das não-iniciais é o fallback sem JS. Com JS, o runtime mostra a
  * inicial e troca no clique (`#next-step`: do Pre Lander para o Lander;
  * `#page:<id>`), sem mudar a URL. O <head> (estilos) é compartilhado — páginas
@@ -34,8 +41,19 @@
  * chama serializa (a canvas via `commit`, o modo código via `mutateHtml`).
  */
 
-import { FUNNEL_MODE_ATTR, PAGE_ATTR, PAGE_CURRENT_ATTR, PAGE_KIND_ATTR, PAGE_NAME_ATTR, PAGE_START_ATTR, PAGE_TRIGGER_ATTR, RUNTIME_ATTR, UID_ATTR } from "./html-editing";
-import { NEXT_STEP, PAGE_HREF_PREFIX } from "./runtime";
+import {
+  FUNNEL_MODE_ATTR,
+  PAGE_ATTR,
+  PAGE_CURRENT_ATTR,
+  PAGE_KIND_ATTR,
+  PAGE_NAME_ATTR,
+  PAGE_START_ATTR,
+  PAGE_TRIGGER_ATTR,
+  PAGE_WEIGHT_ATTR,
+  RUNTIME_ATTR,
+  UID_ATTR,
+} from "./html-editing";
+import { NEXT_STEP, PAGE_HREF_PREFIX, RUNTIME_JS } from "./runtime";
 
 /** As etapas, na ordem fixa do funil. Um tipo que não está aqui (HTML antigo) é lido como "main". */
 export const PAGE_KINDS_SUB = ["presell", "main", "backredirect"] as const;
@@ -67,14 +85,22 @@ export function setFunnelMode(doc: Document, mode: FunnelMode): void {
 export type SubPage = {
   id: string;
   uid: string;
+  /** "Lander", ou "Lander B" quando a etapa tem mais de uma amostra. */
   name: string;
   kind: SubPageKind;
-  /** Tem código? Sem código a etapa fica inativa: o visitante nunca a vê. */
+  /** Letra da amostra dentro da etapa (A, B, C…), pela ordem no documento. */
+  version: string;
+  /** Peso no sorteio (0–100). Só conta com duas ou mais amostras na etapa. */
+  weight: number;
+  /** Tem código? Sem código a amostra fica inativa: o visitante nunca a vê. */
   active: boolean;
   /** É a que o visitante vê primeiro (Pre Lander ativo, senão Lander). */
   isStart: boolean;
   triggers: BackTrigger[];
 };
+
+/** Peso de uma amostra sem `data-dop-weight` (duas sem peso = 50/50). */
+export const DEFAULT_WEIGHT = 50;
 
 const SEL = `[${PAGE_ATTR}]`;
 
@@ -100,33 +126,52 @@ function kindOf(el: Element): SubPageKind {
   return k === "presell" || k === "backredirect" ? k : "main";
 }
 
+/** As amostras de uma etapa, na ordem do documento. */
+function versionsOf(doc: Document, kind: SubPageKind): HTMLElement[] {
+  return pageElements(doc).filter((el) => kindOf(el) === kind);
+}
+
 /** A etapa tem código: algum elemento, ou texto que não seja só espaço. Comentário não conta. */
 export function hasCode(el: Element): boolean {
   return Array.from(el.childNodes).some((n) => n.nodeType === 1 || (n.nodeType === 3 && /\S/.test(n.nodeValue ?? "")));
 }
 
-function describePage(el: HTMLElement, isStart: boolean): SubPage {
-  const kind = kindOf(el);
-  const trig = (el.getAttribute(PAGE_TRIGGER_ATTR) ?? "").split(/\s+/).filter((t): t is BackTrigger => t === "back" || t === "exit");
-  return {
-    id: el.getAttribute(PAGE_ATTR) ?? "",
-    uid: el.getAttribute(UID_ATTR) ?? "",
-    name: SUB_KIND_LABELS[kind],
-    kind,
-    active: hasCode(el),
-    isStart,
-    triggers: trig,
-  };
+export function weightOf(el: Element): number {
+  const raw = el.getAttribute(PAGE_WEIGHT_ATTR);
+  if (raw === null || !/^\d{1,3}$/.test(raw.trim())) return DEFAULT_WEIGHT;
+  return Math.min(100, Number(raw.trim()));
 }
+
+export const versionLetter = (i: number) => (i < 26 ? String.fromCharCode(65 + i) : `#${i + 1}`);
 
 export function listPages(doc: Document): SubPage[] {
   const start = startPage(doc);
-  return pageElements(doc).map((el) => describePage(el, el === start));
+  const els = pageElements(doc);
+  const seen: Record<SubPageKind, number> = { presell: 0, main: 0, backredirect: 0 };
+  const total: Record<SubPageKind, number> = { presell: 0, main: 0, backredirect: 0 };
+  for (const el of els) total[kindOf(el)]++;
+  return els.map((el) => {
+    const kind = kindOf(el);
+    const version = versionLetter(seen[kind]++);
+    const trig = (el.getAttribute(PAGE_TRIGGER_ATTR) ?? "").split(/\s+/).filter((t): t is BackTrigger => t === "back" || t === "exit");
+    return {
+      id: el.getAttribute(PAGE_ATTR) ?? "",
+      uid: el.getAttribute(UID_ATTR) ?? "",
+      name: total[kind] > 1 ? `${SUB_KIND_LABELS[kind]} ${version}` : SUB_KIND_LABELS[kind],
+      kind,
+      version,
+      weight: weightOf(el),
+      active: hasCode(el),
+      isStart: el === start,
+      triggers: trig,
+    };
+  });
 }
 
 /**
- * A inicial, por prioridade: 1) o Pre Lander, se ativo; 2) o Lander, se ativo.
- * Sem nenhum dos dois ativo (só no editor), a primeira que não é Backredirect.
+ * A inicial, por prioridade: 1) o Pre Lander, se ativo; 2) o Lander, se ativo
+ * (a primeira amostra ativa da etapa). Sem nenhum dos dois ativo (só no
+ * editor), a primeira que não é Backredirect.
  */
 export function startPage(doc: Document): HTMLElement | null {
   const els = pageElements(doc);
@@ -143,22 +188,37 @@ export function startPage(doc: Document): HTMLElement | null {
 export type FunnelSlot = {
   kind: SubPageKind;
   label: string;
-  /** A seção da etapa (null: não existe; ou é o Lander de uma slug sem seções). */
-  page: SubPage | null;
+  /** As amostras da etapa, na ordem (vazio: a etapa não tem seção). */
+  versions: SubPage[];
   active: boolean;
   isStart: boolean;
+  /** Slug sem seções: o documento inteiro é o Lander (ativo, sem seção). */
+  plain: boolean;
 };
 
-/**
- * As três etapas, sempre nesta ordem, a partir da lista do documento. Numa
- * slug sem seções o documento inteiro é o Lander (ativo, sem seção).
- */
+/** As três etapas, sempre nesta ordem, a partir da lista do documento. */
 export function funnelSlots(pages: SubPage[]): FunnelSlot[] {
   return PAGE_KINDS_SUB.map((kind) => {
-    const page = pages.find((p) => p.kind === kind && p.active) ?? pages.find((p) => p.kind === kind) ?? null;
-    const plainLander = kind === "main" && pages.length === 0;
-    return { kind, label: SUB_KIND_LABELS[kind], page, active: plainLander || !!page?.active, isStart: plainLander || !!page?.isStart };
+    const versions = pages.filter((p) => p.kind === kind);
+    const plain = kind === "main" && pages.length === 0;
+    return {
+      kind,
+      label: SUB_KIND_LABELS[kind],
+      versions,
+      active: plain || versions.some((v) => v.active),
+      isStart: plain || versions.some((v) => v.isStart),
+      plain,
+    };
   });
+}
+
+/** Quanto do tráfego da etapa cada amostra ATIVA recebe (0–100, somando 100). Inativa: 0. */
+export function trafficShares(versions: { id: string; weight: number; active: boolean }[]): Map<string, number> {
+  const live = versions.filter((v) => v.active);
+  const sum = live.reduce((n, v) => n + v.weight, 0);
+  const out = new Map<string, number>();
+  for (const v of versions) out.set(v.id, !v.active ? 0 : sum === 0 ? 100 / live.length : (v.weight / sum) * 100);
+  return out;
 }
 
 function newId(doc: Document): string {
@@ -169,18 +229,25 @@ function newId(doc: Document): string {
 }
 
 /**
- * Deixa o documento consistente: tipo e nome fixos por etapa, exatamente uma
+ * Deixa o documento consistente: tipo e nome fixos por amostra ("Lander",
+ * "Lander B"…), peso só nas etapas com mais de uma amostra, exatamente uma
  * inicial (pela prioridade), `hidden` nas outras (fallback sem JS) e trigger
- * só na Backredirect. Idempotente; roda antes de cada serialize.
+ * só no Backredirect. Idempotente; roda antes de cada serialize.
  */
 export function normalizePages(doc: Document): void {
   const els = pageElements(doc);
   if (!els.length) return;
   const start = startPage(doc);
+  const seen: Record<SubPageKind, number> = { presell: 0, main: 0, backredirect: 0 };
+  const total: Record<SubPageKind, number> = { presell: 0, main: 0, backredirect: 0 };
+  for (const el of els) total[kindOf(el)]++;
   for (const el of els) {
     const kind = kindOf(el);
+    const letter = versionLetter(seen[kind]++);
     el.setAttribute(PAGE_KIND_ATTR, kind);
-    el.setAttribute(PAGE_NAME_ATTR, SUB_KIND_LABELS[kind]);
+    el.setAttribute(PAGE_NAME_ATTR, total[kind] > 1 ? `${SUB_KIND_LABELS[kind]} ${letter}` : SUB_KIND_LABELS[kind]);
+    if (total[kind] > 1) el.setAttribute(PAGE_WEIGHT_ATTR, String(weightOf(el)));
+    else el.removeAttribute(PAGE_WEIGHT_ATTR);
     if (el === start) {
       el.setAttribute(PAGE_START_ATTR, "");
       el.removeAttribute("hidden");
@@ -234,6 +301,61 @@ function block(title: string, text: string, cta: string, href: string): string {
 }
 
 /**
+ * O HTML de um funil novo (tela Funil), SEM DOM — roda no servidor: Pre Lander
+ * e Lander com o código inicial e o runtime já no fim do body. Com `lander`
+ * (o HTML de um template), o <body> dele vira o Lander e o <head> dele entra
+ * no head do funil.
+ */
+export function funnelStarterHtml(title: string, lander?: string): string {
+  const pre = `p_${Math.random().toString(36).slice(2, 6)}`;
+  let main = pre;
+  while (main === pre) main = `p_${Math.random().toString(36).slice(2, 6)}`;
+  const head = lander ? (/<head\b[^>]*>([\s\S]*?)<\/head>/i.exec(lander)?.[1] ?? "").replace(/<title\b[^>]*>[\s\S]*?<\/title>/gi, "").trim() : "";
+  // O runtime do template sai: o funil tem o dele, no fim do body.
+  const landerBody = lander
+    ? (/<body\b[^>]*>([\s\S]*)<\/body>/i.exec(lander)?.[1] ?? lander).replace(/<script\b[^>]*\bdata-dop-runtime\b[^>]*>[\s\S]*?<\/script>/gi, "")
+    : STARTER.main();
+  return [
+    "<!doctype html>",
+    '<html lang="en">',
+    "<head>",
+    '<meta charset="utf-8">',
+    '<meta name="viewport" content="width=device-width, initial-scale=1">',
+    `<title>${esc(title)}</title>`,
+    ...(head ? [head] : []),
+    "</head>",
+    "<body>",
+    `<section ${PAGE_ATTR}="${pre}" ${PAGE_NAME_ATTR}="${SUB_KIND_LABELS.presell}" ${PAGE_KIND_ATTR}="presell" ${PAGE_START_ATTR}>${STARTER.presell()}</section>`,
+    `<section ${PAGE_ATTR}="${main}" ${PAGE_NAME_ATTR}="${SUB_KIND_LABELS.main}" ${PAGE_KIND_ATTR}="main" hidden>${landerBody.trim()}</section>`,
+    `<script ${RUNTIME_ATTR}>${RUNTIME_JS}</script>`,
+    "</body>",
+    "</html>",
+  ].join("\n");
+}
+
+/** Uma seção nova da etapa `kind`, fora do documento ainda. */
+function newSection(doc: Document, kind: SubPageKind, html: string): HTMLElement {
+  const section = doc.createElement("section");
+  section.setAttribute(PAGE_ATTR, newId(doc));
+  section.setAttribute(PAGE_NAME_ATTR, SUB_KIND_LABELS[kind]);
+  section.setAttribute(PAGE_KIND_ATTR, kind);
+  if (kind === "backredirect") section.setAttribute(PAGE_TRIGGER_ATTR, "back");
+  section.innerHTML = html;
+  return section;
+}
+
+/** Põe a seção na posição da ordem fixa: depois da última amostra da etapa, ou antes da primeira etapa que vem depois. */
+function placeSection(doc: Document, kind: SubPageKind, section: HTMLElement): void {
+  const els = pageElements(doc);
+  const same = els.filter((el) => kindOf(el) === kind);
+  const order = PAGE_KINDS_SUB.indexOf(kind);
+  const later = els.find((el) => PAGE_KINDS_SUB.indexOf(kindOf(el)) > order);
+  if (same.length) same[same.length - 1].after(section);
+  else if (later) later.before(section);
+  else els[els.length - 1].after(section);
+}
+
+/**
  * Ativa uma etapa com um código inicial para editar (a seção vazia ganha o
  * código; sem seção, uma nova entra na posição da ordem fixa). Numa slug de
  * página única, o documento vira o Lander antes. Devolve o id da etapa.
@@ -244,33 +366,78 @@ export function activateStep(doc: Document, kind: SubPageKind): string {
     const lander = wrapAsFirstPage(doc);
     if (kind === "main") return lander;
   }
-  const els = pageElements(doc);
-  const existing = els.find((el) => kindOf(el) === kind && hasCode(el)) ?? els.find((el) => kindOf(el) === kind);
+  const mine = versionsOf(doc, kind);
+  const existing = mine.find(hasCode) ?? mine[0];
   if (existing) {
     if (!hasCode(existing)) existing.innerHTML = STARTER[kind]();
     normalizePages(doc);
     return existing.getAttribute(PAGE_ATTR) ?? "";
   }
-  const section = doc.createElement("section");
-  const id = newId(doc);
-  section.setAttribute(PAGE_ATTR, id);
-  section.setAttribute(PAGE_NAME_ATTR, SUB_KIND_LABELS[kind]);
-  section.setAttribute(PAGE_KIND_ATTR, kind);
-  if (kind === "backredirect") section.setAttribute(PAGE_TRIGGER_ATTR, "back");
-  section.innerHTML = STARTER[kind]();
-  // Entra antes da primeira etapa que vem depois dela na ordem fixa (senão no fim).
-  const order = PAGE_KINDS_SUB.indexOf(kind);
-  const later = els.find((el) => PAGE_KINDS_SUB.indexOf(kindOf(el)) > order);
-  if (later) later.before(section);
-  else els[els.length - 1].after(section);
+  const section = newSection(doc, kind, STARTER[kind]());
+  placeSection(doc, kind, section);
   normalizePages(doc);
-  return id;
+  return section.getAttribute(PAGE_ATTR) ?? "";
 }
 
 /**
- * Desativa uma etapa: apaga a seção (e o código). A última etapa ativa que o
- * visitante pode ver (Pre Lander ou Lander) não sai — sem ela a página ficaria
- * em branco. Se sobrar só o Lander, a slug volta a ser página única.
+ * Nova amostra da etapa (teste A/B): cópia de outra amostra (`from`), o HTML
+ * dado (ver `pageAsVersion`) ou o código inicial. Entra depois da última amostra
+ * da etapa, e o tráfego da etapa volta a ser dividido igualmente. Numa slug de
+ * página única, o documento vira o Lander A antes. Devolve o id.
+ */
+export function addVersion(doc: Document, kind: SubPageKind, opts: { from?: string; html?: string } = {}): string {
+  if (!doc.body) return "";
+  if (!hasPages(doc)) wrapAsFirstPage(doc);
+  const from = opts.from ? pageById(doc, opts.from) : null;
+  const html = opts.html ?? (from ? from.innerHTML : STARTER[kind]());
+  const section = newSection(doc, kind, html);
+  if (from && kindOf(from) === "backredirect" && kind === "backredirect") {
+    const trig = from.getAttribute(PAGE_TRIGGER_ATTR);
+    if (trig) section.setAttribute(PAGE_TRIGGER_ATTR, trig);
+  }
+  placeSection(doc, kind, section);
+  splitEvenly(doc, kind);
+  normalizePages(doc);
+  return section.getAttribute(PAGE_ATTR) ?? "";
+}
+
+/** Divide o tráfego da etapa igualmente entre as amostras (a sobra do arredondamento fica com a primeira). */
+export function splitEvenly(doc: Document, kind: SubPageKind): void {
+  const mine = versionsOf(doc, kind);
+  if (mine.length < 2) return;
+  const each = Math.floor(100 / mine.length);
+  mine.forEach((el, i) => el.setAttribute(PAGE_WEIGHT_ATTR, String(i === 0 ? 100 - each * (mine.length - 1) : each)));
+}
+
+export function setWeight(doc: Document, id: string, weight: number): void {
+  const el = pageById(doc, id);
+  if (!el || !Number.isFinite(weight)) return;
+  el.setAttribute(PAGE_WEIGHT_ATTR, String(Math.max(0, Math.min(100, Math.round(weight)))));
+}
+
+/**
+ * Remove uma amostra. Se é a única da etapa, é o mesmo que desativar a etapa
+ * (e a regra da última etapa visível vale). Sobrando só o Lander, a slug
+ * volta a ser página única.
+ */
+export function removeVersion(doc: Document, id: string): void {
+  const el = pageById(doc, id);
+  if (!el) return;
+  const kind = kindOf(el);
+  if (versionsOf(doc, kind).length < 2) return deactivateStep(doc, kind);
+  // A última amostra ativa de uma etapa que o visitante vê não sai se nenhuma outra etapa visível tem código.
+  const otherVisible = pageElements(doc).some((p) => p !== el && kindOf(p) !== "backredirect" && hasCode(p));
+  if (kind !== "backredirect" && hasCode(el) && !otherVisible) return;
+  el.remove();
+  unwrapIfOnlyLander(doc);
+  normalizePages(doc);
+}
+
+/**
+ * Desativa uma etapa: apaga as seções dela (todas as amostras, com o código).
+ * A última etapa ativa que o visitante pode ver (Pre Lander ou Lander) não sai
+ * — sem ela a página ficaria em branco. Se sobrar só o Lander, a slug volta a
+ * ser página única.
  */
 export function deactivateStep(doc: Document, kind: SubPageKind): void {
   const els = pageElements(doc);
@@ -279,18 +446,19 @@ export function deactivateStep(doc: Document, kind: SubPageKind): void {
   const flowLeft = els.some((el) => kindOf(el) !== kind && kindOf(el) !== "backredirect" && hasCode(el));
   if (kind !== "backredirect" && mine.some(hasCode) && !flowLeft) return;
   mine.forEach((el) => el.remove());
+  unwrapIfOnlyLander(doc);
+  normalizePages(doc);
+}
+
+/** Sobrou uma única seção com código e ela é o Lander: desembrulha (as vazias saem junto). */
+function unwrapIfOnlyLander(doc: Document): void {
   const rest = pageElements(doc);
   const active = rest.filter(hasCode);
   if (active.length === 1 && kindOf(active[0]) === "main") {
     rest.filter((el) => el !== active[0]).forEach((el) => el.remove());
-    unwrapSingle(doc, active[0]);
+    active[0].replaceWith(...Array.from(active[0].childNodes));
+    doc.body?.removeAttribute(FUNNEL_MODE_ATTR);
   }
-  normalizePages(doc);
-}
-
-function unwrapSingle(doc: Document, section: HTMLElement): void {
-  section.replaceWith(...Array.from(section.childNodes));
-  doc.body?.removeAttribute(FUNNEL_MODE_ATTR);
 }
 
 export function setTriggers(doc: Document, id: string, triggers: BackTrigger[]): void {
@@ -301,15 +469,42 @@ export function setTriggers(doc: Document, id: string, triggers: BackTrigger[]):
 }
 
 /**
- * Só para o preview: começa na etapa `id`. Se ela é o Lander, o Pre Lander sai
- * do documento do preview (a prioridade então cai no Lander). O Backredirect
- * nunca é inicial: o preview começa normal e ele aparece ao voltar.
+ * O HTML de uma página inteira (colado, ou de um template) como conteúdo de
+ * uma amostra: o <body> e, antes dele, o que o <head> traz de estilo e script
+ * (<style>, <link> de CSS/fonte, <script>). Assim o CSS vai junto com a
+ * amostra — e sai junto quando o servidor serve a outra.
+ */
+export function pageAsVersion(html: string): string {
+  const src = new DOMParser().parseFromString(html, "text/html");
+  const head = Array.from(src.head.querySelectorAll("style, link[rel~='stylesheet'], link[rel='preconnect'], link[rel='preload'], script"))
+    .map((el) => el.outerHTML)
+    .join("\n");
+  const body = Array.from(src.body.childNodes)
+    .filter((n) => !(n instanceof Element && n.matches(`script[${RUNTIME_ATTR}]`)))
+    .map((n) => (n instanceof Element ? n.outerHTML : n.nodeType === 3 ? esc(n.textContent ?? "") : ""))
+    .join("");
+  return head ? `${head}\n${body}` : body;
+}
+
+/** Troca o conteúdo de uma amostra pelo HTML dado (ver `pageAsVersion`). */
+export function replaceVersionContent(doc: Document, id: string, html: string): void {
+  const el = pageById(doc, id);
+  if (el) el.innerHTML = html;
+  normalizePages(doc);
+}
+
+/**
+ * Só para o preview: começa na amostra `id`. As outras amostras da mesma
+ * etapa saem do documento do preview; se ela é do Lander, o Pre Lander sai
+ * também (a prioridade então cai no Lander). O Backredirect nunca é inicial:
+ * o preview começa normal e ele aparece ao voltar.
  */
 export function previewFrom(doc: Document, id: string): void {
   const el = pageById(doc, id);
-  if (!el || kindOf(el) !== "main") return;
+  if (!el) return;
+  const kind = kindOf(el);
   pageElements(doc)
-    .filter((p) => kindOf(p) === "presell")
+    .filter((p) => p !== el && (kindOf(p) === kind || (kind === "main" && kindOf(p) === "presell")))
     .forEach((p) => p.remove());
 }
 

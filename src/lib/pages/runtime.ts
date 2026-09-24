@@ -19,6 +19,11 @@
  *       cookie `dop_step=<id>` (Path = este path) e recarregar a mesma URL; o
  *       servidor entrega a etapa nova. O fonte nunca contém as outras etapas.
  *
+ *  3. AVISO DE VISITA/CLIQUE por amostra (teste A/B): com `data-dop-ev` no
+ *     <body> — que SÓ o servidor de entrega põe —, manda `view` quando uma
+ *     etapa aparece e `click` quando o visitante sai dela (próxima etapa ou
+ *     um link que navega) para `/_dop/e`. Preview e canvas não contam.
+ *
  * Na canvas do editor ele não roda (iframe sem allow-scripts); no preview e no
  * servidor, roda. Sem JS, o `hidden` gravado nas sub-páginas não-iniciais já
  * deixa só a inicial visível (modo navegador) — e no modo servidor a etapa
@@ -27,6 +32,7 @@
 
 import {
   FUNNEL_COOKIE,
+  FUNNEL_EVENTS_ATTR,
   HREF_ATTR,
   PAGE_ATTR,
   PAGE_KIND_ATTR,
@@ -44,6 +50,11 @@ export const RUNTIME_JS = [
   // history pode recusar em contextos estranhos (iframe srcdoc sem origem); nunca derruba o resto.
   'function hs(f,st){try{history[f](st,"")}catch(e){}}',
   "var B=document.body,cur0=B.getAttribute(\"data-dop-cur\"),resolve,open;",
+  // Tipo (desconhecido = Lander).
+  'function kd(p){var k=p.getAttribute(K);return k==="presell"||k==="backredirect"?k:"main"}',
+  // Aviso de visita (v) / clique (c) de uma amostra; só quando o servidor ligou (data-dop-ev).
+  `var EV=B.hasAttribute("${FUNNEL_EVENTS_ATTR}");`,
+  'function ev(t,el){if(!EV||!el)return;try{navigator.sendBeacon("/_dop/e","e="+t+"&p="+encodeURIComponent(el.getAttribute(P))+"&k="+kd(el)+"&s="+encodeURIComponent(location.pathname))}catch(e){}}',
   "if(cur0){",
   // ---- MODO SERVIDOR: uma etapa por resposta; trocar = cookie + reload.
   'var nx=B.getAttribute("data-dop-next"),brId=B.getAttribute("data-dop-br"),brT=B.getAttribute("data-dop-br-trigger")||"",onBr=cur0===brId,hasBack=!!brId&&brT.indexOf("back")>=0;',
@@ -62,18 +73,18 @@ export const RUNTIME_JS = [
   "if(s.dop&&s.dop!==cur0)go(s.dop,true)});",
   'if(brId&&brT.indexOf("exit")>=0&&!onBr){var fired=false;document.addEventListener("mouseout",function(e){',
   "if(fired||e.relatedTarget||e.clientY>0)return;fired=true;go(brId)})}",
+  'ev("v",document.querySelector("["+P+"]"));',
   "}else{",
   // ---- MODO NAVEGADOR: todas as seções vieram; troca com hidden + history.
   'var pages=[].slice.call(document.querySelectorAll("["+P+"]")),cur=null;',
   "function pid(el){return el.getAttribute(P)}",
   "function byId(i){for(var k=0;k<pages.length;k++)if(pid(pages[k])===i)return pages[k];return null}",
-  // Tipo (desconhecido = Lander) e se a etapa tem código: sem código fica inativa e é pulada.
-  'function kd(p){var k=p.getAttribute(K);return k==="presell"||k==="backredirect"?k:"main"}',
+  // A etapa tem código? Sem código fica inativa e é pulada.
   "function on(p){for(var n=p.firstChild;n;n=n.nextSibling)if(n.nodeType===1||(n.nodeType===3&&/\\S/.test(n.nodeValue)))return true;return false}",
   "function first(k){for(var i=0;i<pages.length;i++)if(kd(pages[i])===k&&on(pages[i]))return pages[i];return null}",
-  // Inicial: 1) Pre Lander ativo; 2) Lander ativo.
+  // Inicial: 1) Pre Lander ativo; 2) Lander ativo. Com várias amostras (só no preview: o servidor serve uma), vale a primeira.
   'var pre=first("presell"),lan=first("main"),br=first("backredirect"),start=pre||lan,trig=(br&&br.getAttribute(G))||"";',
-  "function show(el,push){if(!el||el===cur)return;pages.forEach(function(p){p.hidden=p!==el});cur=el;",
+  "function show(el,push){if(!el||el===cur)return;pages.forEach(function(p){p.hidden=p!==el});cur=el;ev(\"v\",el);",
   'if(push)hs("pushState",{dop:pid(el)});window.scrollTo(0,0);',
   'try{el.dispatchEvent(new CustomEvent("dop:pageshow",{bubbles:true}))}catch(e){}}',
   // "Próxima": do Pre Lander, o Lander; do Lander, nenhuma; da Backredirect, o Lander (ou a inicial).
@@ -97,7 +108,9 @@ export const RUNTIME_JS = [
   'var a=t.closest("a[href]"),el=t.closest("["+A+"]");',
   "var h0=el&&a?(el.contains(a)&&a!==el?a:el):(el||a);if(!h0)return;",
   'var attached=h0.hasAttribute(A),h=attached?h0.getAttribute(A):h0.getAttribute("href");if(!h)return;',
-  "var pg=resolve(h);if(pg){e.preventDefault();open(pg);return}",
+  // Clique que sai da etapa (próxima etapa, ou link que navega): conta para a amostra onde ele está.
+  'var sec=h0.closest("["+P+"]"),pg=resolve(h);if(pg){ev("c",sec);e.preventDefault();open(pg);return}',
+  'if(h.charAt(0)!=="#"&&h.indexOf("javascript:")!==0)ev("c",sec);',
   "if(!attached)return;e.preventDefault();",
   'if(e.metaKey||e.ctrlKey||e.shiftKey||h0.getAttribute(T)==="_blank")window.open(h,"_blank","noopener");else window.location.href=h',
   "},true);",
