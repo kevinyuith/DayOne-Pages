@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { isIP } from "node:net";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { RowAction } from "@/components/row-action";
@@ -10,7 +9,6 @@ import { listDomains, listTemplates, unregisteredHosts } from "@/lib/pages/queri
 import { DOMAIN_STATUS_LABELS } from "@/lib/pages/types";
 import { APP_TZ } from "@/lib/time-zone";
 import { registerSeenDomain, removeDomain, setDomainStatus, verifyDomain } from "./actions";
-import { DnsInstructions } from "./dns-instructions";
 import { DomainForm } from "./domain-form";
 
 export const metadata: Metadata = {
@@ -27,22 +25,15 @@ export default async function DominiosPage() {
   // eslint-disable-next-line react-hooks/purity
   const seenSince = new Date(Date.now() - SEEN_DAYS * 24 * 60 * 60 * 1000);
   const [domains, templates, seen] = await Promise.all([listDomains(), listTemplates(), unregisteredHosts(seenSince)]);
-  // Só um IP de verdade vai para as instruções; qualquer outro texto na variável cai no aviso "defina SERVER_IP".
-  const envIp = process.env.SERVER_IP?.trim() ?? "";
-  const serverIp = isIP(envIp) ? envIp : "";
 
   return (
     <>
-      <PageHeader title="Domínios" description="Cadastre o domínio, aponte o DNS pelo Cloudflare e escolha a página padrão. Rotas por path ficam no detalhe de cada domínio." />
+      <PageHeader title="Domínios" description="Cadastre o domínio e escolha o template. Páginas, dados da empresa e rotas ficam no detalhe de cada domínio." />
 
-      {/* `items-start`: o card do formulário fica na altura do conteúdo, sem esticar até o card de DNS. */}
-      <div className="mb-8 grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start">
-        <section className="rounded-xl border border-border bg-surface p-5">
-          <h2 className="text-sm font-semibold">Adicionar domínio</h2>
-          <DomainForm templates={templates} />
-        </section>
-        <DnsInstructions serverIp={serverIp} />
-      </div>
+      <section className="mb-8 rounded-xl border border-border bg-surface p-5">
+        <h2 className="text-sm font-semibold">Adicionar domínio</h2>
+        <DomainForm templates={templates} />
+      </section>
 
       {seen.length > 0 ? (
         <section className="mb-8 rounded-xl border border-border bg-surface p-5">

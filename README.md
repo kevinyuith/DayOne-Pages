@@ -126,7 +126,6 @@ Variáveis (`.env.local`):
 |---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` | URL do projeto Supabase |
 | `SUPABASE_SERVICE_KEY` | chave de serviço (só servidor; atravessa a RLS) |
-| `SERVER_IP` | IP público do servidor de entrega (instruções de DNS) |
 | `SERVER_ID` | marcador do `/_health`; igual ao `SERVER_ID` do `server/.env` |
 | `ORIGIN_URL` | opcional; URL direta do servidor |
 
