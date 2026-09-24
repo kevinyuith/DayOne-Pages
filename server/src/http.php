@@ -132,3 +132,18 @@ function plain_page(string $title, string $text): string
         . "<style>body{margin:0;font-family:system-ui,sans-serif;display:grid;place-items:center;min-height:100dvh;color:#333;background:#fafafa}main{text-align:center;padding:24px}h1{font-size:1.4rem;margin:0 0 8px}p{margin:0;color:#666}</style>"
         . "</head><body><main><h1>$t</h1><p>$x</p></main></body></html>";
 }
+
+/**
+ * O 404 de todo domínio (path sem página, domínio desconhecido ou pausado,
+ * bloqueio com status 404): o "404 Not Found" genérico de servidor web, em
+ * inglês e sem marca, para não dizer nada sobre o que roda aqui.
+ */
+function not_found_page(): string
+{
+    return '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>404 Not Found</title>'
+        . '<style>html,body{height:100%}body{margin:0;display:flex;align-items:center;justify-content:center;background:#fff;color:#444;'
+        . 'font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;text-align:center}main{padding:24px}'
+        . 'h1{margin:0;font-size:clamp(96px,30vw,160px);line-height:1;font-weight:700}'
+        . 'h2{margin:24px 0 28px;font-size:34px;font-weight:700}p{margin:0;font-size:16px;color:#333}</style>'
+        . '</head><body><main><h1>404</h1><h2>Not Found</h2><p>The resource requested could not be found on this server!</p></main></body></html>';
+}

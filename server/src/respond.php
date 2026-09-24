@@ -174,18 +174,21 @@ function block(array $route): array
     if (!in_array($status, [403, 404, 410, 451], true)) {
         $status = 404;
     }
+    if ($status === 404) {
+        // Bloqueio com 404 é igual a um 404 de verdade: o visitante não sabe que foi barrado.
+        return not_found();
+    }
     $title = match ($status) {
         403 => 'Acesso negado',
         410 => 'Página removida',
         451 => 'Indisponível',
-        default => 'Página não encontrada',
     };
     return [$status, ['Content-Type' => 'text/html; charset=utf-8', 'Cache-Control' => PRIVATE_NO_CACHE], plain_page($title, '')];
 }
 
 function not_found(): array
 {
-    return [404, ['Content-Type' => 'text/html; charset=utf-8', 'Cache-Control' => PRIVATE_NO_CACHE], plain_page('Página não encontrada', 'O endereço não existe neste domínio.')];
+    return [404, ['Content-Type' => 'text/html; charset=utf-8', 'Cache-Control' => PRIVATE_NO_CACHE], not_found_page()];
 }
 
 function service_unavailable(): array
