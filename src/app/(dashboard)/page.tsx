@@ -2,19 +2,25 @@ import Link from "next/link";
 import { AccessLogs } from "@/components/dashboard/access-logs";
 import { AlertBanner } from "@/components/dashboard/alert-banner";
 import { DashboardControls } from "@/components/dashboard/dashboard-controls";
-import { FounderBadge } from "@/components/dashboard/founder-badge";
-import { StatCard, type StatTone } from "@/components/dashboard/stat-card";
+import { StatStrip, type Stat } from "@/components/dashboard/stat-card";
 import { TrafficChart } from "@/components/dashboard/traffic-chart";
-import { AccountIcon, BotIcon, GlobeIcon, PagesIcon, ShieldCheckIcon, ShieldXIcon } from "@/components/icons";
+import { ChevronRightIcon } from "@/components/icons";
 import { activeFilterCount, foldIntoLocalDays, parseDashboardFilters, resolveRange } from "@/lib/pages/dashboard-filters";
 import { countOverview, hitCountries, hitStats, hitTimeseries, listDomains, recentHits, type HitFilter } from "@/lib/pages/queries";
 
 const num = new Intl.NumberFormat("en-US");
-const pct = (part: number, total: number) => (total > 0 ? `${Math.round((part / total) * 100)}% of total` : "—");
+
+/** Fração e texto "N% of requests" (com "<1%" para não mostrar 0% de algo que existe). */
+function share(part: number, total: number): { share: number; detail: string } {
+  if (total <= 0) return { share: 0, detail: "—" };
+  const f = part / total;
+  const p = Math.round(f * 100);
+  return { share: f, detail: `${part > 0 && p === 0 ? "<1" : p}% of requests` };
+}
 
 /**
  * Filtros na URL (ver dashboard-filters.ts): período, domínio, resultado,
- * dispositivo, país e bots. Cards, gráfico e Access Logs seguem todos eles;
+ * dispositivo, país e bots. Cards, gráfico e a tabela seguem todos eles;
  * o "Quick access" é cadastro, não tráfego, e não muda.
  */
 export default async function DashboardPage({
@@ -47,74 +53,58 @@ export default async function DashboardPage({
   const attentionCount = domains.filter((d) => d.status === "ACTIVE" && d.last_check_ok !== true).length;
   const domainOptions = domains.map((d) => ({ id: d.id, domain: d.domain }));
   const filtered = activeFilterCount(filters) > 0;
+  const scope = domains.find((d) => d.id === filters.domain)?.domain;
 
-  // Os 5 cards, adaptados ao DayOne (sem "Gray Page"/cloaking), com dado real do período filtrado.
-  const cards: { label: string; value: number; detail: string; icon: typeof GlobeIcon; tone: StatTone }[] = [
-    { label: "Total Requests", value: stats.total, detail: range.label.toLowerCase(), icon: GlobeIcon, tone: "blue" },
-    { label: "Served", value: stats.served, detail: pct(stats.served, stats.total), icon: ShieldCheckIcon, tone: "green" },
-    { label: "Blocked", value: stats.blocked, detail: pct(stats.blocked, stats.total), icon: ShieldXIcon, tone: "red" },
-    { label: "Unique Visitors", value: stats.uniques, detail: `by IP · ${range.short}`, icon: AccountIcon, tone: "amber" },
-    { label: "Bots", value: stats.bots, detail: pct(stats.bots, stats.total), icon: BotIcon, tone: "purple" },
+  // Os 5 números do período filtrado. Served/Blocked/Bots são as séries do gráfico (mesma cor);
+  // Bots cruza os outros (um bot pode ser servido), então as frações não somam 100%.
+  const stats5: Stat[] = [
+    { label: "Total requests", value: num.format(stats.total), detail: range.label },
+    { label: "Served", value: num.format(stats.served), series: "served", ...share(stats.served, stats.total) },
+    { label: "Blocked", value: num.format(stats.blocked), series: "blocked", ...share(stats.blocked, stats.total) },
+    { label: "Unique visitors", value: num.format(stats.uniques), detail: "Distinct IPs" },
+    { label: "Bots", value: num.format(stats.bots), series: "bots", ...share(stats.bots, stats.total) },
   ];
 
   const quickAccess = [
-    { label: "Domains", value: counts.domains, detail: `${counts.domainsActive} active`, href: "/dominios", icon: GlobeIcon },
-    { label: "Page templates", value: counts.pages, detail: `${counts.domainPages} copied to domains`, href: "/paginas", icon: PagesIcon },
-    { label: "Routes", value: counts.routes, detail: "path rules", href: "/dominios", icon: ShieldCheckIcon },
+    { label: "Domains", value: counts.domains, detail: `${counts.domainsActive} active`, href: "/dominios" },
+    { label: "Page templates", value: counts.pages, detail: `${counts.domainPages} copied to domains`, href: "/paginas" },
+    { label: "Routes", value: counts.routes, detail: "Path rules", href: "/dominios" },
   ];
 
   return (
     <>
       <AlertBanner attentionCount={attentionCount} />
 
-      <header className="mb-6 flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-            Welcome <span className="text-accent">back</span>
-          </h1>
-          <p className="mt-1 text-sm text-muted">Manage your pages, domains and routing from one place.</p>
-        </div>
-        <FounderBadge />
+      <header className="mb-6">
+        <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
+        <p className="mt-1 text-sm text-muted">
+          Traffic {scope ? <>on <span className="font-medium text-foreground">{scope}</span></> : "across all domains"} · {range.label.toLowerCase()}
+        </p>
       </header>
 
       <DashboardControls filters={filters} domains={domainOptions} countries={countries} />
 
-      <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-        {cards.map((c) => (
-          <StatCard key={c.label} label={c.label} value={num.format(c.value)} detail={c.detail} icon={c.icon} tone={c.tone} />
-        ))}
-      </div>
-
-      <div className="mb-6">
+      <div data-dash-content className="space-y-6">
+        <StatStrip stats={stats5} />
         <TrafficChart buckets={series} granularity={range.granularity} periodLabel={range.label} />
-      </div>
-
-      <div className="mb-8">
         <AccessLogs hits={hits} filtered={filtered || filters.domain !== null} showDate={filters.range !== "today"} />
       </div>
 
-      <section>
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted">Quick access</h2>
-        <div className="grid gap-4 sm:grid-cols-3">
-          {quickAccess.map((s) => {
-            const Icon = s.icon;
-            return (
-              <Link key={s.label} href={s.href} className="group rounded-xl border border-border bg-surface p-5 transition-colors hover:border-accent">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <p className="text-sm text-muted">{s.label}</p>
-                    <p className="mt-1 text-3xl font-semibold tabular-nums">
-                      <span className="sensitive">{s.value}</span>
-                    </p>
-                    <p className="mt-1 text-xs text-muted">{s.detail}</p>
-                  </div>
-                  <span className="flex size-9 items-center justify-center rounded-lg bg-accent/10 text-accent transition-colors group-hover:bg-accent group-hover:text-accent-foreground">
-                    <Icon className="size-[18px]" />
-                  </span>
-                </div>
-              </Link>
-            );
-          })}
+      <section className="mt-10">
+        <h2 className="mb-3 text-sm font-medium text-muted">Quick access</h2>
+        <div className="grid gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-3">
+          {quickAccess.map((s) => (
+            <Link key={s.label} href={s.href} className="group flex items-center justify-between gap-3 bg-surface px-5 py-4 transition-colors hover:bg-foreground/[0.03]">
+              <div className="min-w-0">
+                <p className="text-sm text-muted">{s.label}</p>
+                <p className="mt-1 text-2xl font-semibold tracking-tight">
+                  <span className="sensitive">{num.format(s.value)}</span>
+                </p>
+                <p className="mt-0.5 truncate text-xs text-muted">{s.detail}</p>
+              </div>
+              <ChevronRightIcon className="size-4 shrink-0 text-muted transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" />
+            </Link>
+          ))}
         </div>
       </section>
     </>
