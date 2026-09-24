@@ -17,10 +17,7 @@ export default async function PaginasPage({ searchParams }: { searchParams: Prom
 
   return (
     <>
-      <PageHeader
-        title="Page templates"
-        description="Each template has a name, a type and one or more slugs with HTML. A domain gets a COPY of the template: editing the template doesn't change the copies, and editing the copy (on the domain screen) doesn't change the template."
-      />
+      <PageHeader title="Page templates" />
       <PagesBrowser folders={folders} pages={pages} currentFolderId={currentFolderId} />
     </>
   );

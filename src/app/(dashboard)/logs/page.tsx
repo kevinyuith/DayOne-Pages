@@ -56,7 +56,7 @@ export default async function LogsPage({
 
   return (
     <>
-      <PageHeader title="Logs" description="Every request served, with everything that was logged, newest first." />
+      <PageHeader title="Logs" />
 
       <form method="get" className="mb-6 flex flex-wrap items-center gap-2">
         <label className="relative">

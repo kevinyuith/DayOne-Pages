@@ -28,7 +28,7 @@ export default async function DominiosPage() {
 
   return (
     <>
-      <PageHeader title="Domains" description="Register the domain and choose the template. Pages, company details and routes live on each domain's detail page." />
+      <PageHeader title="Domains" />
 
       <section className="mb-8 rounded-xl border border-border bg-surface p-5">
         <h2 className="text-sm font-semibold">Add domain</h2>

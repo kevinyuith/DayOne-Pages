@@ -18,6 +18,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 - **A UI é toda em inglês**: painel (menu, títulos, botões, confirmações, mensagens de erro das actions e da `lib`, rótulos), `<html lang="en">`, datas e números em `en-US`, e as páginas que o servidor PHP devolve ao visitante (403/410/451/503). Texto novo na tela nasce em inglês; não misturar português.
 - O painel tem `translate="no"` no `<html>` para o navegador não traduzir a tela sozinho.
+- **Sem texto explicativo nas telas**: o cabeçalho é só o título (`PageHeader` não tem descrição) e não há notas de rodapé explicando a tela ou as métricas. Rótulos, estados vazios e mensagens de erro continuam.
 - Ficam em outros idiomas só os dados por idioma do visitante: as tabelas de meses/nomes de idioma de `{{date}}`/`{{language}}` (`placeholders.ts` = `placeholders.php`). Rotas (`/paginas`, `/dominios`…) e comentários continuam como estão.
 - **Horário em UTC**: toda data é `timestamptz` (nunca `timestamp` sem fuso) e o banco roda em UTC. As funções recebem e devolvem instantes e não convertem fuso: nada de `AT TIME ZONE` nem fuso fixo no SQL. Agrupar por dia local é trabalho do frontend.
 

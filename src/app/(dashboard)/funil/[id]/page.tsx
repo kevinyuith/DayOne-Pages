@@ -50,7 +50,6 @@ export default async function FunnelPage({ params, searchParams }: { params: Par
           <h1 className="mt-1 flex items-center gap-2 text-2xl font-semibold tracking-tight">
             {page.name} <Badge tone={PAGE_STATUS_TONE[page.status]}>{PAGE_STATUS_LABELS[page.status]}</Badge>
           </h1>
-          <p className="mt-1 text-sm text-muted">Pre Lander → Lander → Backredirect. Each domain gets a copy; the A/B test runs on the copy, with its own weights.</p>
         </div>
         <div className="flex flex-col items-end gap-2">
           <Link href={`/paginas/${page.id}`} className="inline-flex h-9 items-center rounded-lg bg-accent px-3 text-sm font-medium text-accent-foreground hover:opacity-90">
@@ -63,7 +62,6 @@ export default async function FunnelPage({ params, searchParams }: { params: Par
       <section className="mb-8 rounded-xl border border-border bg-surface p-4">
         <h2 className="mb-3 text-sm font-semibold">Steps and samples</h2>
         <StepsTable versions={versions} stats={null} />
-        <p className="mt-2 text-xs text-muted">These are the library funnel&apos;s weights: they apply to new copies. Each domain adjusts its own copy in the editor.</p>
       </section>
 
       <section>
@@ -105,10 +103,6 @@ export default async function FunnelPage({ params, searchParams }: { params: Par
             ))}
           </div>
         )}
-        <p className="mt-3 text-xs text-muted">
-          Views and clicks are unique visitors in the period. Click = left the sample to the next step or through a link (the offer). The best rate of a step is only marked
-          once every sample has at least {MIN_VIEWS_TO_RANK} views.
-        </p>
       </section>
     </>
   );

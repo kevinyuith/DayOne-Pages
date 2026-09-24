@@ -15,10 +15,7 @@ export default async function ConfiguracoesPage() {
 
   return (
     <>
-      <PageHeader
-        title="Settings"
-        description="The AI for template variations and the rules that decide who is a bot or suspicious (regex, CIDR, countries…)."
-      />
+      <PageHeader title="Settings" />
 
       <div className="space-y-6">
         <AiSettings status={ai} />

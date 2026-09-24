@@ -36,7 +36,7 @@ export default async function DominioDetailPage({ params }: { params: Params }) 
           ← Domains
         </Link>
       </div>
-      <PageHeader title={domain.domain} description="This domain's pages are its own copies of templates. Routes decide what each path returns; when no route matches, the default page is served." />
+      <PageHeader title={domain.domain} />
 
       <section className="mb-6 grid gap-4 lg:grid-cols-2">
         <div className="rounded-xl border border-border bg-surface p-5">

@@ -238,10 +238,6 @@ export function FunnelList({
           {shown.length === 0 ? <p className="px-4 py-6 text-sm text-muted">No funnel matches the search and filters.</p> : null}
         </div>
       </div>
-      <p className="mt-3 text-xs text-muted">
-        Funnels come from dayone-main. Views and clicks are unique visitors in the last {days} days, adding up every domain copy; a click is leaving a sample for the next step or
-        through a link (the offer). The funnel row counts its first step (Pre Lander, or Lander when there is none). Traffic is each sample&apos;s share of its step.
-      </p>
     </div>
   );
 }

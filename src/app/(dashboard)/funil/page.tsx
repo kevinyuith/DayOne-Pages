@@ -25,10 +25,7 @@ export default async function FunilPage({ searchParams }: { searchParams: Promis
 
   return (
     <>
-      <PageHeader
-        title="Funnel"
-        description="The dayone-main funnels (F1, F2…). Open one to see its pages: each step (Pre Lander → Lander → Backredirect) can have samples for an A/B test, with traffic, views and clicks. Click a sample to edit it."
-      />
+      <PageHeader title="Funnel" />
       <FunnelList
         rows={board.rows}
         stats={board.stats}
