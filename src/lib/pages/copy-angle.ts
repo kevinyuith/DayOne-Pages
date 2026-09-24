@@ -1,15 +1,17 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
+import { KIMI_BASE_URL, getAiModel, getKimiKey } from "@/lib/ai-settings";
 
 /**
  * "Variação do template" com outro ângulo de copy: reescreve os textos
  * visíveis da página (todas as slugs, numa chamada só) a partir das
  * informações que o usuário mandou. Só no servidor.
  *
- * Modelo: o Kimi (Moonshot AI, `kimi-k3`, API compatível com a da OpenAI)
- * quando há MOONSHOT_API_KEY; senão o Claude (`claude-opus-5`) quando há
- * ANTHROPIC_API_KEY. As regras (prompt) e as conferências na volta são as
- * mesmas para os dois.
+ * Modelo: o Kimi (Moonshot AI, API compatível com a da OpenAI) quando a chave
+ * dele está configurada no sistema (Configurações → Vault, ver
+ * ai-settings.ts), com o modelo escolhido lá; senão o Claude
+ * (`claude-opus-5`) quando há ANTHROPIC_API_KEY. As regras (prompt) e as
+ * conferências na volta são as mesmas para os dois.
  *
  * O HTML não passa pelo modelo: o texto é tirado entre as tags (fora de
  * <script>, <style>, <template>, <textarea> e comentários), vai numerado,
@@ -19,12 +21,10 @@ import { z } from "zod";
  * estava. Página com texto demais para uma chamada é recusada com aviso (não
  * se corta texto em silêncio).
  *
- * Precisa de MOONSHOT_API_KEY (ou ANTHROPIC_API_KEY) no ambiente do painel.
+ * Precisa da chave do Kimi em Configurações (ou de ANTHROPIC_API_KEY).
  */
 
 const CLAUDE_MODEL = "claude-opus-5";
-const KIMI_MODEL = process.env.KIMI_MODEL || "kimi-k3";
-const KIMI_BASE_URL = (process.env.MOONSHOT_BASE_URL || "https://api.moonshot.ai/v1").replace(/\/$/, "");
 /** Resposta e raciocínio do Kimi contam no mesmo limite. */
 const KIMI_MAX_TOKENS = 65536;
 const KIMI_TIMEOUT_MS = 240_000;
@@ -149,14 +149,14 @@ function parseOutput(text: string): Rewrite {
 }
 
 /** Kimi (Moonshot AI): chat completions em modo JSON. */
-async function rewriteWithKimi(segments: { id: number; text: string }[], brief: string): Promise<Rewrite> {
+async function rewriteWithKimi(key: string, model: string, segments: { id: number; text: string }[], brief: string): Promise<Rewrite> {
   let res: Response;
   try {
     res = await fetch(`${KIMI_BASE_URL}/chat/completions`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${process.env.MOONSHOT_API_KEY}`, "Content-Type": "application/json" },
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: KIMI_MODEL,
+        model,
         max_tokens: KIMI_MAX_TOKENS,
         response_format: { type: "json_object" },
         messages: [
@@ -173,7 +173,7 @@ async function rewriteWithKimi(segments: { id: number; text: string }[], brief: 
     const timeout = cause instanceof Error && cause.name === "TimeoutError";
     return { ok: false, reason: timeout ? "O Kimi demorou demais para responder. Tente com uma página menor." : "Não consegui falar com a API do Kimi." };
   }
-  if (res.status === 401) return { ok: false, reason: "A MOONSHOT_API_KEY do painel foi recusada. Confira a chave." };
+  if (res.status === 401) return { ok: false, reason: "A chave do Kimi foi recusada. Confira em Configurações." };
   if (res.status === 429) return { ok: false, reason: "Limite de uso da API do Kimi atingido (ou sem saldo). Tente de novo em instantes." };
   if (!res.ok) return { ok: false, reason: `A API do Kimi respondeu com erro (HTTP ${res.status}). Tente de novo.` };
 
@@ -215,9 +215,10 @@ async function rewriteWithClaude(segments: { id: number; text: string }[], brief
  * Devolve o HTML de cada slug com os textos novos.
  */
 export async function rewriteCopyAngle(pages: Record<string, string>, brief: string): Promise<CopyAngleResult> {
-  const provider = process.env.MOONSHOT_API_KEY ? "kimi" : process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN ? "claude" : null;
-  if (!provider) {
-    return { ok: false, reason: "Para reescrever a copy, configure MOONSHOT_API_KEY (Kimi) no servidor do painel. A variação visual funciona sem isso." };
+  const kimiKey = await getKimiKey();
+  const claude = !!(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN);
+  if (!kimiKey && !claude) {
+    return { ok: false, reason: "Para reescrever a copy, cadastre a chave do Kimi em Configurações. A variação visual funciona sem isso." };
   }
 
   const { segments, rebuild } = extractCopySegments(pages);
@@ -227,7 +228,7 @@ export async function rewriteCopyAngle(pages: Record<string, string>, brief: str
     return { ok: false, reason: `A página tem texto demais para reescrever de uma vez (${segments.length} trechos, ${chars} caracteres). Gere só a variação visual.` };
   }
 
-  const r = provider === "kimi" ? await rewriteWithKimi(segments, brief) : await rewriteWithClaude(segments, brief);
+  const r = kimiKey ? await rewriteWithKimi(kimiKey, await getAiModel(), segments, brief) : await rewriteWithClaude(segments, brief);
   if (!r.ok) return r;
   const { pages: out, rewritten } = rebuild(r.texts);
   return { ok: true, pages: out, rewritten };

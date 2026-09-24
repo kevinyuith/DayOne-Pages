@@ -128,9 +128,9 @@ Variáveis (`.env.local`):
 | `SUPABASE_SERVICE_KEY` | chave de serviço (só servidor; atravessa a RLS) |
 | `SERVER_ID` | marcador do `/_health`; igual ao `SERVER_ID` do `server/.env` |
 | `ORIGIN_URL` | opcional; URL direta do servidor |
-| `MOONSHOT_API_KEY` | opcional; reescrita da copy na variação de template (Kimi, `kimi-k3`). Sem ela e sem `ANTHROPIC_API_KEY`, só a variação visual funciona |
-| `ANTHROPIC_API_KEY` | opcional; alternativa ao Kimi para a mesma reescrita (Claude), usada quando não há `MOONSHOT_API_KEY` |
-| `KIMI_MODEL`, `MOONSHOT_BASE_URL` | opcionais; padrão `kimi-k3` e `https://api.moonshot.ai/v1` |
+| `ANTHROPIC_API_KEY` | opcional; alternativa ao Kimi para a reescrita da copy (Claude), usada quando não há chave do Kimi em Configurações |
+
+A chave do Kimi (reescrita da copy nas variações de template) **não** vai no `.env`: fica no sistema, em Configurações → IA para variações de template, guardada criptografada no Supabase Vault.
 
 **O painel não tem login.** Qualquer pessoa com a URL edita páginas e
 domínios. Proteja o deploy na rede: Cloudflare Access na frente do host, ou

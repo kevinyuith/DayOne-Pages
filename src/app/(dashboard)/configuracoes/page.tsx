@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/page-header";
+import { getAiStatus } from "@/lib/ai-settings";
 import { listDetectionRules } from "@/lib/pages/queries";
+import { AiSettings } from "./ai-settings";
 import { RulesList } from "./rules-list";
 import { DnsResolver } from "./dns-resolver";
 
@@ -9,16 +11,17 @@ export const metadata: Metadata = {
 };
 
 export default async function ConfiguracoesPage() {
-  const rules = await listDetectionRules();
+  const [rules, ai] = await Promise.all([listDetectionRules(), getAiStatus()]);
 
   return (
     <>
       <PageHeader
         title="Configurações"
-        description="Configure as regras que definem quem é bot ou suspeito. Use regex, padrões CIDR, países, etc."
+        description="A IA das variações de template e as regras que definem quem é bot ou suspeito (regex, CIDR, países…)."
       />
 
       <div className="space-y-6">
+        <AiSettings status={ai} />
         <RulesList rules={rules} />
         <DnsResolver />
       </div>
