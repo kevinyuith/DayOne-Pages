@@ -258,6 +258,48 @@ export async function getFunnelBoard(since: Date): Promise<{ rows: FunnelBoardRo
 /** A funnel page's real loads (views) and how many clicked out (clicks). */
 export type VersionStats = { views: number; clicks: number };
 
+// ── Funnel screen, VSLs tab (read-only from dayone-main) ─────────────────────
+
+/** A VSL's status in its funnels (public.vsl.funnel_status). */
+export const VSL_STATUSES = ["VALIDATED", "VALIDATION", "STAND_BY", "PAUSED", "DISCARDED"] as const;
+export type VslStatus = (typeof VSL_STATUSES)[number];
+
+/** A dayone-main VSL linked to a funnel (public.vsl.funnel_ids). */
+export type FunnelVsl = {
+  id: string;
+  title: string;
+  status: VslStatus | null;
+  language: string | null;
+  /** Seconds into the video where the pitch starts. */
+  pitch: number | null;
+  copywriter: string | null;
+  editor: string | null;
+  videoUrl: string | null;
+};
+
+export type FunnelVslRow = { funnel: MainFunnel; vsls: FunnelVsl[] };
+
+/** The dayone-main funnels (F1, F2…), each with the VSLs linked to it, in status order then title. */
+export async function getFunnelVsls(): Promise<FunnelVslRow[]> {
+  const db = supabaseService();
+  const [funnels, vsls] = await Promise.all([db.rpc("main_funnels"), db.rpc("main_funnel_vsls")]);
+  throwIf(funnels.error, "main_funnels");
+  throwIf(vsls.error, "main_funnel_vsls");
+  type Raw = { funnel_id: string; vsl_id: string; title: string | null; funnel_status: string | null; language: string | null; pitch: number | null; copywriter: string | null; editor: string | null; video_url: string | null };
+  const order = (s: VslStatus | null) => (s ? VSL_STATUSES.indexOf(s) : VSL_STATUSES.length);
+  const byFunnel = new Map<string, FunnelVsl[]>();
+  for (const v of (vsls.data as Raw[] | null) ?? []) {
+    const status = (VSL_STATUSES as readonly string[]).includes(v.funnel_status ?? "") ? (v.funnel_status as VslStatus) : null;
+    const list = byFunnel.get(v.funnel_id) ?? [];
+    list.push({ id: v.vsl_id, title: v.title?.trim() || "Untitled", status, language: v.language, pitch: v.pitch, copywriter: v.copywriter, editor: v.editor, videoUrl: v.video_url });
+    byFunnel.set(v.funnel_id, list);
+  }
+  return ((funnels.data ?? []) as MainFunnel[]).map((f) => ({
+    funnel: f,
+    vsls: (byFunnel.get(f.id) ?? []).sort((a, b) => order(a.status) - order(b.status) || a.title.localeCompare(b.title)),
+  }));
+}
+
 export type FunnelCopy = {
   domain_id: string;
   domain: string;

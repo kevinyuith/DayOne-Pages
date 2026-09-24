@@ -3,17 +3,18 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Fragment, useMemo, useState, useTransition } from "react";
-import { ChevronRightIcon, PencilIcon, PlusIcon, SearchIcon } from "@/components/icons";
+import { ChevronRightIcon, PencilIcon, PlusIcon } from "@/components/icons";
 import { Badge, PAGE_STATUS_TONE } from "@/components/ui/badge";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { INPUT_CLASS, SELECT_BASE } from "@/components/ui/field";
+import { SELECT_BASE } from "@/components/ui/field";
 import type { FunnelBoardPage, FunnelBoardRow, VersionStats } from "@/lib/pages/queries";
 import { PAGE_STATUS_LABELS, type PageKind, type PageStatus } from "@/lib/pages/types";
 import { CreatePageForm, type FunnelTarget } from "../templates/create-page-form";
 import { evenSplit, setShare } from "@/lib/pages/traffic";
 import { copyFunnelToDomain, setPageShare, splitFunnelEvenly } from "./actions";
+import { FunnelFilterBar, NO_FUNNEL_FILTERS, funnelFilterOptions, funnelMatches } from "./funnel-filters";
 
 /**
  * The Funnel screen as a list: one dayone-main funnel (F1, F2…) per row,
@@ -35,16 +36,6 @@ const rate = (s: VersionStats | undefined) => (s && s.views > 0 ? pct((s.clicks 
 function sum(pages: FunnelBoardPage[], stats: Record<string, VersionStats>): VersionStats {
   return pages.reduce((t, p) => ({ views: t.views + (stats[p.id]?.views ?? 0), clicks: t.clicks + (stats[p.id]?.clicks ?? 0) }), { views: 0, clicks: 0 });
 }
-
-/** The list filters: fields of the dayone-main funnel ("" = all). */
-const FILTERS = [
-  { key: "platform", all: "All platforms" },
-  { key: "niche", all: "All niches" },
-  { key: "region", all: "All regions" },
-  { key: "status", all: "All statuses" },
-] as const;
-type FilterKey = (typeof FILTERS)[number]["key"];
-const NO_FILTERS: Record<FilterKey, string> = { platform: "", niche: "", region: "", status: "" };
 
 const GRID = "grid grid-cols-[1.5rem_3.5rem_minmax(12rem,1fr)_8rem_4rem_5rem_6rem_6rem_6rem_6rem] items-center gap-3";
 
@@ -70,30 +61,15 @@ export function FunnelList({
   const [query, setQuery] = useState("");
   // New page: the same flow as "Create template" (source, preview, placeholders), already linked to the funnel.
   const [creating, setCreating] = useState<FunnelTarget | null>(null);
-  const [filters, setFilters] = useState(NO_FILTERS);
+  const [filters, setFilters] = useState(NO_FUNNEL_FILTERS);
+  const options = useMemo(() => funnelFilterOptions(rows.map((r) => r.funnel)), [rows]);
 
-  // Each filter's options: the values the funnels have, in alphabetical order.
-  const options = useMemo(() => {
-    const out = {} as Record<FilterKey, string[]>;
-    for (const { key } of FILTERS) out[key] = [...new Set(rows.map((r) => r.funnel?.[key] ?? "").filter(Boolean))].sort((a, b) => a.localeCompare(b));
-    return out;
-  }, [rows]);
-  const filtering = FILTERS.some(({ key }) => filters[key] !== "");
-
-  const q = query.trim().toLowerCase();
   // Each funnel's numbers (sum of its pages), for display and sorting.
   const entryOf = useMemo(() => new Map(rows.map((r) => [r, sum(r.pages, stats)])), [rows, stats]);
   const shown = useMemo(
     () =>
       rows
-        .filter((r) => {
-          const f = r.funnel;
-          // With a filter, the row of pages without a funnel drops out (it has no platform, niche…).
-          if (FILTERS.some(({ key }) => filters[key] !== "" && (f?.[key] ?? "") !== filters[key])) return false;
-          if (!q) return true;
-          const hay = f ? [f.code, f.name, f.platform, f.niche, f.region, f.status] : ["unlinked"];
-          return [...hay, ...r.pages.map((p) => p.name)].some((v) => (v ?? "").toLowerCase().includes(q));
-        })
+        .filter((r) => funnelMatches(r.funnel, filters, query, r.pages.map((p) => p.name)))
         // Most views first; ties by name, then by code (F1, F2…). Pages without a funnel last.
         .sort((a, b) => {
           if (!a.funnel || !b.funnel) return a.funnel ? -1 : b.funnel ? 1 : 0;
@@ -103,7 +79,7 @@ export function FunnelList({
             a.funnel.code.localeCompare(b.funnel.code, undefined, { numeric: true })
           );
         }),
-    [rows, q, filters, entryOf],
+    [rows, query, filters, entryOf],
   );
   const keyOf = (r: FunnelBoardRow) => r.funnel?.id ?? UNLINKED;
   const toggle = (key: string) =>
@@ -118,36 +94,15 @@ export function FunnelList({
   return (
     <div>
       <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex flex-wrap items-center gap-2">
-          <label className="relative w-full sm:w-64">
-            <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted" />
-            <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search F-code or name…" aria-label="Search" className={`${INPUT_CLASS} pl-8`} />
-          </label>
-          {FILTERS.map(({ key, all }) => (
-            <select
-              key={key}
-              value={filters[key]}
-              onChange={(e) => setFilters((cur) => ({ ...cur, [key]: e.target.value }))}
-              aria-label={all.replace("All ", "Filter by ")}
-              className={`${SELECT_BASE} h-9 w-auto text-sm ${filters[key] ? "border-accent/50 text-accent" : ""}`}
-            >
-              <option value="">{all}</option>
-              {options[key].map((v) => (
-                <option key={v} value={v}>
-                  {key === "status" ? v.toLowerCase() : v}
-                </option>
-              ))}
-            </select>
-          ))}
-          {filtering ? (
-            <button type="button" onClick={() => setFilters(NO_FILTERS)} className="text-xs font-medium text-muted underline-offset-2 hover:text-foreground hover:underline">
-              Clear filters
-            </button>
-          ) : null}
-          <span className="text-xs text-muted">
-            {shown.filter((r) => r.funnel).length} of {rows.filter((r) => r.funnel).length} funnels
-          </span>
-        </div>
+        <FunnelFilterBar
+          query={query}
+          onQuery={setQuery}
+          filters={filters}
+          onFilters={setFilters}
+          options={options}
+          shown={shown.filter((r) => r.funnel).length}
+          total={rows.filter((r) => r.funnel).length}
+        />
         <div className="flex items-center gap-2">
           <button
             type="button"

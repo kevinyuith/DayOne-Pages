@@ -36,10 +36,11 @@ Content that no route has used for `STALE_MAX_AGE` + 1 day goes in the cleanup.
 | another worker refreshing | serves the expired copy | `UPDATING` |
 | unknown domain | 404 (negative cache `NEGATIVE_TTL`) | `MISS`/`HIT` |
 
-The domain's routes are evaluated in priority order; the first whose
-conditions (country, device, language, URL parameters, referrer) match
-decides: serve a slug, redirect or block. `bot` is only honored on block
-routes.
+The domain's candidates are evaluated in order: bot block (403, when the
+domain blocks bots), the filter's pass page (when the visitor matches its
+conditions: country, device, language, URL parameters, referrer) and the
+default page (the fail page when there is a filter), with the request path as
+the slug. `bot` is only honored by the bot block.
 
 ### Server-mode funnel (`dop_step`)
 
@@ -88,7 +89,7 @@ GET https://www.x.com/offer?utm_source=fb
 → 302 Location: https://x.com/offer?utm_source=fb                  (no campaign, no sub0)
 ```
 
-- Only served pages (200/304). Block, bot, 404, route redirect and
+- Only served pages (200/304). Block, bot, 404, redirect and
   files (`.js`, `robots.txt`…) go on as normal on the www. itself.
 - `sub0` goes right before the first `sub1`; without `sub1`, at the end of the query.
 - With a campaign, a `sub0` already in the URL is replaced by the new one; without

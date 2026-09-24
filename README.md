@@ -4,17 +4,19 @@ The product's main purpose is to be a **page editor**: you build a page once,
 publish it on as many domains as you like, and use the same dashboard to run
 **A/B tests** between versions. Modeled on hidepages.com.
 
-- **Dashboard** (this repo, Next.js 16): registers domains, creates pages with
-  several slugs (HTML edited in a code editor with a preview) and defines, per
-  domain, **routes**: which page answers on each path, with rules by country,
-  device, URL parameters and referrer, plus redirects and blocks.
+- **Dashboard** (this repo, Next.js 16): registers domains (Media Buyer or
+  Vendor), creates pages with several slugs (visual editor and code editor
+  with a preview) and defines, per domain, the default page, a filter (one
+  page for who passes the rules by country, language, device, URL parameters
+  and referrer, another for who doesn't) and the bot block.
 - **Database**: Supabase, everything in the `pages` schema (`supabase/migrations/`).
 - **Delivery server** (`server/`, PHP): answers for any domain pointed at it,
-  queries the database and caches on disk for 5 minutes. If Supabase goes
-  down, it serves the copy it has. See [server/README.md](server/README.md).
+  checks the decision in the database every 30 s (only hashes, no HTML) and
+  keeps the HTML on disk by hash, downloading it only when a page changes. If
+  Supabase goes down, it serves the copy it has. See [server/README.md](server/README.md).
 
 ```
-visitor ─► Cloudflare ─HTTP─► nginx + php-fpm (server/) ─► 5 min cache ─► Supabase (pages.resolve)
+visitor ─► Cloudflare ─HTTP─► nginx + php-fpm (server/) ─► disk cache ─► Supabase (pages.resolve, pages.content_get)
 team    ─► dashboard (Next.js, no login) ─► server actions ─service key─► Supabase (pages schema)
 ```
 
@@ -29,8 +31,8 @@ the open folder is kept in the URL (`/templates?folder=<id>`), with a breadcrumb
   item; or "…" menu → *Move to…*. A folder cannot go into itself or into one
   of its subfolders.
 - **"…" menu** of a page: open, rename, duplicate (a draft copy with all the
-  slugs and the same HTML, with new ids for the funnel sub-pages; domains and
-  routes stay on the original), move, delete. Of a folder: rename, color, move,
+  slugs and the same HTML, with new ids for the funnel sub-pages; the domains'
+  copies don't change), move, delete. Of a folder: rename, color, move,
   delete — deleting a folder deletes nothing: its content moves up to the
   parent folder.
 - **Search** goes across all folders and shows where each result lives.
@@ -168,9 +170,9 @@ php server/tests/run.php
 ## How the server decides what to serve
 
 1. Normalizes host (`WWW.Example.COM:80` → `example.com`) and path (`//Promo/` → `/promo`).
-2. Looks up the `routes/<host>/<path>` cache; if fresh (< 5 min) and with the HTML on disk, serves it.
-3. Otherwise calls `pages.resolve(host, path, key)`: candidate routes in priority order + each slug's HTML, in one call.
-4. Walks the routes; the first one whose conditions match decides: serve the slug, redirect or block. None → the domain's default page → 404.
+2. Looks up the `routes/<host>/<path>` cache; if fresh (< 30 s) and with the HTML on disk, serves it. Expired: serves it anyway and refreshes after the response (SWR).
+3. Otherwise calls `pages.resolve(host, path, key, p_with_content => false)`: the candidates in order (bot block, filter, default page) with each slug's hash; the HTML of hashes not on disk comes from `pages.content_get`.
+4. The first candidate whose conditions match decides: bot block (403), the filter's pass page, or the default page (the fail page when there is a filter). None → 404.
 5. Supabase down: serves the expired copy (`X-Cache: STALE`) for up to 7 days; no copy, 503.
 
 Bot detection exists only to **block** (scrapers/crawlers), never to serve
