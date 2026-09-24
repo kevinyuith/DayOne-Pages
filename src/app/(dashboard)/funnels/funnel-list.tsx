@@ -15,6 +15,7 @@ import { CreatePageForm, type FunnelTarget } from "../templates/create-page-form
 import { evenSplit, setShare } from "@/lib/pages/traffic";
 import { copyFunnelToDomain, setPageShare, splitFunnelEvenly } from "./actions";
 import { FunnelFilterBar, NO_FUNNEL_FILTERS, funnelFilterOptions, funnelMatches } from "./funnel-filters";
+import { FunnelVslsPanel } from "./funnel-vsls";
 
 /**
  * The Funnel screen as a list: one dayone-main funnel (F1, F2…) per row,
@@ -62,6 +63,8 @@ export function FunnelList({
   // New page: the same flow as "Create template" (source, preview, placeholders), already linked to the funnel.
   const [creating, setCreating] = useState<FunnelTarget | null>(null);
   const [filters, setFilters] = useState(NO_FUNNEL_FILTERS);
+  // The tab open inside each funnel (Pages by default).
+  const [tabOf, setTabOf] = useState<Record<string, "pages" | "vsls">>({});
   const options = useMemo(() => funnelFilterOptions(rows.map((r) => r.funnel)), [rows]);
 
   // Each funnel's numbers (sum of its pages), for display and sorting.
@@ -168,27 +171,50 @@ export function FunnelList({
 
                 {isOpen ? (
                   <div className="border-b border-border bg-foreground/[0.02] px-4 py-3">
-                    {r.pages.length === 0 ? (
-                      <div className="flex items-center justify-between gap-3 rounded-lg border border-dashed border-border px-4 py-3 text-sm text-muted">
-                        <span>No pages in this funnel yet.</span>
-                      </div>
-                    ) : null}
-                    {r.pages.length ? (
-                      // The key resets the edited weights when the server returns the new ones.
-                      <PagesTable key={r.pages.map((p) => `${p.id}:${p.weight}`).join()} funnelId={f ? (r.pages[0]?.funnelId ?? null) : null} pages={r.pages} stats={stats} />
-                    ) : null}
                     {f ? (
-                      <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-                        <button
-                          type="button"
-                          onClick={() => setCreating({ id: f.id, defaultName: `${f.code} · ${f.name}` })}
-                          className="inline-flex items-center gap-1.5 text-xs font-medium text-accent hover:underline"
-                        >
-                          <PlusIcon className="size-3.5" /> New page
-                        </button>
-                        {r.pages.length ? <CopyToDomain funnelId={r.pages[0].funnelId} domains={domains} /> : null}
-                      </div>
+                      <nav className="mb-3 flex gap-1 border-b border-border" aria-label={`${f.code} tabs`}>
+                        {(["pages", "vsls"] as const).map((t) => (
+                          <button
+                            key={t}
+                            type="button"
+                            onClick={() => setTabOf((cur) => ({ ...cur, [key]: t }))}
+                            aria-current={(tabOf[key] ?? "pages") === t ? "page" : undefined}
+                            className={`-mb-px border-b-2 px-3 py-1.5 text-sm font-medium transition-colors ${
+                              (tabOf[key] ?? "pages") === t ? "border-accent text-foreground" : "border-transparent text-muted hover:text-foreground"
+                            }`}
+                          >
+                            {t === "pages" ? "Pages" : "VSLs"}
+                          </button>
+                        ))}
+                      </nav>
                     ) : null}
+                    {f && tabOf[key] === "vsls" ? (
+                      <FunnelVslsPanel mainFunnelId={f.id} label={`${f.code} · ${f.name}`} />
+                    ) : (
+                      <>
+                        {r.pages.length === 0 ? (
+                          <div className="flex items-center justify-between gap-3 rounded-lg border border-dashed border-border px-4 py-3 text-sm text-muted">
+                            <span>No pages in this funnel yet.</span>
+                          </div>
+                        ) : null}
+                        {r.pages.length ? (
+                          // The key resets the edited weights when the server returns the new ones.
+                          <PagesTable key={r.pages.map((p) => `${p.id}:${p.weight}`).join()} funnelId={f ? (r.pages[0]?.funnelId ?? null) : null} pages={r.pages} stats={stats} />
+                        ) : null}
+                        {f ? (
+                          <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                            <button
+                              type="button"
+                              onClick={() => setCreating({ id: f.id, defaultName: `${f.code} · ${f.name}` })}
+                              className="inline-flex items-center gap-1.5 text-xs font-medium text-accent hover:underline"
+                            >
+                              <PlusIcon className="size-3.5" /> New page
+                            </button>
+                            {r.pages.length ? <CopyToDomain funnelId={r.pages[0].funnelId} domains={domains} /> : null}
+                          </div>
+                        ) : null}
+                      </>
+                    )}
                   </div>
                 ) : null}
               </Fragment>
@@ -217,6 +243,8 @@ function PagesTable({ funnelId, pages, stats }: { funnelId: string | null; pages
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const editHref = (p: FunnelBoardPage) => `/funnels/${p.id}/edit`;
+  // Highest share first (by the saved %: the rows move when the field is left, not while typing).
+  const sorted = [...pages].sort((a, b) => (shares[b.id] ?? 0) - (shares[a.id] ?? 0) || a.name.localeCompare(b.name));
 
   // The value comes from the field (not the state): leaving right after typing still saves the new number.
   const commit = (p: FunnelBoardPage, raw: string) => {
@@ -246,8 +274,8 @@ function PagesTable({ funnelId, pages, stats }: { funnelId: string | null; pages
         <table className="w-full text-sm">
           <thead className="text-left text-xs text-muted">
             <tr className="border-b border-border">
+              <th className="w-px px-3 py-2 font-medium">Traffic</th>
               <th className="px-3 py-2 font-medium">Page</th>
-              <th className="px-3 py-2 text-right font-medium">Traffic</th>
               <th className="px-3 py-2 text-right font-medium">Views</th>
               <th className="px-3 py-2 text-right font-medium">Clicks</th>
               <th className="px-3 py-2 text-right font-medium">CTR</th>
@@ -261,21 +289,14 @@ function PagesTable({ funnelId, pages, stats }: { funnelId: string | null; pages
             </tr>
           </thead>
           <tbody>
-            {pages.map((p) => {
+            {sorted.map((p) => {
               const s = stats[p.id];
               const w = shares[p.id] ?? 0;
               return (
                 <tr key={p.id} className="border-b border-border last:border-0 hover:bg-foreground/[0.03]">
-                  <td className="px-3 py-2">
-                    <Link href={editHref(p)} className="flex items-center gap-2">
-                      <span className={`size-2.5 shrink-0 rounded-full ${STATUS_DOT[p.status]}`} />
-                      <span className="font-medium">{p.name}</span>
-                      <Badge tone={PAGE_STATUS_TONE[p.status]}>{PAGE_STATUS_LABELS[p.status]}</Badge>
-                    </Link>
-                  </td>
-                  <td className="px-3 py-2 text-right">
+                  <td className="whitespace-nowrap px-3 py-2">
                     {pages.length > 1 ? (
-                      <span className="inline-flex items-center justify-end gap-1">
+                      <span className="inline-flex items-center gap-1">
                         <input
                           type="number"
                           min={0}
@@ -294,14 +315,18 @@ function PagesTable({ funnelId, pages, stats }: { funnelId: string | null; pages
                       <span className="tabular-nums">100%</span>
                     )}
                   </td>
+                  <td className="px-3 py-2">
+                    <Link href={editHref(p)} className="flex items-center gap-2">
+                      <span className={`size-2.5 shrink-0 rounded-full ${STATUS_DOT[p.status]}`} />
+                      <span className="font-medium">{p.name}</span>
+                      <Badge tone={PAGE_STATUS_TONE[p.status]}>{PAGE_STATUS_LABELS[p.status]}</Badge>
+                    </Link>
+                  </td>
                   <td className="px-3 py-2 text-right tabular-nums">{num(s?.views ?? 0)}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{num(s?.clicks ?? 0)}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{rate(s)}</td>
                   <td className="px-3 py-2 text-right">
                     <span className="inline-flex items-center gap-3 text-xs">
-                      <Link href={`/funnels/${p.id}`} className="text-muted hover:text-foreground">
-                        By domain
-                      </Link>
                       <Link href={editHref(p)} className="inline-flex items-center gap-1 font-medium text-accent hover:underline">
                         <PencilIcon className="size-3.5" /> Edit
                       </Link>

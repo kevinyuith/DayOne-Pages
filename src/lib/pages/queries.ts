@@ -239,6 +239,9 @@ export type FunnelBoardRow = { funnel: MainFunnel | null; pages: FunnelBoardPage
  */
 export async function getFunnelBoard(since: Date): Promise<{ rows: FunnelBoardRow[]; stats: Record<string, VersionStats> }> {
   const db = supabaseService();
+  // Every dayone-main funnel gets its pages.funnels row, with its current code and name.
+  const synced = await db.rpc("funnels_sync");
+  throwIf(synced.error, "funnels_sync");
   const [funnels, pages, stats] = await Promise.all([db.rpc("main_funnels"), funnelPages(null), db.rpc("funnel_page_stats", { p_since: since.toISOString() })]);
   throwIf(funnels.error, "main_funnels");
   throwIf(stats.error, "funnel_page_stats");
@@ -258,13 +261,13 @@ export async function getFunnelBoard(since: Date): Promise<{ rows: FunnelBoardRo
 /** A funnel page's real loads (views) and how many clicked out (clicks). */
 export type VersionStats = { views: number; clicks: number };
 
-// ── Funnel screen, VSLs tab (read-only from dayone-main) ─────────────────────
+// ── Funnel screen, VSLs tab ──────────────────────────────────────────────────
 
 /** A VSL's status in its funnels (public.vsl.funnel_status). */
 export const VSL_STATUSES = ["VALIDATED", "VALIDATION", "STAND_BY", "PAUSED", "DISCARDED"] as const;
 export type VslStatus = (typeof VSL_STATUSES)[number];
 
-/** A dayone-main VSL linked to a funnel (public.vsl.funnel_ids). */
+/** A dayone-main VSL (read-only). */
 export type FunnelVsl = {
   id: string;
   title: string;
@@ -277,27 +280,97 @@ export type FunnelVsl = {
   videoUrl: string | null;
 };
 
-export type FunnelVslRow = { funnel: MainFunnel; vsls: FunnelVsl[] };
+/** A video (VTurb player) of the funnel's A/B test, with its share and, when found, its VSL. */
+export type FunnelVideo = { id: string; name: string | null; weight: number; vsl: FunnelVsl | null };
 
-/** The dayone-main funnels (F1, F2…), each with the VSLs linked to it, in status order then title. */
-export async function getFunnelVsls(): Promise<FunnelVslRow[]> {
-  const db = supabaseService();
-  const [funnels, vsls] = await Promise.all([db.rpc("main_funnels"), db.rpc("main_funnel_vsls")]);
-  throwIf(funnels.error, "main_funnels");
-  throwIf(vsls.error, "main_funnel_vsls");
-  type Raw = { funnel_id: string; vsl_id: string; title: string | null; funnel_status: string | null; language: string | null; pitch: number | null; copywriter: string | null; editor: string | null; video_url: string | null };
-  const order = (s: VslStatus | null) => (s ? VSL_STATUSES.indexOf(s) : VSL_STATUSES.length);
-  const byFunnel = new Map<string, FunnelVsl[]>();
-  for (const v of (vsls.data as Raw[] | null) ?? []) {
-    const status = (VSL_STATUSES as readonly string[]).includes(v.funnel_status ?? "") ? (v.funnel_status as VslStatus) : null;
-    const list = byFunnel.get(v.funnel_id) ?? [];
-    list.push({ id: v.vsl_id, title: v.title?.trim() || "Untitled", status, language: v.language, pitch: v.pitch, copywriter: v.copywriter, editor: v.editor, videoUrl: v.video_url });
-    byFunnel.set(v.funnel_id, list);
-  }
-  return ((funnels.data ?? []) as MainFunnel[]).map((f) => ({
-    funnel: f,
-    vsls: (byFunnel.get(f.id) ?? []).sort((a, b) => order(a.status) - order(b.status) || a.title.localeCompare(b.title)),
+/** A funnel's VSLs tab: its VTurb A/B test (the replica), or the VSLs linked to it when it has none. */
+export type FunnelVslPanel = {
+  /** The pages.funnels row. */
+  funnelRowId: string;
+  /** The funnel's VTurb A/B test; null = none. */
+  groupId: string | null;
+  syncedAt: string | null;
+  /** The test's videos (pages.funnels.vsl), most traffic first. */
+  videos: FunnelVideo[];
+  /** Without a test: the VSLs linked to the funnel in dayone-main (public.vsl.funnel_ids). */
+  linked: FunnelVsl[];
+};
+
+type RawVsl = { title: string | null; funnel_status: string | null; language: string | null; pitch: number | null; copywriter: string | null; editor: string | null; video_url: string | null };
+const toVsl = (id: string, v: RawVsl): FunnelVsl => ({
+  id,
+  title: v.title?.trim() || "Untitled",
+  status: (VSL_STATUSES as readonly string[]).includes(v.funnel_status ?? "") ? (v.funnel_status as VslStatus) : null,
+  language: v.language,
+  pitch: v.pitch,
+  copywriter: v.copywriter,
+  editor: v.editor,
+  videoUrl: v.video_url,
+});
+/** A video's name as a VSL title: without the ".mp4" of the uploaded file. */
+const titleKey = (s: string | null) => (s ?? "").replace(/\.mp4$/i, "").trim().toLowerCase();
+
+/** A produced VSL (dayone-main) and its VTurb video, to add it to a funnel's test. */
+export type ProducedVsl = FunnelVsl & { videoId: string | null };
+
+/**
+ * The produced VSLs (dayone-main, not archived) whose title, copywriter,
+ * editor or language contain every word of `query`, in status order then
+ * title. `videoId` is the VTurb player the VSL pipeline recorded (the first).
+ */
+export async function searchProducedVsls(query: string, limit = 25): Promise<ProducedVsl[]> {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return [];
+  // The database filters and orders (pages.main_vsls_search): only the page of results comes back.
+  const { data, error } = await supabaseService().rpc("main_vsls_search", { p_words: words, p_limit: limit });
+  throwIf(error, "main_vsls_search");
+  return ((data as (RawVsl & { vsl_id: string; video_ids: string[] | null })[] | null) ?? []).map((v) => ({
+    ...toVsl(v.vsl_id, v),
+    videoId: v.video_ids?.find((id) => /^[0-9a-f]{24}$/.test(id)) ?? null,
   }));
+}
+
+/**
+ * A funnel's VSLs tab (by dayone-main funnel id): the replica of its VTurb
+ * A/B test (pages.funnels.vsl). Each video gets its VSL: by the VTurb player
+ * id the VSL pipeline recorded, otherwise by name. null = no such funnel.
+ */
+export async function getFunnelVslPanel(mainFunnelId: string): Promise<FunnelVslPanel | null> {
+  if (!UUID_RE.test(mainFunnelId)) return null;
+  // One call (pages.funnel_vsl_panel): the replica plus only the VSLs that can match its videos.
+  const { data, error } = await supabaseService().rpc("funnel_vsl_panel", { p_main_funnel: mainFunnelId });
+  throwIf(error, "funnel_vsl_panel");
+  type Panel = {
+    id: string;
+    group_id: string | null;
+    synced_at: string | null;
+    vsl: Record<string, { weight: number; name: string | null }> | null;
+    vsls: (RawVsl & { vsl_id: string; video_ids: string[] | null })[];
+    linked: (RawVsl & { vsl_id: string })[];
+  };
+  const r = data as Panel | null;
+  if (!r) return null;
+
+  const byPlayer = new Map<string, FunnelVsl>();
+  const byTitle = new Map<string, FunnelVsl>();
+  for (const v of r.vsls ?? []) {
+    const vsl = toVsl(v.vsl_id, v);
+    for (const id of v.video_ids ?? []) if (!byPlayer.has(id)) byPlayer.set(id, vsl);
+    const key = titleKey(v.title);
+    if (key && !byTitle.has(key)) byTitle.set(key, vsl);
+  }
+  const statusOrder = (s: VslStatus | null) => (s ? VSL_STATUSES.indexOf(s) : VSL_STATUSES.length);
+  return {
+    funnelRowId: r.id,
+    groupId: r.group_id,
+    syncedAt: r.synced_at,
+    videos: Object.entries(r.vsl ?? {})
+      .map(([id, v]) => ({ id, name: v.name, weight: Number(v.weight) || 0, vsl: byPlayer.get(id) ?? byTitle.get(titleKey(v.name)) ?? null }))
+      .sort((a, b) => b.weight - a.weight || (a.name ?? "").localeCompare(b.name ?? "")),
+    linked: (r.linked ?? [])
+      .map((v) => toVsl(v.vsl_id, v))
+      .sort((a, b) => statusOrder(a.status) - statusOrder(b.status) || a.title.localeCompare(b.title)),
+  };
 }
 
 export type FunnelCopy = {
