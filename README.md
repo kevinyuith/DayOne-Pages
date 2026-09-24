@@ -1,169 +1,177 @@
 # DayOne Pages
 
-A intenção principal do produto é ser um **editor de páginas**: você monta a
-página uma vez, publica em quantos domínios quiser e usa o mesmo painel para
-fazer **teste A/B** entre versões. No modelo do hidepages.com.
+The product's main purpose is to be a **page editor**: you build a page once,
+publish it on as many domains as you like, and use the same dashboard to run
+**A/B tests** between versions. Modeled on hidepages.com.
 
-- **Dashboard** (este repo, Next.js 16): cadastra domínios, cria páginas com
-  várias slugs (HTML editado num editor de código com preview) e define, por
-  domínio, **rotas**: qual página responde em cada path, com regras por país,
-  dispositivo, parâmetros de URL e referrer, além de redirects e bloqueios.
-- **Banco**: Supabase, tudo no schema `pages` (`supabase/migrations/`).
-- **Servidor de entrega** (`server/`, PHP): responde por qualquer domínio
-  apontado para ele, consulta o banco e cacheia em disco por 5 minutos.
-  Se o Supabase cair, serve a cópia que tem. Ver [server/README.md](server/README.md).
+- **Dashboard** (this repo, Next.js 16): registers domains, creates pages with
+  several slugs (HTML edited in a code editor with a preview) and defines, per
+  domain, **routes**: which page answers on each path, with rules by country,
+  device, URL parameters and referrer, plus redirects and blocks.
+- **Database**: Supabase, everything in the `pages` schema (`supabase/migrations/`).
+- **Delivery server** (`server/`, PHP): answers for any domain pointed at it,
+  queries the database and caches on disk for 5 minutes. If Supabase goes
+  down, it serves the copy it has. See [server/README.md](server/README.md).
 
 ```
-visitante ─► Cloudflare ─HTTP─► nginx + php-fpm (server/) ─► cache 5 min ─► Supabase (pages.resolve)
-equipe    ─► dashboard (Next.js, sem login) ─► server actions ─service key─► Supabase (schema pages)
+visitor ─► Cloudflare ─HTTP─► nginx + php-fpm (server/) ─► 5 min cache ─► Supabase (pages.resolve)
+team    ─► dashboard (Next.js, no login) ─► server actions ─service key─► Supabase (pages schema)
 ```
 
-## Tela de páginas: cards e pastas
+## Templates screen: cards and folders
 
-`/paginas` é uma grade de cards no modelo do hidepages: o card **Criar
-página**, as pastas e as páginas da pasta aberta. Pastas podem ter subpastas
-(sem limite prático; o banco barra ciclos e mais de 20 níveis), e a pasta
-aberta fica na URL (`/paginas?pasta=<id>`), com breadcrumb.
+`/templates` is a grid of cards modeled on hidepages: the **Create template**
+card, the folders and the pages of the open folder. Folders can have subfolders
+(no practical limit; the database blocks cycles and more than 20 levels), and
+the open folder is kept in the URL (`/templates?folder=<id>`), with a breadcrumb.
 
-- **Mover**: arraste um card (página ou pasta) para cima de uma pasta ou de
-  um item do breadcrumb; ou menu "…" → *Mover para…*. Uma pasta não entra em
-  si mesma nem numa subpasta dela.
-- **Menu "…"** da página: abrir, renomear, duplicar (cópia como rascunho com
-  todas as slugs e o mesmo HTML, com ids novos para as sub-páginas do funil;
-  domínios e rotas continuam na original), mover, excluir. Da pasta: renomear, cor, mover, excluir — excluir uma
-  pasta não apaga nada: o conteúdo sobe para a pasta-mãe.
-- **Busca** atravessa todas as pastas e mostra onde cada resultado está.
+- **Move**: drag a card (page or folder) onto a folder or onto a breadcrumb
+  item; or "…" menu → *Move to…*. A folder cannot go into itself or into one
+  of its subfolders.
+- **"…" menu** of a page: open, rename, duplicate (a draft copy with all the
+  slugs and the same HTML, with new ids for the funnel sub-pages; domains and
+  routes stay on the original), move, delete. Of a folder: rename, color, move,
+  delete — deleting a folder deletes nothing: its content moves up to the
+  parent folder.
+- **Search** goes across all folders and shows where each result lives.
 
-No banco: `pages.folders` (`parent_id`, `color`) e `pages.pages.folder_id`
-(`supabase/migrations/20260921_folders.sql`). O servidor de entrega não sabe
-que pastas existem — é só organização do painel.
+In the database: `pages.folders` (`parent_id`, `color`) and `pages.pages.folder_id`
+(`supabase/migrations/20260921_folders.sql`). The delivery server does not know
+folders exist — they only organize the dashboard.
 
-## Editor: links, painéis e funil
+## Editor: links, panels and funnel
 
-O editor de slug (`/paginas/[id]/slugs/[slugId]`) tem uma barra de ícones à
-esquerda com cinco painéis, no modelo do hidepages:
+The slug editor (`/templates/[id]/edit?slug=/path`) has an icon bar on the
+left with five panels, modeled on hidepages:
 
-- **Pages** — as slugs da página (cada uma é uma URL com o próprio HTML).
-- **Funil** — as sub-páginas desta slug (ver abaixo): mesma URL, a troca
-  acontece no navegador ou no servidor (seletor no painel).
-- **Widgets** — Text, Image, Video, Button, Container, HTML. Clique insere
-  depois do elemento selecionado (ou no fim da sub-página atual).
-- **Layers** — a árvore da sub-página atual; clique seleciona na canvas.
-- **Links** — todos os links da página (`<a href>`, `<area>`, `<form action>`
-  e os atrelados), agrupados por destino, com a sub-página de cada um. Clique
-  seleciona na canvas; **Trocar** muda todas as ocorrências de um destino;
-  **Apontar todos** manda todos os links da página para um destino só.
+- **Pages** — the page's slugs (each one is a URL with its own HTML).
+- **Funnel** — this slug's sub-pages (see below): same URL, the switch
+  happens in the browser or on the server (selector in the panel).
+- **Widgets** — Text, Image, Video, Button, Container, HTML. A click inserts
+  after the selected element (or at the end of the current sub-page).
+- **Layers** — the current sub-page's tree; a click selects on the canvas.
+- **Links** — every link on the page (`<a href>`, `<area>`, `<form action>`
+  and the bound ones), grouped by destination, with each one's sub-page. A
+  click selects on the canvas; **Change** replaces every occurrence of a
+  destination; **Point all links to** sends every link on the page to a
+  single destination.
 
-Na canvas, cada link ganha um **marcador** (chip `a` / `form` / `atrelado`);
-clicar nele seleciona o elemento. O botão "N links" na barra inferior liga e
-desliga os marcadores.
+On the canvas, each link gets a **marker** (chip `a` / `form` / `bound`);
+clicking it selects the element. The "N links" button in the bottom bar turns
+the markers on and off.
 
-**Atrelar link a qualquer elemento.** No inspetor (Settings), o campo *Link*
-edita o `href` de um `<a>` (ou do `<a>` que envolve o elemento). Para um
-elemento que não é link (botão, imagem, bloco), o mesmo campo grava
-`data-href` (+ `data-target="_blank"` se "Abrir em nova aba"). O seletor
-*Destino* oferece as sub-páginas do funil (`#next-step`, `#page:<id>`), as
-outras slugs da página e URL livre.
+**Bind a link to any element.** In the inspector (Settings), the *Link* field
+edits the `href` of an `<a>` (or of the `<a>` wrapping the element). For an
+element that is not a link (button, image, block), the same field writes
+`data-href` (+ `data-target="_blank"` with "Open in new tab"). The
+*Destination* selector offers the funnel sub-pages (`#next-step`, `#page:<id>`),
+the page's other slugs and a free-form URL.
 
-**Funil (sub-páginas na mesma URL).** Uma slug pode conter várias
-sub-páginas — presell → principal → back redirect — sem mudar a URL. Elas
-ficam no HTML da própria slug, como seções irmãs no body:
+**Funnel (sub-pages on the same URL).** A slug can hold several sub-pages —
+presell → main → back redirect — without changing the URL. They live in the
+slug's own HTML, as sibling sections in the body:
 
 ```html
 <section data-dop-page="p_ab12" data-dop-name="Presell" data-dop-kind="presell" data-dop-start>…</section>
 <section data-dop-page="p_cd34" data-dop-name="VSL" data-dop-kind="main" hidden>…</section>
-<section data-dop-page="p_ef56" data-dop-name="Volta" data-dop-kind="backredirect" data-dop-trigger="back exit" hidden>…</section>
+<section data-dop-page="p_ef56" data-dop-name="Stay" data-dop-kind="backredirect" data-dop-trigger="back exit" hidden>…</section>
 <script data-dop-runtime>…</script>
 ```
 
-A **inicial** (`data-dop-start`) é a única sem `hidden` — sem JS, é a que
-aparece. A ordem no body é a ordem do funil: `#next-step` avança para a
-próxima que não é back redirect. A **back redirect** aparece quando o
-visitante aperta voltar (`back`) e/ou leva o mouse para fora da aba (`exit`).
-Presells entram antes da inicial; back redirects, no fim. Quando a slug fica
-com uma sub-página só, o editor desembrulha e ela volta a ser página única.
-O `<head>` (CSS) é compartilhado — páginas clonadas de sites diferentes podem
-conflitar; prefira classes com prefixo.
+The **initial** one (`data-dop-start`) is the only one without `hidden` —
+without JS, it is the one that shows. The order in the body is the funnel
+order: `#next-step` moves to the next one that is not a back redirect. The
+**back redirect** shows up when the visitor presses back (`back`) and/or
+moves the mouse out of the tab (`exit`). Presells go before the initial one;
+back redirects, at the end. When the slug is left with a single sub-page, the
+editor unwraps it and it becomes a single page again. The `<head>` (CSS) is
+shared — pages cloned from different sites may conflict; prefer prefixed
+classes.
 
-**Runtime.** O `<script data-dop-runtime>` no fim do body só existe enquanto
-houver algum `data-href` ou mais de uma sub-página, e some sozinho quando
-não precisa mais. Ele delega o clique: `data-href` navega (ctrl/cmd/shift ou
-`data-target="_blank"` abrem em nova aba); `#next-step` / `#page:<id>`
-trocam a sub-página sem mudar a URL. Na canvas ele não roda (iframe sem
-scripts); no Preview e no servidor, roda.
+**Runtime.** The `<script data-dop-runtime>` at the end of the body only
+exists while there is some `data-href` or more than one sub-page, and goes
+away on its own when no longer needed. It delegates clicks: `data-href`
+navigates (ctrl/cmd/shift or `data-target="_blank"` open a new tab);
+`#next-step` / `#page:<id>` switch the sub-page without changing the URL. It
+does not run on the canvas (iframe without scripts); it runs in the Preview
+and on the server.
 
-**Dois modos de troca** (seletor "Troca de etapa" no painel Funil, gravado
-em `<body data-dop-funnel>`):
+**Two switching modes** (the "Step switching" selector in the Funnel panel,
+stored in `<body data-dop-funnel>`):
 
-| | No navegador (padrão) | No servidor |
+| | In the browser (default) | On the server |
 |---|---|---|
-| O que o visitante recebe | o HTML inteiro, com todas as etapas (`hidden`) | só a etapa atual |
-| Como troca | JS mostra/esconde + `history.pushState` | grava o cookie `dop_step=<id>` (Path = a slug) e recarrega a mesma URL |
-| Botão voltar | percorre as etapas; na inicial cai na back redirect | cai na back redirect; dali volta à etapa anterior; depois sai |
-| Fonte da presell mostra a principal? | sim | não |
-| Quem precisa mudar | ninguém (PHP serve como está) | o PHP corta as seções na resposta (`server/src/funnel.php`) |
+| What the visitor gets | the whole HTML, with every step (`hidden`) | only the current step |
+| How it switches | JS shows/hides + `history.pushState` | sets the `dop_step=<id>` cookie (Path = the slug) and reloads the same URL |
+| Back button | walks through the steps; on the initial one it lands on the back redirect | lands on the back redirect; from there it goes back to the previous step; then leaves |
+| Does the presell's source show the main one? | yes | no |
+| What has to change | nothing (PHP serves it as is) | PHP cuts the sections in the response (`server/src/funnel.php`) |
 
-No modo servidor a URL também não muda, e o servidor responde com `ETag`
-por etapa e `Vary: Cookie`; o HTML vem sempre da origem (não ligue cache de
-HTML no Cloudflare para essas slugs). Preview e canvas mostram tudo nos dois
-modos — o corte só acontece no servidor de entrega.
+In server mode the URL does not change either, and the server answers with a
+per-step `ETag` and `Vary: Cookie`; the HTML always comes from the origin
+(do not turn on HTML caching in Cloudflare for these slugs). Preview and
+canvas show everything in both modes — the cut only happens on the delivery
+server.
 
-Os painéis Links, Layers e Funil são derivados do HTML atual (`parseHtml`,
-com os mesmos uids que a canvas atribui), então funcionam também no modo
-Código: a troca é aplicada no HTML e o editor recarrega a canvas.
+The Links, Layers and Funnel panels are derived from the current HTML
+(`parseHtml`, with the same uids the canvas assigns), so they also work in
+Code mode: the change is applied to the HTML and the editor reloads the
+canvas.
 
-## Rodar o dashboard
+## Run the dashboard
 
 ```bash
-cp .env.example .env.local        # preencha (ver abaixo)
+cp .env.example .env.local        # fill it in (see below)
 npm install
 npm run dev                       # http://localhost:3000
 ```
 
-Variáveis (`.env.local`):
+Variables (`.env.local`):
 
-| Variável | O que é |
+| Variable | What it is |
 |---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` | URL do projeto Supabase |
-| `SUPABASE_SERVICE_KEY` | chave de serviço (só servidor; atravessa a RLS) |
-| `SERVER_ID` | marcador do `/_health`; igual ao `SERVER_ID` do `server/.env` |
-| `ORIGIN_URL` | opcional; URL direta do servidor |
-| `ANTHROPIC_API_KEY` | opcional; alternativa ao Kimi para a reescrita da copy (Claude), usada quando não há chave do Kimi em Configurações |
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
+| `SUPABASE_SERVICE_KEY` | service key (server only; bypasses RLS) |
+| `SERVER_ID` | `/_health` marker; same as `SERVER_ID` in `server/.env` |
+| `ORIGIN_URL` | optional; direct URL of the server |
+| `ANTHROPIC_API_KEY` | optional; alternative to Kimi for the copy rewrite (Claude), used when there is no Kimi key in Settings |
 
-A chave do Kimi (reescrita da copy nas variações de template) **não** vai no `.env`: fica no sistema, em Configurações → IA para variações de template, guardada criptografada no Supabase Vault.
+The Kimi key (copy rewrite in template variations) does **not** go in `.env`:
+it lives in the system, under Settings → AI for template variations, stored
+encrypted in the Supabase Vault.
 
-**O painel não tem login.** Qualquer pessoa com a URL edita páginas e
-domínios. Proteja o deploy na rede: Cloudflare Access na frente do host, ou
-allowlist de IP no proxy reverso.
+**The dashboard has no login.** Anyone with the URL can edit pages and
+domains. Protect the deployment at the network level: Cloudflare Access in
+front of the host, or an IP allowlist on the reverse proxy.
 
-## Banco
+## Database
 
-Aplique as migrações de `supabase/migrations/` em ordem de nome sobre o
-schema `pages` já existente no projeto (SQL Editor); todas são idempotentes.
-A mais recente, `20260921_folders.sql`, é obrigatória para a tela de páginas
-(sem ela, `/paginas` falha ao carregar as pastas). Depois registre a chave do servidor de
-entrega em `pages.server_keys` (ver `server/README.md`).
+Apply the migrations in `supabase/migrations/` in name order on top of the
+`pages` schema that already exists in the project (SQL Editor); all of them are
+idempotent. `20260921_folders.sql` is required for the templates screen
+(without it, `/templates` fails to load the folders). Then register the
+delivery server key in `pages.server_keys` (see `server/README.md`).
 
-Nunca rode `supabase db push` / `db reset` contra o projeto: o banco é
-compartilhado com outros sistemas; este produto só toca o schema `pages`.
+Never run `supabase db push` / `db reset` against the project: the database is
+shared with other systems; this product only touches the `pages` schema.
 
-## Verificar
+## Verify
 
 ```bash
 npm run lint && npm run typecheck && npm run build && npm run check:secrets
 php server/tests/run.php
 ```
 
-`check:secrets` procura os valores das variáveis sensíveis dentro de
-`.next/static/` depois do build e falha se achar.
+`check:secrets` looks for the values of the sensitive variables inside
+`.next/static/` after the build and fails if it finds any.
 
-## Como o servidor decide o que servir
+## How the server decides what to serve
 
-1. Normaliza host (`WWW.Exemplo.COM:80` → `exemplo.com`) e path (`//Promo/` → `/promo`).
-2. Busca no cache `routes/<host>/<path>`; se fresco (< 5 min) e com o HTML em disco, serve.
-3. Senão chama `pages.resolve(host, path, chave)`: rotas candidatas em ordem de prioridade + o HTML de cada slug, numa chamada.
-4. Percorre as rotas; a primeira cujas condições casam decide: servir a slug, redirecionar ou bloquear. Nenhuma → página padrão do domínio → 404.
-5. Supabase fora: serve a cópia expirada (`X-Cache: STALE`) por até 7 dias; sem cópia, 503.
+1. Normalizes host (`WWW.Example.COM:80` → `example.com`) and path (`//Promo/` → `/promo`).
+2. Looks up the `routes/<host>/<path>` cache; if fresh (< 5 min) and with the HTML on disk, serves it.
+3. Otherwise calls `pages.resolve(host, path, key)`: candidate routes in priority order + each slug's HTML, in one call.
+4. Walks the routes; the first one whose conditions match decides: serve the slug, redirect or block. None → the domain's default page → 404.
+5. Supabase down: serves the expired copy (`X-Cache: STALE`) for up to 7 days; no copy, 503.
 
-Detecção de bot existe só para **bloquear** (scrapers/crawlers), nunca para
-servir conteúdo diferente.
+Bot detection exists only to **block** (scrapers/crawlers), never to serve
+different content.

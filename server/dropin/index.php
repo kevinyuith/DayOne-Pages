@@ -1,10 +1,10 @@
 <?php
 /**
- * DayOne Pages — ponto de entrada (versão "soltar na pasta do site").
+ * DayOne Pages — entry point ("drop into the site folder" version).
  *
- * O nginx tem de mandar TODO caminho para este arquivo. Ele descobre o domínio
- * e o path pedidos, consulta o Supabase (com cache de 1 minuto em _cache/) e
- * devolve a página. Configure em config.php; não edite _dayone/.
+ * nginx must send EVERY path to this file. It works out the requested domain
+ * and path, asks Supabase (with a 1-minute cache in _cache/) and returns the
+ * page. Configure it in config.php; don't edit _dayone/.
  */
 declare(strict_types=1);
 

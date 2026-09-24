@@ -2,24 +2,24 @@ import { APP_TZ, localDateKey } from "@/lib/time-zone";
 import { companyName } from "./company-name";
 
 /**
- * Marcadores {{chave}} nas páginas, trocados pelos dados do domínio e da visita.
+ * {{key}} placeholders in pages, replaced with the domain's and the visit's data.
  *
- * Quem troca de verdade é o servidor de entrega, na hora de servir
- * (server/src/placeholders.php). Este módulo é a lista de campos que o painel
- * oferece e a mesma troca para o preview do editor. As regras e as tabelas
- * (idiomas, meses) são as mesmas nos dois lados — mudou uma, mude a outra:
+ * The real replacement is done by the delivery server, when serving
+ * (server/src/placeholders.php). This module is the list of fields the dashboard
+ * offers and the same replacement for the editor preview. The rules and tables
+ * (languages, months) are the same on both sides — change one, change the other:
  *
- * - só `{{chave}}` com chave conhecida (espaços dentro valem: `{{ company.phone }}`);
- *   `{{ qualquer.outra }}` fica como está — página com Vue ou Alpine não é afetada;
- * - campo vazio vira texto vazio;
- * - o valor entra escapado para HTML.
+ * - only `{{key}}` with a known key (spaces inside are fine: `{{ company.phone }}`);
+ *   `{{ any.other }}` stays as is — a page using Vue or Alpine isn't affected;
+ * - an empty field becomes empty text;
+ * - the value goes in HTML-escaped.
  *
- * `company.*` fica em pages.domains.placeholders (jsonb, chaves com ponto);
- * `company.name` não é guardado: é a razão social (`company.llc`) sem o
- * sufixo jurídico (company-name.ts). Os automáticos saem da visita: `url` e
- * `slug` do path servido, `lang`, `language` e o idioma de `date` do
- * Accept-Language do visitante (sem ele, inglês), `date` e `year` do dia em
- * Nova York.
+ * `company.*` lives in pages.domains.placeholders (jsonb, dotted keys);
+ * `company.name` isn't stored: it's the legal name (`company.llc`) without the
+ * legal suffix (company-name.ts). The automatic ones come from the visit: `url` and
+ * `slug` from the served path, `lang`, `language` and the language of `date` from
+ * the visitor's Accept-Language (without it, English), `date` and `year` from the
+ * day in New York.
  */
 
 export const PLACEHOLDER_FIELDS = [
@@ -32,7 +32,7 @@ export const PLACEHOLDER_FIELDS = [
 
 export type PlaceholderKey = (typeof PLACEHOLDER_FIELDS)[number]["key"];
 
-/** Preenchidos sozinhos: o nome da empresa (da razão social) e os da visita. */
+/** Filled in automatically: the company name (from the legal name) and the visit's. */
 export const AUTO_PLACEHOLDERS = [
   { key: "company.name", label: "Company name", note: "the legal name without LLC, LTDA, Inc…" },
   { key: "url", label: "Page URL", note: "https://domain.com/path, no query parameters" },
@@ -44,7 +44,7 @@ export const AUTO_PLACEHOLDERS = [
   { key: "language", label: "Language name", note: "English, Português, Español…" },
 ] as const;
 
-/** Nome de cada idioma nele mesmo. Sem entrada: o próprio código. */
+/** Each language's name in that language. No entry: the code itself. */
 export const LANGUAGE_NAMES: Record<string, string> = {
   en: "English", pt: "Português", es: "Español", fr: "Français", de: "Deutsch", it: "Italiano", nl: "Nederlands",
   pl: "Polski", ru: "Русский", uk: "Українська", tr: "Türkçe", sv: "Svenska", da: "Dansk", no: "Norsk", nb: "Norsk",
@@ -52,7 +52,7 @@ export const LANGUAGE_NAMES: Record<string, string> = {
   ja: "日本語", zh: "中文", ko: "한국어", id: "Bahasa Indonesia", ms: "Bahasa Melayu", vi: "Tiếng Việt", th: "ไทย", tl: "Filipino",
 };
 
-/** Meses e formato da data por extenso. Idioma sem entrada usa o inglês. */
+/** Months and format of the written-out date. A language without an entry uses English. */
 const DATE_FORMATS: Record<string, { months: string[]; format: (d: number, month: string, y: number) => string }> = {
   en: {
     months: ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"],
@@ -86,16 +86,16 @@ const DATE_FORMATS: Record<string, { months: string[]; format: (d: number, month
 
 export const placeholderToken = (key: string) => `{{${key}}}`;
 
-// ── Autocompletar no editor: escrever "{{" abre a lista dos marcadores ──────
+// ── Editor autocomplete: typing "{{" opens the placeholder list ─────────────
 export type PlaceholderOption = { key: string; label: string; hint: string };
 
-/** Todos os marcadores, na ordem do menu: campos da empresa, depois os automáticos. */
+/** Every placeholder, in menu order: company fields, then the automatic ones. */
 export const PLACEHOLDER_OPTIONS: PlaceholderOption[] = [
   ...PLACEHOLDER_FIELDS.map((f) => ({ key: f.key, label: f.label, hint: f.example })),
   ...AUTO_PLACEHOLDERS.map((f) => ({ key: f.key, label: f.label, hint: f.note })),
 ];
 
-/** Se o texto antes do cursor termina num "{{" aberto, onde ele começa e o que já foi digitado da chave. */
+/** If the text before the cursor ends in an open "{{", where it starts and how much of the key was typed. */
 export function openPlaceholderAt(before: string): { from: number; query: string } | null {
   const m = /\{\{\s*([a-z0-9_.]*)$/i.exec(before);
   return m ? { from: m.index, query: m[1].toLowerCase() } : null;
@@ -103,7 +103,7 @@ export function openPlaceholderAt(before: string): { from: number; query: string
 
 const fold = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
-/** As opções para o que foi digitado: chave (ou a parte depois do ponto) começando com ele; depois chave ou nome contendo. */
+/** The options for what was typed: key (or the part after the dot) starting with it; then key or name containing it. */
 export function suggestPlaceholders(query: string): PlaceholderOption[] {
   const q = fold(query);
   if (!q) return PLACEHOLDER_OPTIONS;
@@ -113,8 +113,8 @@ export function suggestPlaceholders(query: string): PlaceholderOption[] {
 }
 
 /**
- * Troca o "{{…" aberto (de `from` até o cursor) pelo marcador completo. Um "}"
- * ou "}}" logo depois do cursor (fechamento automático) é absorvido.
+ * Replaces the open "{{…" (from `from` to the cursor) with the full placeholder. A "}"
+ * or "}}" right after the cursor (auto-closing) is absorbed.
  */
 export function insertPlaceholder(text: string, from: number, caret: number, key: string): { text: string; caret: number } {
   const token = placeholderToken(key);
@@ -125,12 +125,12 @@ export function insertPlaceholder(text: string, from: number, caret: number, key
 
 const TOKEN_RE = /\{\{\s*([a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)*)\s*\}\}/g;
 
-/** Um objeto com todos os campos da empresa, vazios: o que um domínio novo grava. */
+/** An object with every company field, empty: what a new domain saves. */
 export function emptyPlaceholders(): Record<PlaceholderKey, string> {
   return Object.fromEntries(PLACEHOLDER_FIELDS.map((f) => [f.key, ""])) as Record<PlaceholderKey, string>;
 }
 
-/** "September 23, 2026" / "23 de setembro de 2026"… a partir de "YYYY-MM-DD". */
+/** "September 23, 2026" / "23 de setembro de 2026"… from "YYYY-MM-DD". */
 export function longDate(isoDate: string, lang: string): string {
   const [y, m, d] = isoDate.split("-").map(Number);
   const f = DATE_FORMATS[lang] ?? DATE_FORMATS.en;
@@ -138,8 +138,8 @@ export function longDate(isoDate: string, lang: string): string {
 }
 
 /**
- * Os valores de uma visita: os salvos no domínio (só texto) + os automáticos.
- * `path` é o path servido; `lang` o idioma do visitante (o preview usa "en").
+ * A visit's values: the ones saved on the domain (text only) + the automatic ones.
+ * `path` is the served path; `lang` the visitor's language (the preview uses "en").
  */
 export function placeholderValues(opts: { domain: string; stored: unknown; path: string; lang?: string; now?: Date }): Record<string, string> {
   const values: Record<string, string> = {};
@@ -166,14 +166,14 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
 }
 
-/** Troca os marcadores conhecidos pelos valores (escapados para HTML). */
+/** Replaces the known placeholders with their values (HTML-escaped). */
 export function applyPlaceholders(html: string, values: Record<string, string>): string {
   return html.replace(TOKEN_RE, (token, key: string) =>
     Object.prototype.hasOwnProperty.call(values, key) ? escapeHtml(values[key]) : token,
   );
 }
 
-/** Chaves de marcadores usadas no HTML (conhecidas ou não), na ordem em que aparecem. */
+/** Placeholder keys used in the HTML (known or not), in order of appearance. */
 export function placeholdersIn(html: string): string[] {
   return [...new Set(Array.from(html.matchAll(TOKEN_RE), (m) => m[1]))];
 }

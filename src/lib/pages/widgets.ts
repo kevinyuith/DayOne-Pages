@@ -1,7 +1,7 @@
 /**
- * Widgets básicos do painel (Texto, Imagem, Vídeo, Botão, Container, HTML):
- * o HTML que cada um insere na página. Estilos inline para o bloco ficar
- * apresentável em qualquer página, sem depender do CSS dela.
+ * The dashboard's basic widgets (Text, Image, Video, Button, Container, HTML):
+ * the HTML each one inserts into the page. Inline styles so the block looks
+ * presentable on any page, without depending on its CSS.
  */
 
 export const WIDGET_KEYS = ["text", "image", "video", "button", "container", "html"] as const;
@@ -11,7 +11,7 @@ export type WidgetDef = {
   key: WidgetKey;
   label: string;
   hint: string;
-  /** O widget pede um valor (URL, HTML) antes de inserir. */
+  /** The widget asks for a value (URL, HTML) before inserting. */
   prompt?: { label: string; placeholder: string };
 };
 
@@ -34,7 +34,7 @@ function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-/** URL de vídeo → URL de embed (YouTube/Vimeo); outras voltam como estão. */
+/** Video URL → embed URL (YouTube/Vimeo); others come back as they are. */
 export function toEmbedUrl(url: string): string {
   const u = url.trim();
   const yt = u.match(/(?:youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|embed\/)|youtu\.be\/)([\w-]{6,})/);
@@ -44,7 +44,7 @@ export function toEmbedUrl(url: string): string {
   return u;
 }
 
-/** O HTML a inserir. `value` é o que o prompt do widget devolveu (se houver). */
+/** The HTML to insert. `value` is what the widget's prompt returned (if any). */
 export function widgetHtml(key: WidgetKey, value = ""): string {
   switch (key) {
     case "text":

@@ -1,11 +1,11 @@
 /**
- * Leitura das etapas e amostras de um HTML SEM DOM — para o servidor do
- * painel (tela Funil, resultados do teste A/B). É a mesma leitura de
- * `funnel_sections` em server/src/funnel.php: comentários, <script>, <style>
- * e <template> são apagados de uma cópia (mesmo tamanho) antes de contar
- * <section>/</section>; uma etapa é a primeira <section data-dop-page> aberta
- * fora de outra, em qualquer profundidade. No editor, com DOM, vale
- * `listPages` (subpages.ts); as regras são as mesmas.
+ * Reads the steps and variants of an HTML document WITHOUT a DOM — for the
+ * dashboard server (Funnel screen, A/B test results). It's the same reading as
+ * `funnel_sections` in server/src/funnel.php: comments, <script>, <style>
+ * and <template> are blanked out of a copy (same length) before counting
+ * <section>/</section>; a step is the first <section data-dop-page> opened
+ * outside another one, at any depth. In the editor, with a DOM, `listPages`
+ * (subpages.ts) applies; the rules are the same.
  */
 
 import { DEFAULT_WEIGHT, SUB_KIND_LABELS, versionLetter, type SubPageKind } from "./subpages";
@@ -13,11 +13,11 @@ import { DEFAULT_WEIGHT, SUB_KIND_LABELS, versionLetter, type SubPageKind } from
 export type ScannedVersion = {
   id: string;
   kind: SubPageKind;
-  /** "Lander", ou "Lander B" quando a etapa tem mais de uma amostra. */
+  /** "Lander", or "Lander B" when the step has more than one variant. */
   name: string;
   letter: string;
   weight: number;
-  /** Tem código (sem ele a amostra é inativa e nunca aparece). */
+  /** Has code (without it the variant is inactive and never shows). */
   active: boolean;
 };
 
@@ -31,7 +31,7 @@ function hasCode(inner: string): boolean {
 
 const attr = (attrs: string, name: string): string | null => new RegExp(`\\b${name}\\s*=\\s*"([^"]*)"`, "i").exec(attrs)?.[1] ?? null;
 
-/** As amostras do HTML, na ordem do documento (vazio: slug sem etapas). */
+/** The HTML's variants, in document order (empty: a slug with no steps). */
 export function scanFunnel(html: string): ScannedVersion[] {
   const scan = blankOpaque(html);
   const found: { id: string; kind: SubPageKind; weight: number; active: boolean }[] = [];

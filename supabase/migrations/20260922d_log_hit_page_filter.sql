@@ -1,12 +1,12 @@
 -- ============================================================================
--- DayOne Pages — pages.log_hit só grava páginas
+-- DayOne Pages — pages.log_hit only stores pages
 --
--- Mesmo filtro de is_logged_path() no PHP (server/src/hits.php): .html, .php ou
--- último segmento sem ponto ("/", "/oferta"). Arquivos e sondas de scanner
--- (.xml, .js, .env, .json…) são descartados em silêncio. Aqui no banco vale na
--- hora e para qualquer versão do PHP; no PHP evita o reverse DNS à toa.
+-- Same filter as is_logged_path() in the PHP (server/src/hits.php): .html, .php or
+-- a last segment with no dot ("/", "/offer"). Files and scanner probes
+-- (.xml, .js, .env, .json…) are silently discarded. Here in the database it applies
+-- immediately and for any PHP version; in the PHP it avoids a pointless reverse DNS.
 --
--- Mesma assinatura: CREATE OR REPLACE mantém os grants.
+-- Same signature: CREATE OR REPLACE keeps the grants.
 -- ============================================================================
 
 CREATE OR REPLACE FUNCTION pages.log_hit(

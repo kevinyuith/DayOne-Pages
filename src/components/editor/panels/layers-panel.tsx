@@ -5,8 +5,8 @@ import { ChevronRightIcon, EyeOffIcon, LinkIcon } from "@/components/icons";
 import type { LayerNode } from "@/lib/pages/html-editing";
 
 /**
- * Painel "Layers": a árvore de elementos do body. Clicar seleciona na canvas;
- * o selecionado fica destacado. Os dois primeiros níveis começam abertos.
+ * "Layers" panel: the body's element tree. Clicking selects on the canvas;
+ * the selected one is highlighted. The first two levels start expanded.
  */
 export function LayersPanel({ layers, selectedUid, onSelect }: { layers: LayerNode[]; selectedUid: string | null; onSelect: (uid: string) => void }) {
   return (

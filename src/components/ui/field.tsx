@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-/** Classes dos controles, num lugar só. `*_BASE` sem largura, para quem precisa fixar a própria. */
+/** Control classes, in one place. `*_BASE` has no width, for callers that need to set their own. */
 export const INPUT_BASE =
   "h-10 rounded-lg border border-border bg-background px-3 text-sm outline-none focus:border-accent disabled:opacity-60";
 export const INPUT_CLASS = `${INPUT_BASE} w-full`;

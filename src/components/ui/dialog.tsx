@@ -4,8 +4,8 @@ import { useEffect, useRef, type ReactNode } from "react";
 import { CloseIcon } from "@/components/icons";
 
 /**
- * Diálogo modal mínimo: overlay, Escape fecha, clique fora fecha, foco no
- * primeiro campo. Sem biblioteca — o painel não precisa de mais que isso.
+ * Minimal modal dialog: overlay, Escape closes, clicking outside closes, focus on
+ * the first field. No library — the panel needs nothing more than this.
  */
 export function Dialog({
   open,
@@ -30,7 +30,7 @@ export function Dialog({
       if (e.key === "Escape") onClose();
     };
     document.addEventListener("keydown", onKey);
-    // Foca o primeiro controle editável, senão o painel.
+    // Focus the first editable control, otherwise the panel.
     const first = panel.current?.querySelector<HTMLElement>("input, select, textarea, button:not([data-close])");
     (first ?? panel.current)?.focus();
     return () => document.removeEventListener("keydown", onKey);

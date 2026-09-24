@@ -1,36 +1,80 @@
 <?php
 /**
- * A única chamada ao Supabase: POST /rest/v1/rpc/resolve.
+ * The Supabase calls: POST /rest/v1/rpc/resolve (the routes for a host +
+ * path, with only each content's hash) and /rpc/content_get (the HTML of the
+ * pages whose hash the disk doesn't have yet), plus the logging ones (log_*).
  *
- * Vai com a chave publicável (anon) e com a chave DESTE servidor
- * (PAGES_SERVER_KEY), cujo hash vive em pages.server_keys. A função no banco
- * é SECURITY DEFINER e devolve rotas + HTML numa ida só. A chave de serviço
- * nunca chega a esta máquina.
+ * They go with the publishable (anon) key and with THIS server's key
+ * (PAGES_SERVER_KEY), whose hash lives in pages.server_keys. The functions in
+ * the database are SECURITY DEFINER. The service key never reaches this machine.
  *
- * `Content-Profile: pages` porque a função não mora no schema `public`.
- * Chave inválida → 403 do PostgREST → tratamos como erro (nunca como 404
- * negativo, senão uma chave rotacionada apagaria todos os sites até o cache negativo vencer).
+ * `Content-Profile: pages` because the function doesn't live in the `public` schema.
+ * Invalid key → 403 from PostgREST → we treat it as an error (never as a negative
+ * 404, otherwise a rotated key would take down every site until the negative cache expired).
  */
 declare(strict_types=1);
 
 defined('DAYONE_ENTRY') || (http_response_code(404) && exit);
 
 /**
+ * The routes for (host, path), without the HTML: `content_hash` is the sha256
+ * of each slug's HTML, fetched separately by supabase_content_get.
+ *
  * @return array{ok: bool, routes?: array, error?: string, status?: int}
  */
 function supabase_resolve(string $host, string $path): array
 {
+    $r = supabase_rpc('resolve', ['p_host' => $host, 'p_path' => $path, 'p_with_content' => false]);
+    return $r['ok'] ? ['ok' => true, 'routes' => $r['rows']] : $r;
+}
+
+/** Requests per content_get call (the database refuses more than 50). */
+const CONTENT_GET_BATCH = 50;
+
+/**
+ * The HTML of each requested (page, slug), in batches, with the hash the
+ * database has now (it may be newer than the resolve's, if the page changed in
+ * between). A request the database doesn't have simply doesn't come back.
+ *
+ * @param list<array{page_id: string, slug: string}> $refs
+ * @return array{ok: bool, contents?: list<array{page_id: string, slug: string, content_hash: string, content: string}>, error?: string, status?: int}
+ */
+function supabase_content_get(array $refs): array
+{
+    $contents = [];
+    foreach (array_chunk(array_values($refs), CONTENT_GET_BATCH) as $batch) {
+        $r = supabase_rpc('content_get', ['p_refs' => $batch]);
+        if (!$r['ok']) {
+            return $r;
+        }
+        foreach ($r['rows'] as $row) {
+            if (is_array($row) && is_string($row['page_id'] ?? null) && is_string($row['slug'] ?? null)
+                && is_string($row['content_hash'] ?? null) && is_string($row['content'] ?? null)) {
+                $contents[] = $row;
+            }
+        }
+    }
+    return ['ok' => true, 'contents' => $contents];
+}
+
+/**
+ * POST to a read RPC (pages.<fn>) with p_key; returns the rows.
+ *
+ * @return array{ok: bool, rows?: array, error?: string, status?: int}
+ */
+function supabase_rpc(string $fn, array $params): array
+{
     $cfg = config();
     if ($cfg['supabase_url'] === '' || $cfg['supabase_anon_key'] === '' || $cfg['server_key'] === '') {
-        return ['ok' => false, 'error' => 'SUPABASE_URL, SUPABASE_ANON_KEY ou PAGES_SERVER_KEY ausente'];
+        return ['ok' => false, 'error' => 'SUPABASE_URL, SUPABASE_ANON_KEY or PAGES_SERVER_KEY missing'];
     }
 
-    $body = json_encode(['p_host' => $host, 'p_path' => $path, 'p_key' => $cfg['server_key']]);
+    $body = json_encode($params + ['p_key' => $cfg['server_key']]);
     if ($body === false) {
         return ['ok' => false, 'error' => 'json_encode'];
     }
 
-    $ch = curl_init($cfg['supabase_url'] . '/rest/v1/rpc/resolve');
+    $ch = curl_init($cfg['supabase_url'] . '/rest/v1/rpc/' . $fn);
     curl_setopt_array($ch, [
         CURLOPT_POST => true,
         CURLOPT_POSTFIELDS => $body,
@@ -49,37 +93,37 @@ function supabase_resolve(string $host, string $path): array
     $raw = curl_exec($ch);
     $status = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
     $err = curl_error($ch);
-    // Sem curl_close(): é no-op desde o PHP 8.0 e deprecado no 8.5.
+    // No curl_close(): it's a no-op since PHP 8.0 and deprecated in 8.5.
 
     if ($raw === false) {
         return ['ok' => false, 'error' => 'curl: ' . $err];
     }
     if ($status !== 200) {
-        // Nunca loga o corpo com a chave; o status basta para diagnosticar.
+        // Never logs the body with the key; the status is enough to diagnose.
         return ['ok' => false, 'error' => "HTTP $status", 'status' => $status];
     }
 
     $rows = json_decode((string) $raw, true);
     if (!is_array($rows)) {
-        return ['ok' => false, 'error' => 'resposta não é JSON'];
+        return ['ok' => false, 'error' => 'response is not JSON'];
     }
 
-    return ['ok' => true, 'routes' => array_values($rows)];
+    return ['ok' => true, 'rows' => array_values($rows)];
 }
 
 /**
- * Grava um hit: POST /rest/v1/rpc/log_hit. Mesma porta do resolve (anon +
- * server key). Fire-and-forget — nunca derruba a resposta ao visitante; falha
- * vai só para o log. Deve ser chamada DEPOIS de fastcgi_finish_request.
+ * Stores a hit: POST /rest/v1/rpc/log_hit. Same door as resolve (anon +
+ * server key). Fire-and-forget — never takes down the response to the visitor;
+ * a failure only goes to the log. Must be called AFTER fastcgi_finish_request.
  *
- * @param array<string,mixed> $params já com as chaves p_* (menos p_key)
+ * @param array<string,mixed> $params already with the p_* keys (except p_key)
  */
 function supabase_log_hit(array $params): void
 {
     supabase_fire('log_hit', $params);
 }
 
-/** Grava o aviso de carregamento de uma visita (beacon.php). Mesmas regras de supabase_log_hit. */
+/** Stores a visit's load notice (beacon.php). Same rules as supabase_log_hit. */
 function supabase_log_load(string $visitId, ?int $loadMs): void
 {
     supabase_fire('log_load', ['p_visit_id' => $visitId, 'p_load_ms' => $loadMs]);
@@ -90,16 +134,7 @@ function supabase_log_click(string $visitId): void
     supabase_fire('log_click', ['p_visit_id' => $visitId]);
 }
 
-/** @param array{host: string, path: string, step: string, kind: string, event: string, visitor: string} $e */
-function supabase_log_funnel_event(array $e): void
-{
-    supabase_fire('log_funnel_event', [
-        'p_host' => $e['host'], 'p_path' => $e['path'], 'p_step' => $e['step'],
-        'p_kind' => $e['kind'], 'p_event' => $e['event'], 'p_visitor' => $e['visitor'],
-    ]);
-}
-
-/** POST numa RPC de registro (pages.<fn>) com p_key; resposta ignorada, falha só no log. */
+/** POST to a logging RPC (pages.<fn>) with p_key; response ignored, failure only in the log. */
 function supabase_fire(string $fn, array $params): void
 {
     $cfg = config();
@@ -130,6 +165,6 @@ function supabase_fire(string $fn, array $params): void
     $raw = curl_exec($ch);
     $status = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
     if ($raw === false || ($status !== 200 && $status !== 204)) {
-        error_log("[dayone-pages] $fn falhou (HTTP $status)");
+        error_log("[dayone-pages] $fn failed (HTTP $status)");
     }
 }

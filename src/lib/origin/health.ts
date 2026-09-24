@@ -1,13 +1,13 @@
 /**
- * Verificação de domínio: "este domínio chega no nosso servidor?"
+ * Domain check: "does this domain reach our server?"
  *
- * Atrás do Cloudflare, comparar o registro A não serve — resolve para IPs do
- * Cloudflare. O que serve é bater em `/_health` no próprio domínio e conferir
- * o marcador que o servidor devolve no header `X-DayOne-Pages`, que tem de
- * ser igual ao `SERVER_ID` daqui.
+ * Behind Cloudflare, comparing the A record doesn't work — it resolves to
+ * Cloudflare IPs. What works is hitting `/_health` on the domain itself and
+ * checking the marker the server returns in the `X-DayOne-Pages` header, which
+ * must equal the `SERVER_ID` here.
  *
- * Tenta https e depois http (antes de o Cloudflare emitir o certificado, só
- * o http responde). Timeout curto: a tela espera por isto.
+ * Tries https and then http (before Cloudflare issues the certificate, only
+ * http responds). Short timeout: the screen waits for this.
  */
 
 export type HealthResult =

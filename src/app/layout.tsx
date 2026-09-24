@@ -19,20 +19,20 @@ export const metadata: Metadata = {
   },
   description: "DayOne Pages management dashboard",
   robots: { index: false, follow: false },
-  // O Chrome também lê esta meta; o translate="no" abaixo cobre os outros navegadores.
+  // Chrome also reads this meta; the translate="no" below covers the other browsers.
   other: { google: "notranslate" },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    // translate="no": o painel tem textos em inglês de propósito; sem isto o navegador
-    // em português traduz a tela sozinho (e traduz até nomes de domínio e caminhos).
+    // translate="no": the dashboard text is in English on purpose; without this a browser
+    // set to Portuguese translates the screen by itself (even domain names and paths).
     <html
       lang="en"
       translate="no"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      {/* Extensões (ColorZilla etc.) injetam atributos no <body> antes da hidratação. Só vale para os atributos do body, não para os filhos. */}
+      {/* Extensions (ColorZilla etc.) inject attributes into <body> before hydration. Only applies to the body's attributes, not its children. */}
       <body className="min-h-full flex flex-col" suppressHydrationWarning>
         {children}
       </body>

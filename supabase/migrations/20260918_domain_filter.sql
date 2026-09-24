@@ -1,28 +1,28 @@
 -- ============================================================================
--- DayOne Pages — filtro por domínio
+-- DayOne Pages — per-domain filter
 --
--- Um domínio pode ter UM filtro: condições (país, dispositivo, parâmetros de
--- URL, referrer) e duas páginas — quem PASSA vê uma, quem NÃO passa vê a outra.
+-- A domain can have ONE filter: conditions (country, device, URL
+-- parameters, referrer) and two pages — whoever PASSES sees one, whoever does NOT pass sees the other.
 --
---   pages.domains.filter               jsonb com as condições (mesmo formato de
---                                       domain_routes.conditions, MENOS `bot`)
---   pages.domains.filter_pass_page_id  página servida quando as condições casam
---   pages.domains.filter_fail_page_id  página servida quando não casam
+--   pages.domains.filter               jsonb with the conditions (same format as
+--                                       domain_routes.conditions, EXCEPT `bot`)
+--   pages.domains.filter_pass_page_id  page served when the conditions match
+--   pages.domains.filter_fail_page_id  page served when they do not match
 --
--- Como se encaixa no que já existe: as regras manuais (domain_routes) continuam
--- tendo prioridade. O filtro entra logo antes do fallback. A ordem de avaliação
--- na camada de serving (primeira cujas condições passam vence) fica:
+-- How it fits with what already exists: the manual rules (domain_routes) still
+-- take priority. The filter comes right before the fallback. The evaluation order
+-- in the serving layer (the first one whose conditions pass wins) becomes:
 --
---   regras manuais  →  filtro: passou? página de aprovação  →  fallback:
---   página de reprovação (ou, sem filtro, a página padrão do domínio)
+--   manual rules  →  filter: passed? pass page  →  fallback:
+--   fail page (or, without a filter, the domain's default page)
 --
--- `bot` NÃO é aceito no filtro (CHECK abaixo): detecção de bot serve para
--- BLOQUEAR (domain_routes), nunca para trocar a página servida.
+-- `bot` is NOT accepted in the filter (CHECK below): bot detection is for
+-- BLOCKING (domain_routes), never for changing the page served.
 -- ============================================================================
 
 
 -- ┌──────────────────────────────────────────────────────────────────────────┐
--- │ Colunas                                                                   │
+-- │ Columns                                                                  │
 -- └──────────────────────────────────────────────────────────────────────────┘
 
 ALTER TABLE pages.domains
@@ -30,14 +30,14 @@ ALTER TABLE pages.domains
   ADD COLUMN IF NOT EXISTS filter_pass_page_id uuid REFERENCES pages.pages(id) ON DELETE SET NULL,
   ADD COLUMN IF NOT EXISTS filter_fail_page_id uuid REFERENCES pages.pages(id) ON DELETE SET NULL;
 
-COMMENT ON COLUMN pages.domains.filter              IS 'Condições do filtro do domínio (país, dispositivo, query, referrer). NULL = sem filtro. Não aceita a chave `bot`.';
-COMMENT ON COLUMN pages.domains.filter_pass_page_id IS 'Página servida quando o visitante passa no filtro.';
-COMMENT ON COLUMN pages.domains.filter_fail_page_id IS 'Página servida quando o visitante não passa no filtro.';
+COMMENT ON COLUMN pages.domains.filter              IS 'Domain filter conditions (country, device, query, referrer). NULL = no filter. Does not accept the `bot` key.';
+COMMENT ON COLUMN pages.domains.filter_pass_page_id IS 'Page served when the visitor passes the filter.';
+COMMENT ON COLUMN pages.domains.filter_fail_page_id IS 'Page served when the visitor does not pass the filter.';
 
 CREATE INDEX IF NOT EXISTS idx_pages_domains_filter_pass ON pages.domains (filter_pass_page_id) WHERE filter_pass_page_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_pages_domains_filter_fail ON pages.domains (filter_fail_page_id) WHERE filter_fail_page_id IS NOT NULL;
 
--- `bot` fora do filtro. A garantia que não depende da UI.
+-- `bot` kept out of the filter. The guarantee that does not depend on the UI.
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -51,12 +51,12 @@ END $$;
 
 
 -- ┌──────────────────────────────────────────────────────────────────────────┐
--- │ match_routes() — agora com o filtro do domínio                            │
+-- │ match_routes() — now with the domain filter                              │
 -- └──────────────────────────────────────────────────────────────────────────┘
 --
--- Só muda o CTE `dom` (traz as colunas do filtro) e o CTE `candidates` (duas
--- linhas novas). O resto é igual ao original. A camada de serving avalia as
--- `conditions` de cada linha e serve a primeira que passar.
+-- Only the `dom` CTE (brings the filter columns) and the `candidates` CTE (two
+-- new rows) change. The rest is the same as the original. The serving layer evaluates each
+-- row's `conditions` and serves the first one that passes.
 
 CREATE OR REPLACE FUNCTION pages.match_routes(p_host text, p_path text)
 RETURNS TABLE (
@@ -86,7 +86,7 @@ LANGUAGE sql STABLE SET search_path = '' AS $function$
     WHERE d.status = 'ACTIVE' AND d.domain = req.host
   ),
   candidates AS (
-    -- 1. Regras manuais do domínio (prioridade explícita).
+    -- 1. The domain's manual rules (explicit priority).
     SELECT r.id AS route_id, r.domain_id, r.priority, r.match_type, r.path_pattern, r.conditions, r.action,
            r.page_id,
            CASE WHEN r.action = 'SERVE' THEN coalesce(r.slug, req.path) END AS slug,
@@ -103,15 +103,15 @@ LANGUAGE sql STABLE SET search_path = '' AS $function$
           END
 
     UNION ALL
-    -- 2. Filtro do domínio: passou nas condições → página de aprovação.
-    --    Entra logo antes do fallback; só existe quando há filtro e página.
+    -- 2. Domain filter: passed the conditions → pass page.
+    --    Comes right before the fallback; only exists when there is a filter and a page.
     SELECT NULL, dom.id, 2147483646, 'FILTER', NULL, dom.filter, 'SERVE',
            dom.filter_pass_page_id, req.path, NULL, NULL, true
     FROM dom, req
     WHERE dom.filter IS NOT NULL AND dom.filter_pass_page_id IS NOT NULL
 
     UNION ALL
-    -- 3. Fallback: página de reprovação do filtro, senão a página padrão.
+    -- 3. Fallback: the filter's fail page, otherwise the default page.
     SELECT NULL, dom.id, 2147483647, 'FALLBACK', NULL, '{}'::jsonb, 'SERVE',
            coalesce(dom.filter_fail_page_id, dom.default_page_id), req.path, NULL, NULL, true
     FROM dom, req
@@ -128,7 +128,7 @@ LANGUAGE sql STABLE SET search_path = '' AS $function$
 $function$;
 
 COMMENT ON FUNCTION pages.match_routes(text, text) IS
-  'Regras do domínio + filtro + fallback, em ordem de prioridade. Só casa o PATH; '
-  'as `conditions` (regras e filtro) são avaliadas na camada de serving. '
-  'Ordem: regras manuais → filtro (passou → filter_pass_page) → fallback (filter_fail_page ou default_page). '
-  'Primeira cujas conditions passam vence; SERVE com slug_id NULL → 404.';
+  'Domain rules + filter + fallback, in priority order. Only matches the PATH; '
+  'the `conditions` (rules and filter) are evaluated in the serving layer. '
+  'Order: manual rules → filter (passed → filter_pass_page) → fallback (filter_fail_page or default_page). '
+  'The first one whose conditions pass wins; SERVE with slug_id NULL → 404.';

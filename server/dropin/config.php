@@ -1,42 +1,42 @@
 <?php
 /**
- * config.php — único arquivo que você precisa editar.
+ * config.php — the only file you need to edit.
  *
- * Fica no lugar do .env de propósito: num .php o nginx nunca entrega o texto,
- * e a linha abaixo faz um pedido direto a /config.php responder 404.
- * NÃO versionar nem compartilhar depois de preenchido: tem chaves.
+ * It replaces the .env on purpose: nginx never delivers a .php's text, and
+ * the line below makes a direct request to /config.php answer 404.
+ * Do NOT commit or share it once filled in: it holds keys.
  */
 declare(strict_types=1);
 
 defined('DAYONE_ENTRY') || (http_response_code(404) && exit);
 
 return [
-    // Projeto Supabase. Só a chave PUBLICÁVEL (anon) — a de serviço nunca vem para cá.
-    'SUPABASE_URL'      => 'https://SEU-PROJETO.supabase.co',
+    // Supabase project. Only the PUBLISHABLE (anon) key — the service key never comes here.
+    'SUPABASE_URL'      => 'https://YOUR-PROJECT.supabase.co',
     'SUPABASE_ANON_KEY' => '',
 
-    // Chave deste servidor. O hash dela tem de estar em pages.server_keys:
+    // This server's key. Its hash must be in pages.server_keys:
     //   INSERT INTO pages.server_keys (name, key_hash)
-    //   VALUES ('meu-servidor', encode(sha256(convert_to('<a chave>', 'UTF8')), 'hex'));
+    //   VALUES ('my-server', encode(sha256(convert_to('<the key>', 'UTF8')), 'hex'));
     'PAGES_SERVER_KEY'  => '',
 
-    // Marcador devolvido em /_health. Igual ao SERVER_ID do painel.
+    // Marker returned by /_health. Same as the panel's SERVER_ID.
     'SERVER_ID'         => '',
 
-    // Token do POST /_purge (header X-Purge-Token). Vazio = purge desligado.
+    // Token for POST /_purge (X-Purge-Token header). Empty = purge disabled.
     'PURGE_TOKEN'       => '',
 
-    // Cache em disco. A pasta é criada sozinha; o usuário do site precisa poder escrever aqui.
+    // Disk cache. The folder is created automatically; the site user must be able to write here.
     'CACHE_DIR'         => __DIR__ . '/_cache',
-    'CACHE_TTL'         => 60,       // segundos: 1 minuto
-    'NEGATIVE_TTL'      => 60,       // domínio desconhecido ou pausado
-    'STALE_MAX_AGE'     => 604800,   // por quanto tempo a cópia expirada serve se o Supabase cair
+    'CACHE_TTL'         => 60,       // seconds: 1 minute
+    'NEGATIVE_TTL'      => 60,       // unknown or paused domain
+    'STALE_MAX_AGE'     => 604800,   // how long the expired copy serves if Supabase goes down
 
     'SUPABASE_TIMEOUT'  => 5,
 
-    // Chave do sub0: quem entra por www. vai (302) para o domínio sem www; com
-    // sub1/utm_campaign/campaign na URL, ganha ?sub0=<timestamp cifrado em
-    // AES-256-GCM>. Sem esta linha vale 'DAYONE'.
+    // sub0 key: visitors entering via www. go (302) to the domain without www;
+    // with sub1/utm_campaign/campaign in the URL, they get ?sub0=<timestamp
+    // encrypted with AES-256-GCM>. Without this line it's 'DAYONE'.
     'SUB0_KEY'          => 'DAYONE',
-    'DEBUG_HEADERS'     => 1,        // 1 = manda X-Cache (HIT/MISS/STALE). Desligue depois de validar.
+    'DEBUG_HEADERS'     => 1,        // 1 = sends X-Cache (HIT/MISS/STALE). Turn it off after validating.
 ];

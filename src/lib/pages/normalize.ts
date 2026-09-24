@@ -1,21 +1,21 @@
 /**
- * Normalização de host, path e slug — paridade EXATA com o SQL.
+ * Host, path and slug normalization — EXACT parity with the SQL.
  *
- * O banco normaliza por trigger (pages.normalize_host / normalize_path) e o
- * servidor PHP normaliza antes de montar a chave de cache. Este módulo é a
- * terceira cópia, usada pelo dashboard para mostrar o que vai ser gravado e
- * para recusar antes de ir ao banco. Se mudar um, mudam os três.
+ * The database normalizes via trigger (pages.normalize_host / normalize_path) and
+ * the PHP server normalizes before building the cache key. This module is the
+ * third copy, used by the dashboard to show what will be saved and to reject
+ * input before it reaches the database. Change one, change all three.
  */
 
-/** Regex do CHECK de pages.domains.domain. */
+/** Regex of the CHECK on pages.domains.domain. */
 export const DOMAIN_RE = /^[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}$/;
 
-/** Regex do CHECK de pages.page_slugs.slug. */
+/** Regex of the CHECK on pages.page_slugs.slug. */
 export const SLUG_RE = /^\/([a-z0-9._~-]+(\/[a-z0-9._~-]+)*)?$/;
 
 /**
- * Host como chega no header: minúsculo, sem porta, sem ponto final, sem `www.`.
- * `www.example.com` e `example.com` são o MESMO domínio.
+ * Host as it arrives in the header: lowercase, no port, no trailing dot, no `www.`.
+ * `www.example.com` and `example.com` are the SAME domain.
  */
 export function normalizeHost(raw: string): string {
   let host = (raw ?? "").split(":")[0].trim().toLowerCase();
@@ -29,8 +29,8 @@ export function isValidDomain(host: string): boolean {
 }
 
 /**
- * Path canônico: sem query/fragment, minúsculo, barra inicial, sem barras
- * duplicadas, sem barra final (exceto a raiz). '' vira '/'.
+ * Canonical path: no query/fragment, lowercase, leading slash, no duplicate
+ * slashes, no trailing slash (except the root). '' becomes '/'.
  */
 export function normalizePath(raw: string): string {
   let path = (raw ?? "").split("?")[0].split("#")[0].trim().toLowerCase();

@@ -5,9 +5,9 @@ import { ButtonIcon, CodeIcon, ContainerIcon, ImageIcon, TextIcon, VideoIcon } f
 import { WIDGETS, widgetHtml, type WidgetKey } from "@/lib/pages/widgets";
 
 /**
- * Painel "Widgets": os blocos básicos, como no builder de referência. Clicar
- * insere o bloco DEPOIS do elemento selecionado na canvas (ou no fim do body)
- * e já o seleciona. Arrastar-e-soltar fica para depois — o clique cobre o uso.
+ * "Widgets" panel: the basic blocks, as in the reference builder. Clicking
+ * inserts the block AFTER the element selected on the canvas (or at the end of the body)
+ * and selects it. Drag-and-drop is left for later — clicking covers the use case.
  */
 const ICONS: Record<WidgetKey, ReactNode> = {
   text: <TextIcon className="size-5" />,

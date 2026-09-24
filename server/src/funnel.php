@@ -1,63 +1,63 @@
 <?php
 /**
- * Funil em "modo servidor": uma etapa por resposta.
+ * Funnel in "server mode": one step per response.
  *
- * O editor grava as sub-páginas de uma slug como <section data-dop-page="…">
- * irmãs no body, e pode marcar o body com data-dop-funnel="server". Nesse
- * modo, este servidor entrega SÓ a etapa atual — as outras seções nem saem no
- * HTML — e o runtime da página troca de etapa gravando o cookie `dop_step` e
- * recarregando a mesma URL. A URL nunca muda; o fonte da presell não contém a
- * página principal.
+ * The editor stores a slug's sub-pages as sibling <section data-dop-page="…">
+ * in the body, and may mark the body with data-dop-funnel="server". In that
+ * mode, this server delivers ONLY the current step — the other sections are
+ * not even in the HTML — and the page runtime switches steps by setting the
+ * `dop_step` cookie and reloading the same URL. The URL never changes; the
+ * presell's source doesn't contain the main page.
  *
- * Etapas: sempre Pre Lander (presell) → Lander (main) → Backredirect; tipo
- * desconhecido conta como Lander. Etapa sem código (seção vazia, só espaço ou
- * comentário) está INATIVA: nunca é servida. Mesmas regras do editor
- * (src/lib/pages/subpages.ts) e do runtime.
+ * Steps: always Pre Lander (presell) → Lander (main) → Backredirect; an
+ * unknown kind counts as Lander. A step with no code (empty section, only
+ * whitespace or a comment) is INACTIVE: it is never served. Same rules as the
+ * editor (src/lib/pages/subpages.ts) and the runtime.
  *
- * Etapa atual: o cookie, se apontar para uma etapa ativa; senão a inicial —
- * 1) o Pre Lander, se ativo; 2) o Lander. O data-dop-start do HTML não manda.
+ * Current step: the cookie, if it points to an active step; otherwise the
+ * initial one — 1) the Pre Lander, if active; 2) the Lander. The HTML's
+ * data-dop-start doesn't decide.
  *
- * O que o runtime precisa saber sobre as etapas que não vieram vai como
- * atributos no <body>: data-dop-cur, data-dop-next, data-dop-main,
+ * What the runtime needs to know about the steps that didn't come goes as
+ * attributes on the <body>: data-dop-cur, data-dop-next, data-dop-main,
  * data-dop-start, data-dop-br, data-dop-br-trigger.
  *
- * Sem DOMDocument (evita depender de ext/xml): as seções são achadas por um
- * contador de <section>/<\/section>. Antes de contar, comentários, <script>,
- * <style> e <template> são apagados de uma CÓPIA (mesmo tamanho, offsets
- * iguais), para um "</section>" dentro deles não contar. Uma etapa é a
- * primeira <section data-dop-page> aberta fora de outra etapa, em qualquer
- * profundidade (o editor aceita etapas embrulhadas numa <section> comum);
- * ela fecha quando a profundidade volta à de abertura. O conteúdo de cada
- * etapa fica intacto.
+ * No DOMDocument (avoids depending on ext/xml): the sections are found by a
+ * <section>/<\/section> counter. Before counting, comments, <script>,
+ * <style> and <template> are blanked in a COPY (same length, same offsets),
+ * so a "</section>" inside them doesn't count. A step is the first
+ * <section data-dop-page> opened outside another step, at any depth (the
+ * editor accepts steps wrapped in a plain <section>); it closes when the
+ * depth goes back to the opening depth. The content of each step is left
+ * intact.
  *
- * AMOSTRAS (teste A/B, ver ab_apply): antes de tudo, cada etapa com duas ou
- * mais amostras ativas (seções do mesmo tipo) fica com UMA, sorteada na
- * proporção dos data-dop-weight e fixa por visitante no cookie dop_ab. As
- * outras saem do HTML — em qualquer modo, não só no servidor.
+ * SAMPLES (A/B test, see ab_apply): before anything else, each step with two
+ * or more active samples (sections of the same kind) keeps ONE, drawn in
+ * proportion to the data-dop-weight values and fixed per visitor in the
+ * dop_ab cookie. The others are removed from the HTML — in any mode, not only
+ * server mode.
  *
- * Sem modo servidor, devolve null e o HTML vai como está. Modo servidor sem
- * nenhuma etapa encontrada também devolve null, mas registra no log: é sinal
- * de HTML que o tokenizador não entendeu. Sem etapa ativa, null (nada a cortar).
+ * Without server mode, returns null and the HTML goes as is. Server mode with
+ * no step found also returns null, but logs it: it's a sign of HTML the
+ * tokenizer didn't understand. With no active step, null (nothing to cut).
  */
 declare(strict_types=1);
 
 defined('DAYONE_ENTRY') || (http_response_code(404) && exit);
 
 const FUNNEL_COOKIE = 'dop_step';
-/** Cookie do teste A/B: "<visitante 16 hex>:<id>,<id>…" — as amostras sorteadas para ele. */
+/** A/B test cookie: "<visitor 16 hex>:<id>,<id>…" — the samples drawn for them. */
 const AB_COOKIE = 'dop_ab';
 const AB_MAX_IDS = 24;
 const AB_DEFAULT_WEIGHT = 50;
-/** No <body>: liga o aviso de visita/clique das amostras no runtime (beacon.php, /_dop/e). */
-const FUNNEL_EVENTS_ATTR = 'data-dop-ev';
 
-/** O HTML tem seções de etapa? (barato: uma regex) */
+/** Does the HTML have step sections? (cheap: one regex) */
 function funnel_has_sections(string $html): bool
 {
     return preg_match('/<section\b[^>]*\bdata-dop-page\s*=/i', $html) === 1;
 }
 
-/** O body pede modo servidor? (barato: uma regex no HTML) */
+/** Does the body ask for server mode? (cheap: one regex on the HTML) */
 function funnel_is_server_mode(string $html): bool
 {
     return preg_match('/<body\b[^>]*\bdata-dop-funnel\s*=\s*"server"/i', $html) === 1;
@@ -73,7 +73,7 @@ function funnel_apply(string $html, array $cookies): ?array
     }
     $pages = funnel_sections($html);
     if ($pages === []) {
-        error_log('[dayone-pages] funil em modo servidor sem etapa reconhecida; servindo o HTML inteiro');
+        error_log('[dayone-pages] server-mode funnel with no recognized step; serving the whole HTML');
         return null;
     }
 
@@ -102,8 +102,8 @@ function funnel_apply(string $html, array $cookies): ?array
     $want = (string) ($cookies[FUNNEL_COOKIE] ?? '');
     $cur = (preg_match('/^p_[a-z0-9]{1,16}$/', $want) === 1 && isset($byId[$want])) ? $byId[$want] : $start;
 
-    // "Próxima": do Pre Lander, o Lander; do Lander, nenhuma; da Backredirect
-    // (ou de uma seção fora do fluxo), o Lander — ou a inicial.
+    // "Next": from the Pre Lander, the Lander; from the Lander, none; from the
+    // Backredirect (or a section outside the flow), the Lander — or the initial one.
     if ($pre !== null && $cur['id'] === $pre['id']) {
         $next = $main;
     } elseif ($main !== null && $cur['id'] === $main['id']) {
@@ -112,7 +112,7 @@ function funnel_apply(string $html, array $cookies): ?array
         $next = $main ?? $start;
     }
 
-    // Remove as outras seções, do fim para o início (os offsets continuam válidos).
+    // Remove the other sections, from end to start (the offsets stay valid).
     $out = $html;
     foreach (array_reverse($pages) as $p) {
         if ($p['id'] !== $cur['id']) {
@@ -120,7 +120,7 @@ function funnel_apply(string $html, array $cookies): ?array
         }
     }
 
-    // A etapa servida não pode vir `hidden` (o atributo é o fallback sem JS do modo navegador).
+    // The served step can't be `hidden` (the attribute is the browser mode's no-JS fallback).
     $out = funnel_unhide($out, $cur['id']);
 
     $esc = fn (string $v): string => htmlspecialchars($v, ENT_QUOTES, 'UTF-8');
@@ -129,14 +129,14 @@ function funnel_apply(string $html, array $cookies): ?array
         . ($next ? ' data-dop-next="' . $esc($next['id']) . '"' : '')
         . ($main ? ' data-dop-main="' . $esc($main['id']) . '"' : '')
         . ($br ? ' data-dop-br="' . $esc($br['id']) . '" data-dop-br-trigger="' . $esc($br['trigger']) . '"' : '');
-    // Callback, não string de substituição: um "$1" ou "\" no valor de um atributo não vira backreference.
+    // Callback, not a replacement string: a "$1" or "\" in an attribute value doesn't become a backreference.
     $out = preg_replace_callback('/<body\b([^>]*)>/i', fn ($m) => '<body' . $m[1] . $attrs . '>', $out, 1) ?? $out;
 
     return ['html' => $out, 'step' => $cur['id']];
 }
 
 /**
- * As seções de etapa, na ordem do documento, com os offsets no HTML ORIGINAL.
+ * The step sections, in document order, with the offsets into the ORIGINAL HTML.
  *
  * @return list<array{id: string, kind: string, start: bool, trigger: string, weight: int, active: bool, from: int, to: int}>
  */
@@ -148,8 +148,8 @@ function funnel_sections(string $html): array
     }
     $out = [];
     $depth = 0;
-    $open = null;      // a etapa aberta
-    $openDepth = -1;   // profundidade em que ela abriu
+    $open = null;      // the open step
+    $openDepth = -1;   // depth at which it opened
     foreach ($m as $tok) {
         $closing = $tok[1][0] === '/';
         $offset = (int) $tok[0][1];
@@ -185,7 +185,7 @@ function funnel_sections(string $html): array
     return $out;
 }
 
-/** Tira o `hidden` da seção `id`. Cobre hidden, hidden="", hidden='', hidden=hidden, hidden="hidden". */
+/** Removes `hidden` from section `id`. Covers hidden, hidden="", hidden='', hidden=hidden, hidden="hidden". */
 function funnel_unhide(string $html, string $id): string
 {
     return preg_replace_callback(
@@ -197,16 +197,16 @@ function funnel_unhide(string $html, string $id): string
 }
 
 /**
- * Teste A/B: em cada etapa com duas ou mais amostras ATIVAS, fica uma — a que
- * o cookie dop_ab já tem para este visitante, senão uma sorteada na proporção
- * dos pesos (todos 0 = partes iguais). As outras saem do HTML. Também liga o
- * aviso de visita/clique (data-dop-ev no <body>) em toda página com etapas.
+ * A/B test: in each step with two or more ACTIVE samples, one stays — the one
+ * the dop_ab cookie already has for this visitor, otherwise one drawn in
+ * proportion to the weights (all 0 = equal shares). The others are removed
+ * from the HTML.
  *
- * `tag` entra no ETag (cada combinação é um corpo diferente na mesma URL);
- * `cookie` é o valor novo do dop_ab, ou null se não mudou. `$rand(max)`
- * devolve um inteiro em [0, max) — os testes passam um fixo.
+ * `tag` goes into the ETag (each combination is a different body at the same
+ * URL); `cookie` is the new dop_ab value, or null if it didn't change.
+ * `$rand(max)` returns an integer in [0, max) — the tests pass a fixed one.
  *
- * @return array{html: string, tag: string, cookie: ?string}|null  null = sem etapas
+ * @return array{html: string, tag: string, cookie: ?string}|null  null = no steps
  */
 function ab_apply(string $html, array $cookies, ?callable $rand = null): ?array
 {
@@ -234,7 +234,7 @@ function ab_apply(string $html, array $cookies, ?callable $rand = null): ?array
         if (count($versions) < 2) {
             continue;
         }
-        // Peso 0 = amostra pausada: nem quem já tinha caído nela continua.
+        // Weight 0 = paused sample: not even visitors who already landed on it stay.
         $total = array_sum(array_column($versions, 'weight'));
         $pick = null;
         foreach ($versions as $v) {
@@ -258,7 +258,7 @@ function ab_apply(string $html, array $cookies, ?callable $rand = null): ?array
             $out = substr($out, 0, $p['from']) . substr($out, $p['to']);
         }
     }
-    // A amostra sorteada da etapa inicial fica visível sem JS (o editor marcou a primeira).
+    // The drawn sample of the initial step stays visible without JS (the editor marked the first one).
     $startKind = isset($byKind['presell']) ? 'presell' : 'main';
     foreach ($chosen as $id) {
         foreach ($byKind[$startKind] ?? [] as $v) {
@@ -267,9 +267,12 @@ function ab_apply(string $html, array $cookies, ?callable $rand = null): ?array
             }
         }
     }
-    $out = preg_replace_callback('/<body\b([^>]*)>/i', fn ($m) => '<body' . $m[1] . ' ' . FUNNEL_EVENTS_ATTR . '>', $out, 1) ?? $out;
+    // No test on this page: nothing to remember for the visitor.
+    if ($chosen === []) {
+        return ['html' => $out, 'tag' => '', 'cookie' => null];
+    }
 
-    // Cookie: o visitante (novo, se não tinha) + as sorteadas daqui + as de outras páginas.
+    // Cookie: the visitor (new, if there was none) + the samples drawn here + those from other pages.
     $uid ??= bin2hex(random_bytes(8));
     $ids = $chosen;
     foreach ($known as $id) {
@@ -283,7 +286,7 @@ function ab_apply(string $html, array $cookies, ?callable $rand = null): ?array
 }
 
 /**
- * "<16 hex>:<id>,<id>" → [visitante, ids]. Valor malformado → [null, []].
+ * "<16 hex>:<id>,<id>" → [visitor, ids]. Malformed value → [null, []].
  *
  * @return array{0: ?string, 1: list<string>}
  */
@@ -295,7 +298,7 @@ function ab_parse_cookie(string $raw): array
     return [$m[1], isset($m[2]) && $m[2] !== '' ? explode(',', $m[2]) : []];
 }
 
-/** Sorteia uma amostra na proporção dos pesos (todos 0 = partes iguais). */
+/** Draws a sample in proportion to the weights (all 0 = equal shares). */
 function ab_pick(array $versions, ?callable $rand): array
 {
     $rand ??= fn (int $max): int => random_int(0, $max - 1);
@@ -318,19 +321,19 @@ function ab_cookie(string $value): string
     return AB_COOKIE . "=$value; Path=/; Max-Age=2592000; HttpOnly; Secure; SameSite=Lax";
 }
 
-// ── Teste A/B entre as páginas de um funil ─────────────────────────────────
+// ── A/B test between the pages of a funnel ─────────────────────────────────
 
-/** Cookie do sorteio entre páginas: os ids (uuid) das páginas de domínio já sorteadas para o visitante. */
+/** Cookie of the draw between pages: the ids (uuid) of the domain pages already drawn for the visitor. */
 const SPLIT_COOKIE = 'dop_pg';
 const SPLIT_MAX_IDS = 10;
 
 /**
- * A rota resolveu para uma página que é cópia de uma página de funil, e o
- * domínio tem outras cópias do mesmo funil no mesmo path (`split`, vindo do
- * pages.resolve): fica a que o cookie dop_pg já tem para este visitante (se
- * não estiver pausada), senão uma sorteada pelos pesos (todos 0 = partes
- * iguais). Devolve a rota com a página escolhida no lugar e o valor novo do
- * cookie (null = não mudou). Sem split, a rota volta como está.
+ * The route resolved to a page that is a copy of a funnel page, and the
+ * domain has other copies of the same funnel on the same path (`split`, from
+ * pages.resolve): keep the one the dop_pg cookie already has for this visitor
+ * (unless it is paused), otherwise one drawn by the weights (all 0 = equal
+ * shares). Returns the route with the chosen page in its place and the new
+ * cookie value (null = unchanged). Without split, the route comes back as is.
  *
  * @return array{0: array, 1: ?string}
  */
@@ -382,8 +385,9 @@ function split_cookie(string $value): string
 }
 
 /**
- * O miolo de uma etapa tem código? Comentário, espaço e &nbsp; não contam (no
- * editor e no runtime, um nó de texto só com espaço/NBSP também não).
+ * Does a step's inner HTML have code? Comments, whitespace and &nbsp; don't
+ * count (in the editor and the runtime, a text node with only whitespace/NBSP
+ * doesn't either).
  */
 function funnel_has_code(string $inner): bool
 {
@@ -391,9 +395,9 @@ function funnel_has_code(string $inner): bool
 }
 
 /**
- * Cópia do HTML com comentários, <script>, <style> e <template> trocados por
- * espaços — mesmo comprimento, então todo offset achado nela vale no original.
- * Um "</section>" dentro de um comentário ou de uma string JS deixa de contar.
+ * Copy of the HTML with comments, <script>, <style> and <template> replaced by
+ * spaces — same length, so every offset found in it is valid in the original.
+ * A "</section>" inside a comment or a JS string no longer counts.
  */
 function funnel_blank_opaque(string $html): string
 {

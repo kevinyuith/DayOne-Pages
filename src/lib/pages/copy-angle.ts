@@ -3,29 +3,30 @@ import { z } from "zod";
 import { KIMI_BASE_URL, getAiModel, getKimiKey } from "@/lib/ai-settings";
 
 /**
- * "Variação do template" com outro ângulo de copy: reescreve os textos
- * visíveis da página (todas as slugs, numa chamada só) a partir das
- * informações que o usuário mandou. Só no servidor.
+ * "Template variation" with a different copy angle: rewrites the page's
+ * visible text (every slug, in a single call) from the information the
+ * user sent. Server-only.
  *
- * Modelo: o Kimi (Moonshot AI, API compatível com a da OpenAI) quando a chave
- * dele está configurada no sistema (Configurações → Vault, ver
- * ai-settings.ts), com o modelo escolhido lá; senão o Claude
- * (`claude-opus-5`) quando há ANTHROPIC_API_KEY. As regras (prompt) e as
- * conferências na volta são as mesmas para os dois.
+ * Model: Kimi (Moonshot AI, OpenAI-compatible API) when its key is configured
+ * in the system (Settings → Vault, see ai-settings.ts), with the model
+ * chosen there; otherwise Claude (`claude-opus-5`) when there's an
+ * ANTHROPIC_API_KEY. The rules (prompt) and the checks on the way back are
+ * the same for both.
  *
- * O HTML não passa pelo modelo: o texto é tirado entre as tags (fora de
- * <script>, <style>, <template>, <textarea> e comentários), vai numerado,
- * volta numerado e entra no mesmo lugar. Estrutura, links e estilos não mudam.
+ * The HTML doesn't go through the model: the text is taken from between the tags
+ * (outside <script>, <style>, <template>, <textarea> and comments), goes out
+ * numbered, comes back numbered and goes into the same place. Structure, links
+ * and styles don't change.
  *
- * Um trecho que volta sem algum {{marcador}} do original, ou vazio, fica como
- * estava. Página com texto demais para uma chamada é recusada com aviso (não
- * se corta texto em silêncio).
+ * A segment that comes back missing some {{placeholder}} from the original, or
+ * empty, stays as it was. A page with too much text for one call is rejected
+ * with a notice (text is never cut silently).
  *
- * Precisa da chave do Kimi em Configurações (ou de ANTHROPIC_API_KEY).
+ * Needs the Kimi key in Settings (or ANTHROPIC_API_KEY).
  */
 
 const CLAUDE_MODEL = "claude-opus-5";
-/** Resposta e raciocínio do Kimi contam no mesmo limite. */
+/** Kimi's response and reasoning count toward the same limit. */
 const KIMI_MAX_TOKENS = 65536;
 const KIMI_TIMEOUT_MS = 240_000;
 const MAX_SEGMENTS = 1200;
@@ -50,15 +51,15 @@ const encode = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").rep
 
 type Piece = { html: string; segment?: { id: number; lead: string; core: string; trail: string } };
 
-/** Quebra o HTML em pedaços; os de texto que valem reescrever ganham id. */
+/** Splits the HTML into pieces; the text pieces worth rewriting get an id. */
 function splitPage(html: string, nextId: () => number): Piece[] {
   return html.split(SKIP_BLOCK).map((part, i) => {
-    // split com grupo: índices ímpares são as tags/blocos pulados.
+    // split with a capture group: odd indices are the skipped tags/blocks.
     if (i % 2 === 1 || !/\p{L}[\s\S]*\p{L}/u.test(part)) return { html: part };
     const lead = part.match(/^\s*/)?.[0] ?? "";
     const trail = part.match(/\s*$/)?.[0] ?? "";
     const core = decode(part.slice(lead.length, part.length - trail.length));
-    // Só marcador, URL ou e-mail: não é copy.
+    // Only a placeholder, URL or email: not copy.
     if (!core.replace(TOKEN_RE, "").match(/\p{L}{2,}/u) || /^(https?:\/\/|www\.)\S+$/i.test(core) || /^\S+@\S+\.\S+$/.test(core)) return { html: part };
     return { html: part, segment: { id: nextId(), lead, core, trail } };
   });
@@ -67,9 +68,9 @@ function splitPage(html: string, nextId: () => number): Piece[] {
 const TOKEN_KEY = (s: string) => (s.match(TOKEN_RE) ?? []).map((t) => t.replace(/\s/g, "")).sort().join("|");
 
 /**
- * Os trechos de texto de todas as slugs (ids únicos) e como remontar o HTML
- * com textos novos. Trecho sem texto novo, vazio ou que perdeu um marcador
- * fica como estava.
+ * The text segments of every slug (unique ids) and how to rebuild the HTML
+ * with new text. A segment with no new text, empty, or that lost a placeholder
+ * stays as it was.
  */
 export function extractCopySegments(pages: Record<string, string>): {
   segments: { id: number; text: string }[];
@@ -131,8 +132,8 @@ You receive the page's visible text as numbered segments, in page order. Return 
 export type CopyAngleResult = { ok: true; pages: Record<string, string>; rewritten: number } | { ok: false; reason: string };
 
 /**
- * Reescreve os textos de todas as slugs ({slug: html}) com o ângulo pedido.
- * Devolve o HTML de cada slug com os textos novos.
+ * Rewrites the text of every slug ({slug: html}) with the requested angle.
+ * Returns each slug's HTML with the new text.
  */
 type Rewrite = { ok: true; texts: Map<number, string> } | { ok: false; reason: string };
 
@@ -148,7 +149,7 @@ function parseOutput(text: string): Rewrite {
   }
 }
 
-/** Kimi (Moonshot AI): chat completions em modo JSON. */
+/** Kimi (Moonshot AI): chat completions in JSON mode. */
 async function rewriteWithKimi(key: string, model: string, segments: { id: number; text: string }[], brief: string): Promise<Rewrite> {
   let res: Response;
   try {
@@ -184,7 +185,7 @@ async function rewriteWithKimi(key: string, model: string, segments: { id: numbe
   return parseOutput(choice?.message?.content ?? "");
 }
 
-/** Claude: streaming, saída estruturada e fallback do lado do servidor. */
+/** Claude: streaming, structured output and server-side fallback. */
 async function rewriteWithClaude(segments: { id: number; text: string }[], brief: string): Promise<Rewrite> {
   const client = new Anthropic();
   let message: Anthropic.Beta.BetaMessage;
@@ -211,8 +212,8 @@ async function rewriteWithClaude(segments: { id: number; text: string }[], brief
 }
 
 /**
- * Reescreve os textos de todas as slugs ({slug: html}) com o ângulo pedido.
- * Devolve o HTML de cada slug com os textos novos.
+ * Rewrites the text of every slug ({slug: html}) with the requested angle.
+ * Returns each slug's HTML with the new text.
  */
 export async function rewriteCopyAngle(pages: Record<string, string>, brief: string): Promise<CopyAngleResult> {
   const kimiKey = await getKimiKey();

@@ -1,36 +1,36 @@
 /**
- * Variação visual automática de um template: a mesma página (textos e
- * estrutura) com outro visual. Usada ao copiar um template para um domínio
- * ("Variação visual").
+ * Automatic visual variation of a template: the same page (text and
+ * structure) with a different look. Used when copying a template to a domain
+ * ("Visual variation").
  *
- * Mexe só nos VALORES das declarações CSS que estão na própria página — em
- * <style> e em style="…" — e nas cores de SVG (fill, stroke, stop-color) e
- * da meta theme-color. Nunca em seletores, em @font-face nem em imagens. CSS
- * de arquivo externo (<link rel="stylesheet">) não muda, fora a fonte do
- * corpo, que ganha uma regra por cima.
+ * It only touches the VALUES of the CSS declarations in the page itself — in
+ * <style> and in style="…" — plus SVG colors (fill, stroke, stop-color) and
+ * the theme-color meta. Never selectors, @font-face or images. CSS from an
+ * external file (<link rel="stylesheet">) doesn't change, except for the body
+ * font, which gets a rule on top.
  *
- * - Cores: gira o tom e ajusta um pouco saturação e luz; cinzas, quase-preto
- *   e quase-branco ficam como estão (texto e fundos neutros mantêm o contraste).
- * - Fontes: a primeira família de cada font-family vira outra do mesmo tipo
- *   (sem serifa → sem serifa, serifa → serifa), carregada do Google Fonts.
- *   Fontes de ícone e monoespaçadas ficam.
- * - Cantos e sombras: border-radius e box-shadow multiplicados por um fator
- *   (pílulas e porcentagens ficam).
- * - Espaçamentos: margin, padding e gap multiplicados por um fator.
+ * - Colors: rotates the hue and nudges saturation and lightness a bit; grays,
+ *   near-black and near-white stay as they are (text and neutral backgrounds keep their contrast).
+ * - Fonts: the first family of each font-family becomes another of the same kind
+ *   (sans-serif → sans-serif, serif → serif), loaded from Google Fonts.
+ *   Icon and monospace fonts stay.
+ * - Corners and shadows: border-radius and box-shadow multiplied by a factor
+ *   (pills and percentages stay).
+ * - Spacing: margin, padding and gap multiplied by a factor.
  *
- * Tudo sai de uma semente (`seed`): a mesma semente dá a mesma variação, e
- * todas as slugs de um template usam os mesmos parâmetros.
+ * Everything comes from a seed (`seed`): the same seed gives the same variation,
+ * and every slug of a template uses the same parameters.
  */
 
 export type VariationOptions = { colors: boolean; fonts: boolean; shape: boolean; spacing: boolean };
 
 export type VariationParams = {
   seed: number;
-  /** Graus que o tom gira. */
+  /** Degrees the hue rotates. */
   hue: number;
-  /** Fator da saturação. */
+  /** Saturation factor. */
   saturation: number;
-  /** Deslocamento da luz (0–1). */
+  /** Lightness shift (0–1). */
   lightness: number;
   sans: string;
   serif: string;
@@ -40,13 +40,13 @@ export type VariationParams = {
 };
 
 type FontKind = "sans" | "serif";
-/** Contagem de ajustes e as fontes que entraram de fato. */
+/** Adjustment counts and the fonts that actually went in. */
 export type VariationStats = { colors: number; fonts: number; radii: number; shadows: number; spacings: number; families: Partial<Record<FontKind, string>> };
 
 const SANS = ["Inter", "Roboto", "Open Sans", "Lato", "Montserrat", "Poppins", "Nunito Sans", "Source Sans 3", "Work Sans", "DM Sans", "Manrope", "Raleway", "Rubik", "Mulish", "IBM Plex Sans"];
 const SERIF = ["Merriweather", "Lora", "Playfair Display", "PT Serif", "Source Serif 4", "Libre Baskerville", "EB Garamond", "Crimson Pro"];
 
-/** PRNG pequeno e determinístico (mulberry32). */
+/** Small, deterministic PRNG (mulberry32). */
 function rng(seed: number): () => number {
   let a = seed >>> 0;
   return () => {
@@ -74,7 +74,7 @@ export function pickVariation(seed: number = Math.floor(Math.random() * 2 ** 31)
   };
 }
 
-// ── Cores ────────────────────────────────────────────────────────────────────
+// ── Colors ───────────────────────────────────────────────────────────────────
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
@@ -108,14 +108,14 @@ function hslToRgb(h: number, s: number, l: number): [number, number, number] {
 }
 
 /**
- * Neutros ficam: cinzas, quase-preto, quase-branco e cinzas levemente
- * tingidos (bordas claras tipo #e5e7eb, textos escuros tipo #0f172a).
+ * Neutrals stay: grays, near-black, near-white and slightly tinted grays
+ * (light borders like #e5e7eb, dark text like #0f172a).
  */
 function isNeutral(s: number, l: number): boolean {
   return s < 0.18 || l < 0.06 || l > 0.97 || (l > 0.85 && s < 0.35) || (l < 0.22 && s < 0.5);
 }
 
-/** Novo HSL para uma cor com cor de verdade; null para neutros (ficam). */
+/** New HSL for an actual (non-neutral) color; null for neutrals (they stay). */
 function shiftHsl(h: number, s: number, l: number, p: VariationParams): [number, number, number] | null {
   if (isNeutral(s, l)) return null;
   return [(((h + p.hue / 360) % 1) + 1) % 1, clamp(s * p.saturation, 0, 1), clamp(l + p.lightness, 0.04, 0.96)];
@@ -156,7 +156,7 @@ function shiftColors(value: string, p: VariationParams, stats: VariationStats): 
     });
 }
 
-// ── Fontes ───────────────────────────────────────────────────────────────────
+// ── Fonts ────────────────────────────────────────────────────────────────────
 
 const GENERIC = new Set(["serif", "sans-serif", "monospace", "cursive", "fantasy", "system-ui", "ui-sans-serif", "ui-serif", "ui-monospace", "ui-rounded", "math", "emoji", "inherit", "initial", "unset", "revert", "-apple-system", "blinkmacsystemfont"]);
 const KEEP_FONT = /icon|awesome|glyph|material symbols|fontello|icomoon|dashicons|mono|code|courier|consolas|menlo|monaco/i;
@@ -184,7 +184,7 @@ function splitFamilies(value: string): string[] {
 
 const unquote = (s: string) => s.replace(/^["']|["']$/g, "").trim();
 
-/** Troca a primeira família por uma do mesmo tipo (a mesma em toda a página). */
+/** Swaps the first family for one of the same kind (the same one across the whole page). */
 function swapFontFamily(value: string, p: VariationParams, stats: VariationStats): string {
   const important = /\s*!important\s*$/i.exec(value)?.[0] ?? "";
   const families = splitFamilies(value.slice(0, value.length - important.length));
@@ -200,7 +200,7 @@ function swapFontFamily(value: string, p: VariationParams, stats: VariationStats
   if (!target) {
     target = kind === "serif" ? p.serif : p.sans;
     const pool = kind === "serif" ? SERIF : SANS;
-    // Sorteou a fonte que a página já usa: a próxima da lista, senão não muda nada.
+    // Drew the font the page already uses: take the next one in the list, otherwise nothing changes.
     if (target.toLowerCase() === firstLower) target = pool[(pool.indexOf(target) + 1) % pool.length];
     stats.families[kind] = target;
   }
@@ -209,7 +209,7 @@ function swapFontFamily(value: string, p: VariationParams, stats: VariationStats
   return [`'${target}'`, ...rest].join(", ") + important;
 }
 
-// ── Tamanhos ────────────────────────────────────────────────────────────────
+// ── Sizes ───────────────────────────────────────────────────────────────────
 
 function scaleLengths(value: string, factor: number): string {
   return value.replace(/(-?\d*\.?\d+)(px|rem|em)(?![a-z])/g, (m, n: string, unit: string) => {
@@ -224,7 +224,7 @@ function scaleLengths(value: string, factor: number): string {
 const RADIUS_PROP = /^border(-(top|bottom|start|end)-(left|right|start|end))?-radius$/;
 const SPACING_PROP = /^(margin|padding)(-(top|right|bottom|left|block|inline)(-(start|end))?)?$|^(gap|row-gap|column-gap|grid-gap)$/;
 
-// ── Aplicar ─────────────────────────────────────────────────────────────────
+// ── Apply ───────────────────────────────────────────────────────────────────
 
 function transformValue(prop: string, value: string, p: VariationParams, o: VariationOptions, stats: VariationStats): string {
   let v = value;
@@ -248,21 +248,21 @@ function transformValue(prop: string, value: string, p: VariationParams, o: Vari
   return v;
 }
 
-/** Uma lista de declarações ("prop: valor; prop: valor"). */
+/** A list of declarations ("prop: value; prop: value"). */
 function transformDeclarations(list: string, p: VariationParams, o: VariationOptions, stats: VariationStats): string {
   return list.replace(/(^|;)(\s*)([-a-zA-Z]+)(\s*:\s*)([^;]*)/g, (_m, sep: string, ws: string, prop: string, colon: string, value: string) =>
     sep + ws + prop + colon + transformValue(prop.toLowerCase(), value, p, o, stats),
   );
 }
 
-/** CSS de um <style>: só os blocos mais internos (declarações); @font-face fica. */
+/** CSS of a <style>: only the innermost blocks (declarations); @font-face stays. */
 function transformCss(css: string, p: VariationParams, o: VariationOptions, stats: VariationStats): string {
   return css.replace(/(@font-face\s*)?\{([^{}]*)\}/gi, (m, fontFace: string | undefined, body: string) =>
     fontFace ? m : `{${transformDeclarations(body, p, o, stats)}}`,
   );
 }
 
-/** Google Fonts das famílias que entraram + a fonte do corpo por cima do CSS externo. */
+/** Google Fonts for the families that went in + the body font on top of the external CSS. */
 function fontLinks(families: Partial<Record<FontKind, string>>): string {
   const bodyFont = families.sans ? `'${families.sans}', system-ui, sans-serif` : `'${families.serif}', Georgia, serif`;
   return (
@@ -286,7 +286,7 @@ export function applyVariation(html: string, p: VariationParams, o: VariationOpt
   }
 
   if (o.fonts) {
-    // Página só com CSS externo: a fonte do corpo muda mesmo sem font-family na página.
+    // A page with only external CSS: the body font changes even with no font-family on the page.
     if (!stats.families.sans && !stats.families.serif) {
       stats.families.sans = p.sans;
       stats.fonts++;
@@ -297,7 +297,7 @@ export function applyVariation(html: string, p: VariationParams, o: VariationOpt
   return { html: out, stats };
 }
 
-/** Resumo legível do que a variação fez. */
+/** Readable summary of what the variation did. */
 export function describeVariation(p: VariationParams, o: VariationOptions, stats: VariationStats): string[] {
   const lines: string[] = [];
   const adjustments = (n: number) => `${n} ${n === 1 ? "adjustment" : "adjustments"}`;

@@ -13,7 +13,7 @@ import { browserFromUA, osFromUA } from "@/lib/user-agent";
 import { normalizeHost } from "@/lib/pages/normalize";
 import { listDomains, listHits, unregisteredHosts } from "@/lib/pages/queries";
 import { APP_TZ } from "@/lib/time-zone";
-import { registerSeenDomain } from "../dominios/actions";
+import { registerSeenDomain } from "../domains/actions";
 
 export const metadata: Metadata = {
   title: "Logs",
@@ -25,10 +25,10 @@ const dateFmt = new Intl.DateTimeFormat("en-US", { dateStyle: "short", timeStyle
 const loadFmt = new Intl.NumberFormat("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
 /**
- * Cada request registrado em pages.hits, com todas as colunas, do mais novo
- * para o mais antigo. Filtro por domínio (?domain=<id>, form GET, sem JS) e
- * paginação por cursor (?before=<id>). Host sem cadastro ganha um botão para
- * cadastrá-lo ali mesmo.
+ * Every request logged in pages.hits, with all columns, newest to oldest.
+ * Filter by domain (?domain=<id>, GET form, no JS) and cursor pagination
+ * (?before=<id>). An unregistered host gets a button to register it right
+ * there.
  */
 export default async function LogsPage({
   searchParams,
@@ -43,7 +43,7 @@ export default async function LogsPage({
     listHits({ domainId: selected, beforeId, limit: PAGE_SIZE }),
     unregisteredHosts(),
   ]);
-  // Hosts sem cadastro que dá para cadastrar daqui (as regras de "tem cara de domínio" ficam no SQL).
+  // Unregistered hosts that can be registered from here (the "looks like a domain" rules live in the SQL).
   const registrable = new Set(unregistered.map((u) => u.domain));
 
   const pageHref = (cursor: number | null) => {

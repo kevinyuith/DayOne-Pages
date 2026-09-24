@@ -1,19 +1,19 @@
 -- ============================================================================
--- DayOne Pages — destino do redirect em pages.hits
+-- DayOne Pages — redirect target in pages.hits
 --
--- Quando o hit é um redirect (rota REDIRECT ou a entrada por www com sub0), o
--- Location que o servidor devolveu vai em `redirect_url`, até 2048 caracteres,
--- para a tela de Logs mostrar a URL final junto da decisão. Leva a query do
--- visitante (e o sub0): é PII como `query`.
--- p_redirect_url tem DEFAULT NULL: o PHP anterior continua funcionando.
+-- When the hit is a redirect (REDIRECT route or the www entry with sub0), the
+-- Location the server returned goes in `redirect_url`, up to 2048 characters,
+-- so the Logs screen shows the final URL next to the decision. It carries the visitor's
+-- query (and the sub0): it is PII like `query`.
+-- p_redirect_url has DEFAULT NULL: the previous PHP keeps working.
 --
--- DROP + CREATE pela mesma razão de 20260922e (mudar a lista de parâmetros).
--- O corpo é o de 20260922h_hits_query, mais a coluna nova.
+-- DROP + CREATE for the same reason as 20260922e (changing the parameter list).
+-- The body is the one from 20260922h_hits_query, plus the new column.
 -- ============================================================================
 
 ALTER TABLE pages.hits ADD COLUMN IF NOT EXISTS redirect_url text;
 
-COMMENT ON COLUMN pages.hits.redirect_url IS 'Location devolvido quando o hit é redirect (URL final), até 2048 chars. PII.';
+COMMENT ON COLUMN pages.hits.redirect_url IS 'Location returned when the hit is a redirect (final URL), up to 2048 chars. PII.';
 
 DROP FUNCTION IF EXISTS pages.log_hit(text, uuid, text, text, text, int, text, text, boolean, text, text, text, text, int, text, text, text, uuid, uuid, text, text, text);
 

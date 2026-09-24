@@ -1,11 +1,11 @@
 <?php
 /**
- * A request como este servidor a enxerga, e o envio da resposta.
+ * The request as this server sees it, and sending the response.
  *
- * Tudo que vem do visitante passa por aqui uma vez e vira campos tipados.
- * Os headers do Cloudflare (CF-IPCountry, CF-Ray) só são confiáveis se o
- * firewall da máquina aceitar conexões apenas dos IPs do Cloudflare — ver
- * deploy/cloudflare-allowlist.sh.
+ * Everything that comes from the visitor passes through here once and becomes
+ * typed fields. The Cloudflare headers (CF-IPCountry, CF-Ray) are only
+ * trustworthy if the machine's firewall accepts connections only from
+ * Cloudflare IPs — see deploy/cloudflare-allowlist.sh.
  */
 declare(strict_types=1);
 
@@ -26,9 +26,9 @@ final class Request
         public readonly ?string $ifNoneMatch,
         public readonly ?string $purgeToken,
         public readonly bool $viaCloudflare,
-        /** Cookies da request, nome → valor (já decodificados). */
+        /** Request cookies, name → value (already decoded). */
         public readonly array $cookies,
-        /** Host e path normalizados; preenchidos por app.php. */
+        /** Normalized host and path; filled in by app.php. */
         public string $host = '',
         public string $path = '/',
     ) {
@@ -64,9 +64,9 @@ function parse_request(array $server): Request
 }
 
 /**
- * "a=1; b=x%20y" → ['a' => '1', 'b' => 'x y']. Lido do header (não de
- * $_COOKIE) para a request ser reconstruível nos testes. Nome repetido: o
- * primeiro vale, como o navegador manda o mais específico primeiro.
+ * "a=1; b=x%20y" → ['a' => '1', 'b' => 'x y']. Read from the header (not
+ * from $_COOKIE) so the request can be rebuilt in the tests. Repeated name:
+ * the first one wins, since the browser sends the most specific first.
  */
 function parse_cookie_header(string $header): array
 {
@@ -87,10 +87,10 @@ function parse_cookie_header(string $header): array
 }
 
 /**
- * IP real do visitante. Atrás do Cloudflare vem em CF-Connecting-IP; o
- * firewall só aceita os IPs do Cloudflare (deploy/cloudflare-allowlist.sh),
- * então esse header é confiável. Fallbacks: primeiro X-Forwarded-For, depois
- * REMOTE_ADDR (conexão direta em dev).
+ * The visitor's real IP. Behind Cloudflare it comes in CF-Connecting-IP; the
+ * firewall only accepts Cloudflare IPs (deploy/cloudflare-allowlist.sh), so
+ * that header is trustworthy. Fallbacks: first X-Forwarded-For, then
+ * REMOTE_ADDR (direct connection in dev).
  */
 function client_ip(array $server): string
 {
@@ -106,14 +106,14 @@ function client_ip(array $server): string
 }
 
 /**
- * Envia a resposta e encerra o corpo. Em HEAD, só os headers.
- * Content-Length vai sempre que há corpo, para o keep-alive funcionar.
+ * Sends the response and ends the body. On HEAD, headers only.
+ * Content-Length is always sent when there is a body, so keep-alive works.
  */
 function send_response(int $status, array $headers, ?string $body, bool $head): void
 {
     http_response_code($status);
     foreach ($headers as $name => $value) {
-        // Lista (ex.: dois Set-Cookie): um header por item.
+        // List (e.g. two Set-Cookie): one header per item.
         if (is_array($value)) {
             foreach ($value as $one) {
                 header("$name: $one", false);
@@ -130,7 +130,7 @@ function send_response(int $status, array $headers, ?string $body, bool $head): 
     }
 }
 
-/** Uma página mínima para 404/503/bloqueio. Sem detalhe que identifique o servidor. */
+/** A minimal page for 404/503/block. No detail that identifies the server. */
 function plain_page(string $title, string $text): string
 {
     $t = htmlspecialchars($title, ENT_QUOTES, 'UTF-8');
@@ -141,9 +141,9 @@ function plain_page(string $title, string $text): string
 }
 
 /**
- * O 404 de todo domínio (path sem página, domínio desconhecido ou pausado,
- * bloqueio com status 404): o "404 Not Found" genérico de servidor web, em
- * inglês e sem marca, para não dizer nada sobre o que roda aqui.
+ * The 404 of every domain (path with no page, unknown or paused domain, block
+ * with status 404): the generic web-server "404 Not Found", in English and
+ * unbranded, so it says nothing about what runs here.
  */
 function not_found_page(): string
 {

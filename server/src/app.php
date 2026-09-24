@@ -1,19 +1,18 @@
 <?php
 /**
- * O fluxo de uma request, de ponta a ponta.
+ * The flow of a request, end to end.
  *
- *   /_health, /_purge      → handlers internos
- *   /_dop/l                → aviso de carregamento do navegador (beacon.php)
- *   /_dop/e                → aviso de visita/clique de amostra do funil (beacon.php)
- *   método ∉ {GET, HEAD}   → 405
- *   host inválido          → 404 (sem cache, sem Supabase)
- *   path longo demais      → 404 (idem)
+ *   /_health, /_purge      → internal handlers
+ *   /_dop/l                → browser load notice (beacon.php)
+ *   method ∉ {GET, HEAD}   → 405
+ *   invalid host           → 404 (no cache, no Supabase)
+ *   path too long          → 404 (same)
  *   resolver               → HIT | MISS | STALE | UPDATING | null (503)
  *   decide                 → SERVE | REDIRECT | BLOCK | 404
- *   página servida em www. → 302 para sem www com sub0 (sub0.php)
- *   página HTML servida    → cookie dop_v + script do aviso de carregamento
+ *   page served on www.    → 302 to non-www with sub0 (sub0.php)
+ *   HTML page served       → dop_v cookie + load notice script
  *
- * X-Cache só sai com DEBUG_HEADERS=1. Em HEAD o corpo não vai.
+ * X-Cache is only sent with DEBUG_HEADERS=1. On HEAD the body is not sent.
  */
 declare(strict_types=1);
 
@@ -41,17 +40,6 @@ function dayone_handle(): void
             } else {
                 supabase_log_load($visitId, $loadMs);
             }
-        }
-        return;
-    }
-    if ($req->rawPath === FUNNEL_EVENT_PATH) {
-        [$status, $headers, $body, $event] = handle_funnel_event($req, (string) file_get_contents('php://input', false, null, 0, 1024));
-        send_response($status, $headers, $body, false);
-        if ($event !== null) {
-            if (function_exists('fastcgi_finish_request')) {
-                fastcgi_finish_request();
-            }
-            supabase_log_funnel_event($event);
         }
         return;
     }
@@ -97,7 +85,7 @@ function dayone_handle(): void
         $outcome = 'redirect';
         $route = [...$route, 'action' => 'REDIRECT', 'match_type' => 'WWW'];
     }
-    // Página servida: id de visita no cookie, para o aviso de carregamento (beacon.php).
+    // Page served: visit id in the cookie, for the load notice (beacon.php).
     $visitId = null;
     if ($outcome === 'served' && $route !== null && beacon_applies($route, $req)) {
         $visitId = beacon_new_visit_id();
@@ -108,8 +96,8 @@ function dayone_handle(): void
     }
     send_response($status, $headers, $body, $req->isHead());
 
-    // Pós-resposta: nada aqui faz o visitante esperar. Com php-fpm a conexão já
-    // foi encerrada; sem ele (dev), roda em linha mesmo.
+    // After the response: nothing here makes the visitor wait. With php-fpm the
+    // connection is already closed; without it (dev), it just runs inline.
     if (function_exists('fastcgi_finish_request')) {
         fastcgi_finish_request();
     }
@@ -118,7 +106,7 @@ function dayone_handle(): void
     log_hit($req, $status, $outcome, is_string($domainId) ? $domainId : null, $route, $headers['Location'] ?? null, $visitId);
 
     if ($resolved['refresh']) {
-        // SWR: atualiza o cache sem ninguém esperando.
+        // SWR: refresh the cache with nobody waiting.
         refresh_in_background($host, $path);
     }
 }

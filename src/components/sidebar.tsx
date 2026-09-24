@@ -12,12 +12,12 @@ function isActive(pathname: string, href: string) {
 }
 
 /**
- * Recolhido = trilho de ícones que abre por cima do conteúdo no hover/foco
- * (sem empurrar a página). O botão fixa aberto. Vale só do md para cima: no
- * mobile o menu é a barra horizontal do topo, sempre com rótulos.
+ * Collapsed = an icon rail that opens over the content on hover/focus
+ * (without pushing the page). The button pins it open. Only applies from md up: on
+ * mobile the menu is the horizontal bar at the top, always with labels.
  *
- * 68px = px-3 do nav + px-3 do item + ícone de 20px + px-3: ícones, botão e
- * avatar ficam no mesmo x recolhido ou aberto, então nada pula sob o mouse.
+ * 68px = nav px-3 + item px-3 + 20px icon + px-3: icons, button and
+ * avatar stay at the same x collapsed or open, so nothing jumps under the mouse.
  */
 export function Sidebar({ defaultCollapsed }: { defaultCollapsed: boolean }) {
   const pathname = usePathname();

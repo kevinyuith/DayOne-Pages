@@ -1,22 +1,22 @@
 /**
- * Links da página: como o editor encontra, agrupa e troca os links de um
- * documento — e como "atrela" um link a um elemento que não é <a>.
+ * Page links: how the editor finds, groups and swaps a document's links —
+ * and how it "attaches" a link to an element that isn't an <a>.
  *
- * Dois tipos de link convivem no HTML salvo:
+ * Two kinds of link coexist in the saved HTML:
  *
- *  - NATIVOS: `<a href>`, `<area href>`, `<form action>`. Editar troca o
- *    atributo e pronto.
- *  - ATRELADOS: qualquer elemento com `data-href` (e `data-target` opcional).
- *    O runtime da página (`lib/pages/runtime.ts`), gravado junto com o HTML,
- *    delega o clique e navega. Assim um botão, imagem ou bloco vira link SEM
- *    mudar a estrutura nem o CSS do HTML — e a slug continua a mesma; só o
- *    destino dos cliques muda. Destinos `#next-step` / `#page:<id>` trocam
- *    a sub-página (ver `subpages.ts`).
+ *  - NATIVE: `<a href>`, `<area href>`, `<form action>`. Editing swaps the
+ *    attribute and that's it.
+ *  - ATTACHED: any element with `data-href` (and an optional `data-target`).
+ *    The page runtime (`lib/pages/runtime.ts`), saved along with the HTML,
+ *    delegates the click and navigates. That way a button, image or block becomes
+ *    a link WITHOUT changing the HTML's structure or CSS — and the slug stays the
+ *    same; only the click destination changes. Destinations `#next-step` /
+ *    `#page:<id>` switch the sub-page (see `subpages.ts`).
  *
- * Tudo aqui opera sobre um `Document`: o da canvas (ao vivo, sem recarregar o
- * iframe) ou um parseado com `parseHtml` a partir do HTML salvo (modo código).
- * Os uids são os mesmos nos dois, então uma entrada da lista aponta para o
- * elemento certo na canvas.
+ * Everything here operates on a `Document`: the canvas one (live, without
+ * reloading the iframe) or one parsed with `parseHtml` from the saved HTML (code
+ * mode). The uids are the same in both, so a list entry points to the right
+ * element in the canvas.
  */
 
 import { elementByUid, HREF_ATTR, linkHolder, PAGE_NAME_ATTR, parseHtml, serialize, shortText, TARGET_ATTR, UID_ATTR } from "./html-editing";
@@ -31,10 +31,10 @@ export type LinkEntry = {
   kind: LinkKind;
   href: string;
   target: string;
-  /** Rótulo curto: texto, alt da imagem ou o tag. */
+  /** Short label: text, the image's alt or the tag. */
   label: string;
   external: boolean;
-  /** Nome da sub-página que contém o link (vazio numa slug de página única). */
+  /** Name of the sub-page containing the link (empty in a single-page slug). */
   page: string;
 };
 
@@ -46,7 +46,7 @@ export function isExternal(href: string): boolean {
   return /^(https?:)?\/\//i.test(href) || /^(mailto|tel|sms|whatsapp):/i.test(href);
 }
 
-/** Todos os links do body, na ordem do documento. */
+/** Every link in the body, in document order. */
 export function extractLinks(doc: Document): LinkEntry[] {
   const out: LinkEntry[] = [];
   doc.body?.querySelectorAll<HTMLElement>(LINK_SELECTOR).forEach((el) => {
@@ -69,7 +69,7 @@ export function extractLinks(doc: Document): LinkEntry[] {
   return out;
 }
 
-/** Agrupa por destino, na ordem em que cada destino aparece pela primeira vez. */
+/** Groups by destination, in the order each destination first appears. */
 export function groupByDestination(entries: LinkEntry[]): LinkGroup[] {
   const map = new Map<string, LinkEntry[]>();
   for (const e of entries) {
@@ -81,8 +81,8 @@ export function groupByDestination(entries: LinkEntry[]): LinkGroup[] {
 }
 
 /**
- * Grava o link num elemento que JÁ carrega link (o `holder`): <a>/<area> no
- * href, <form> no action, atrelado no data-href. `target` undefined = não mexe.
+ * Writes the link on an element that ALREADY carries one (the `holder`): <a>/<area>
+ * in href, <form> in action, attached in data-href. `target` undefined = leave it.
  */
 function writeLink(holder: HTMLElement, href: string, target?: string): void {
   if (holder.hasAttribute(HREF_ATTR) || !isNative(holder)) {
@@ -108,8 +108,8 @@ function isNative(el: HTMLElement): boolean {
 }
 
 /**
- * Define o link do elemento `uid`. Se ele é (ou está dentro de) um <a>, mexe
- * no <a>; senão atrela via data-href. `href` vazio remove o link.
+ * Sets the link of element `uid`. If it is (or is inside) an <a>, changes
+ * the <a>; otherwise attaches via data-href. An empty `href` removes the link.
  */
 export function setLink(doc: Document, uid: string, link: { href: string; target?: string }): void {
   const el = elementByUid(doc, uid);
@@ -123,7 +123,7 @@ export function clearLink(doc: Document, uid: string): void {
   setLink(doc, uid, { href: "", target: "" });
 }
 
-/** Troca TODOS os links cujo destino é exatamente `from` por `to`. Devolve quantos mudaram. */
+/** Replaces ALL links whose destination is exactly `from` with `to`. Returns how many changed. */
 export function replaceDestination(doc: Document, from: string, to: string): number {
   let n = 0;
   for (const e of extractLinks(doc)) {
@@ -137,7 +137,7 @@ export function replaceDestination(doc: Document, from: string, to: string): num
   return n;
 }
 
-/** Aponta todos os links da página para `to`. Devolve quantos mudaram. */
+/** Points every link on the page to `to`. Returns how many changed. */
 export function replaceAll(doc: Document, to: string): number {
   let n = 0;
   for (const e of extractLinks(doc)) {
@@ -150,7 +150,7 @@ export function replaceAll(doc: Document, to: string): number {
   return n;
 }
 
-/** Aplica `fn` num Document parseado do HTML e devolve o HTML resultante (modo código). */
+/** Applies `fn` to a Document parsed from the HTML and returns the resulting HTML (code mode). */
 export function mutateHtml(html: string, fn: (doc: Document) => void): string {
   const doc = parseHtml(html);
   fn(doc);

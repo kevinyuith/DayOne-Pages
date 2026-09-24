@@ -1,9 +1,8 @@
-import dns from "dns";
 import { promises as dnsPromises } from "dns";
 
-// Cache simples para evitar múltiplas lookups do mesmo IP
+// Simple cache to avoid repeated lookups of the same IP
 const dnsCache = new Map<string, string | null>();
-const CACHE_TTL = 1000 * 60 * 60; // 1 hora
+const CACHE_TTL = 1000 * 60 * 60; // 1 hour
 const cacheTimestamps = new Map<string, number>();
 
 export async function reverseDnsLookup(ip: string): Promise<string | null> {
@@ -31,8 +30,8 @@ export async function reverseDnsLookup(ip: string): Promise<string | null> {
 }
 
 /**
- * Função para enriquecer hits com informação de hostname via reverse DNS.
- * Não trava se o DNS falhar — é fire-and-forget.
+ * Enriches hits with hostname info via reverse DNS.
+ * Doesn't block if DNS fails — it's fire-and-forget.
  */
 export async function enrichWithHostname(
   ip: string,
@@ -42,17 +41,17 @@ export async function enrichWithHostname(
     const hostname = await reverseDnsLookup(ip);
     await updateFn(hostname);
   } catch {
-    // Silenciosamente falha — reverse DNS não é crítico
+    // Fails silently — reverse DNS isn't critical
   }
 }
 
-/** Para limpeza de cache se necessário. */
+/** Clears the cache when needed. */
 export function clearDnsCache(): void {
   dnsCache.clear();
   cacheTimestamps.clear();
 }
 
-/** Retorna tamanho do cache. */
+/** Returns the cache size. */
 export function getDnsCacheSize(): number {
   return dnsCache.size;
 }

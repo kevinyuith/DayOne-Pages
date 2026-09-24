@@ -10,7 +10,7 @@ export type InspectorTab = "style" | "settings";
 
 export type InspectorCallbacks = {
   setText: (v: string) => void;
-  /** Link do elemento: nativo (<a>) ou atrelado (data-href). `href` vazio remove. */
+  /** The element's link: native (<a>) or bound (data-href). An empty `href` removes it. */
   setLink: (href: string, target: string) => void;
   clearLink: () => void;
   setHidden: (v: boolean) => void;
@@ -18,11 +18,11 @@ export type InspectorCallbacks = {
 };
 
 /**
- * Painel direito do editor. Duas abas, como no layout de referência: Settings
- * (conteúdo/link/visibilidade do elemento, ou os ajustes da página quando nada
- * está selecionado) e Style (cor, fundo, tamanho, alinhamento, espaçamento).
+ * The editor's right panel. Two tabs, as in the reference layout: Settings
+ * (the element's content/link/visibility, or the page settings when nothing
+ * is selected) and Style (color, background, size, alignment, spacing).
  */
-/** Um destino pronto para o seletor de link (etapa do funil, outra slug…). */
+/** A ready-made destination for the link picker (funnel step, another slug…). */
 export type LinkDestination = { label: string; href: string; group: string };
 
 export function Inspector({
@@ -40,7 +40,7 @@ export function Inspector({
   callbacks: InspectorCallbacks;
   pageSettings: ReactNode;
   destinations?: LinkDestination[];
-  /** Valores dos marcadores (página de domínio), mostrados na lista do "{{". Template: null. */
+  /** Placeholder values (domain page), shown in the "{{" list. Template: null. */
   placeholderValues?: Record<string, string> | null;
 }) {
   return (
@@ -108,7 +108,7 @@ function ElementSettings({
         </Group>
       ) : null}
 
-      {/* Remonta quando o link muda por fora (Remover, troca em massa no painel Links). */}
+      {/* Remounts when the link changes from outside (Remove, bulk replace in the Links panel). */}
       <LinkSettings key={`${selection.href}|${selection.linkTarget}`} selection={selection} callbacks={callbacks} destinations={destinations} placeholderValues={placeholderValues} />
 
       <Group label="Visibility">
@@ -133,9 +133,9 @@ const LINK_HINT: Record<LinkSource, (tag: string) => string> = {
 };
 
 /**
- * Link do elemento: um campo só, que edita o href de um <a> (ou do <a> pai) e,
- * para qualquer outro elemento, atrela um link via data-href. É o "atrelar
- * links a novos elementos sem mudar a slug".
+ * The element's link: a single field that edits the href of an <a> (or of the parent <a>) and,
+ * for any other element, binds a link via data-href. This is the "bind
+ * links to new elements without changing the slug".
  */
 function LinkSettings({
   selection,
@@ -155,8 +155,8 @@ function LinkSettings({
     if (v !== selection.href) callbacks.setLink(v, selection.linkTarget);
   };
 
-  // "Destino", como o Navigation → Destination da referência: uma slug desta
-  // página, uma âncora (#id) ou uma URL livre. O valor é derivado do href.
+  // "Destination", like the reference's Navigation → Destination: a slug of this
+  // page, an anchor (#id) or a free-form URL. The value is derived from the href.
   const kind = destinations.some((d) => d.href === href.trim()) ? href.trim() : href.trim().startsWith("#") ? "#" : "";
   const onKind = (v: string) => {
     if (v === "#") {

@@ -7,15 +7,15 @@ import { INPUT_BASE } from "@/components/ui/field";
 import { groupByDestination, type LinkEntry, type LinkKind } from "@/lib/pages/links";
 
 /**
- * Painel "Links": todos os links que a página tem, agrupados por destino —
- * como o hidepages mostra os links atrelados a uma página.
+ * "Links" panel: every link the page has, grouped by destination —
+ * the way hidepages shows the links bound to a page.
  *
- *  - clicar num link seleciona o elemento na canvas (e rola até ele);
- *  - "Trocar" num destino troca TODAS as ocorrências dele de uma vez;
- *  - "Apontar todos" manda todos os links da página para um destino só.
+ *  - clicking a link selects the element on the canvas (and scrolls to it);
+ *  - "Change" on a destination replaces ALL of its occurrences at once;
+ *  - "Point all links to" sends every link on the page to a single destination.
  *
- * O painel não toca no HTML: quem aplica é o editor, via `onReplace`/
- * `onReplaceAll` (na canvas ao vivo ou no HTML em modo código).
+ * The panel does not touch the HTML: the editor applies the change, via `onReplace`/
+ * `onReplaceAll` (on the live canvas or in the HTML in code mode).
  */
 export function LinksPanel({
   links,
@@ -27,7 +27,7 @@ export function LinksPanel({
 }: {
   links: LinkEntry[];
   selectedUid: string | null;
-  /** Falso para fragmentos (a edição precisa de documento completo). */
+  /** False for fragments (editing needs a full document). */
   canEdit: boolean;
   onSelect: (uid: string) => void;
   onReplace: (from: string, to: string) => void;
@@ -79,7 +79,7 @@ export function LinksPanel({
         ) : null}
         {groups.map((g) => (
           <DestinationGroup
-            key={g.href || "(vazio)"}
+            key={g.href || "(empty)"}
             href={g.href}
             entries={g.entries}
             selectedUid={selectedUid}

@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { APP_TZ } from "@/lib/time-zone";
 import type { HitRow } from "@/lib/pages/queries";
 
-/** Rótulo + tom do resultado de um hit. */
+/** Label + tone for a hit's outcome. */
 export const OUTCOME_BADGE: Record<string, { label: string; tone: "success" | "info" | "danger" | "warning" | "neutral" }> = {
   served: { label: "Served", tone: "success" },
   redirect: { label: "Redirect", tone: "info" },
@@ -35,14 +35,14 @@ function countryName(code: string): string {
 
 const th = "px-3 py-2 text-left text-xs font-medium text-muted first:pl-5 last:pr-5";
 const td = "px-3 py-2.5 first:pl-5 last:pr-5";
-// País, dispositivo e IP só a partir de md: no celular a linha fica em hora, pedido e resultado.
+// Country, device and IP only from md up: on phones the row is just time, request and result.
 const wide = "hidden md:table-cell";
 
 /**
- * Os últimos requests do período filtrado. Tabela de ponta a ponta no cartão,
- * com o caminho completo no title quando a linha corta. Sem dado, mostra um
- * estado vazio honesto (e diz se é o filtro). `showDate` põe o dia antes da
- * hora (períodos de mais de um dia).
+ * The latest requests in the filtered period. Edge-to-edge table in the card,
+ * with the full path in the title when the row is truncated. With no data, shows an
+ * honest empty state (and says whether it is the filter). `showDate` puts the day before
+ * the time (periods longer than one day).
  */
 export function AccessLogs({ hits, filtered = false, showDate = false }: { hits: HitRow[]; filtered?: boolean; showDate?: boolean }) {
   return (
@@ -124,7 +124,7 @@ export function AccessLogs({ hits, filtered = false, showDate = false }: { hits:
                     <td className={`${td} md:whitespace-nowrap`}>
                       <span className="inline-flex flex-wrap items-center gap-1.5">
                         <Badge tone={o.tone}>{o.label}</Badge>
-                        {/* O resultado "Bot" já diz que é bot; a etiqueta é para os outros resultados. */}
+                        {/* The "Bot" outcome already says it is a bot; the tag is for the other outcomes. */}
                         {h.is_bot && h.outcome !== "bot" ? (
                           <span className="inline-flex items-center rounded-md bg-violet-500/10 px-2 py-0.5 text-xs font-medium text-violet-700 dark:text-violet-300">
                             Bot

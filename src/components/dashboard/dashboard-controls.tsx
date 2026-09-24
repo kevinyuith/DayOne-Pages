@@ -23,7 +23,7 @@ const iconBtn =
 const selectCls =
   "h-9 appearance-none rounded-lg border border-border bg-surface pr-9 text-sm font-medium text-foreground transition-colors hover:border-foreground/20";
 
-/** Rótulo curto de cada período, no seletor segmentado (o nome longo vai no title). */
+/** Short label for each period, in the segmented selector (the long name goes in the title). */
 const RANGE_SHORT: Record<RangeKey, string> = { today: "Today", "24h": "24h", "7d": "7d", "30d": "30d" };
 
 const DEVICE_LABEL: Record<string, string> = { desktop: "Desktop", mobile: "Mobile", tablet: "Tablet" };
@@ -43,11 +43,11 @@ type DomainOption = { id: string; domain: string };
 type CountryOption = { country: string; hits: number };
 
 /**
- * A barra de controles do dashboard. Período, domínio e o popover "Filters"
- * mudam a URL (dashboardHref) e a página refaz as leituras no servidor; o
- * valor escolhido aparece na hora (useOptimistic) enquanto a navegação corre.
- * "Hide values" borra os números na tela (data-hide-values no <html>) e
- * "Refresh" recarrega os dados.
+ * The dashboard control bar. Period, domain and the "Filters" popover
+ * change the URL (dashboardHref) and the page redoes the reads on the server; the
+ * chosen value shows up right away (useOptimistic) while the navigation runs.
+ * "Hide values" blurs the numbers on screen (data-hide-values on <html>) and
+ * "Refresh" reloads the data.
  */
 export function DashboardControls({
   filters,
@@ -69,7 +69,7 @@ export function DashboardControls({
     return () => root.removeAttribute("data-hide-values");
   }, [hidden]);
 
-  // Enquanto os dados novos chegam, o conteúdo fica esmaecido (ver globals.css) em vez de piscar.
+  // While the new data arrives, the content is dimmed (see globals.css) instead of flashing.
   useEffect(() => {
     const root = document.documentElement;
     root.toggleAttribute("data-dash-pending", pending);
@@ -205,9 +205,9 @@ function Chip({ pressed, onClick, children }: { pressed: boolean; onClick: () =>
 }
 
 /**
- * O popover "Filters": resultado, dispositivo, país e esconder bots. Edita um
- * rascunho e só navega no "Apply" (marcar três países não vira três requests).
- * Posicionado pela barra (relative), alinhado à direita dela.
+ * The "Filters" popover: result, device, country and hide bots. Edits a
+ * draft and only navigates on "Apply" (checking three countries is not three requests).
+ * Positioned by the bar (relative), aligned to its right edge.
  */
 function FiltersPopover({
   value,
@@ -239,7 +239,7 @@ function FiltersPopover({
     };
   }, [open]);
 
-  // Um país escolhido que não aparece no período atual continua na lista (com 0), para dar para desmarcar.
+  // A selected country that does not appear in the current period stays in the list (with 0), so it can be unchecked.
   const countryOptions = [
     ...countries,
     ...draft.countries.filter((c) => !countries.some((o) => o.country === c)).map((c) => ({ country: c, hits: 0 })),
@@ -330,7 +330,7 @@ function FiltersPopover({
               size="sm"
               onClick={() => {
                 setOpen(false);
-                // Período e domínio vêm do valor atual, não do rascunho: o popover só mexe nos seus grupos.
+                // Period and domain come from the current value, not the draft: the popover only touches its own groups.
                 onApply({ ...value, outcomes: draft.outcomes, devices: draft.devices, countries: draft.countries, hideBots: draft.hideBots });
               }}
             >

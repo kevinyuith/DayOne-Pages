@@ -1,12 +1,12 @@
 -- ============================================================================
--- DayOne Pages — pages.log_hit passa a gravar o hostname (reverse DNS)
+-- DayOne Pages — pages.log_hit now stores the hostname (reverse DNS)
 --
--- O PHP resolve o PTR do IP depois de responder ao visitante e manda em
--- p_hostname. O parâmetro tem DEFAULT NULL: o PHP antigo, que não o envia,
--- continua funcionando. Aplicar ANTES de subir o PHP novo.
+-- The PHP resolves the IP's PTR after responding to the visitor and sends it in
+-- p_hostname. The parameter has DEFAULT NULL: the old PHP, which does not send it,
+-- keeps working. Apply BEFORE deploying the new PHP.
 --
--- DROP + CREATE (não CREATE OR REPLACE): mudar a lista de parâmetros criaria
--- uma sobrecarga, e o PostgREST recusaria a chamada por ambiguidade.
+-- DROP + CREATE (not CREATE OR REPLACE): changing the parameter list would create
+-- an overload, and PostgREST would refuse the call as ambiguous.
 -- ============================================================================
 
 DROP FUNCTION IF EXISTS pages.log_hit(text, uuid, text, text, text, int, text, text, boolean, text, text, text);

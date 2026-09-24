@@ -1,18 +1,18 @@
 /**
- * {{company.name}}: a razão social ({{company.llc}}) sem o sufixo jurídico do
- * final — "Acme Health LLC" → "Acme Health", "Acme Comércio Ltda - ME" →
- * "Acme Comércio", "Acme GmbH & Co. KG" → "Acme". Tira um sufixo por vez,
- * de trás para frente, até não sobrar nenhum; nunca devolve vazio (se a
- * razão social é só o sufixo, fica como está).
+ * {{company.name}}: the legal name ({{company.llc}}) without the trailing legal
+ * suffix — "Acme Health LLC" → "Acme Health", "Acme Comércio Ltda - ME" →
+ * "Acme Comércio", "Acme GmbH & Co. KG" → "Acme". Strips one suffix at a time,
+ * from the end backwards, until none is left; never returns empty (if the
+ * legal name is only the suffix, it stays as is).
  *
- * A mesma lista e as mesmas regras estão em server/src/placeholders.php —
- * mudou uma, mude a outra (os testes dos dois lados usam os mesmos casos).
+ * The same list and rules are in server/src/placeholders.php —
+ * change one, change the other (the tests on both sides use the same cases).
  *
- * Siglas que também são palavras (ME, SA, AS, MEI, SpA, Co…) só saem escritas
- * do jeito oficial: "Wang Mei" e "Hotel Spa" ficam inteiros.
+ * Abbreviations that are also words (ME, SA, AS, MEI, SpA, Co…) are only stripped
+ * when written the official way: "Wang Mei" and "Hotel Spa" stay whole.
  */
 
-/** Sem diferença de maiúsculas. Ponto final é opcional em todos. */
+/** Case-insensitive. The trailing dot is optional in all of them. */
 export const SUFFIXES_ANY_CASE = [
   "UG (haftungsbeschränkt)", "S.à r.l", "S.a.r.l", "Incorporated", "Corporation", "Company", "Limited",
   "L.L.L.P", "P.L.L.C", "L.L.C", "L.L.P", "P.L.C", "S.A.S", "S.R.L", "S.r.l", "S.p.A", "S.L.U", "LLLP", "PLLC",
@@ -21,7 +21,7 @@ export const SUFFIXES_ANY_CASE = [
   "Tbk", "LDA", "EPP", "L.P", "P.C",
 ];
 
-/** Só escritas assim (siglas que também são palavras). */
+/** Only when written exactly like this (abbreviations that are also words). */
 export const SUFFIXES_EXACT = ["Co", "CO", "AG", "KG", "UG", "SE", "SA", "SAS", "AB", "AS", "ASA", "NV", "BV", "LP", "PC", "SL", "SS", "KK", "ME", "MEI", "Oy", "SpA"];
 
 function escape(s: string): string {
@@ -30,7 +30,7 @@ function escape(s: string): string {
 
 function suffixRe(list: string[], flags: string): RegExp {
   const alternatives = [...list].sort((a, b) => b.length - a.length).map(escape).join("|");
-  // O sufixo vem depois de espaço, vírgula ou traço, e pode ter ponto final.
+  // The suffix comes after a space, comma or dash, and may have a trailing dot.
   return new RegExp(`[\\s,\\-–—]+(?:${alternatives})\\.?$`, flags);
 }
 

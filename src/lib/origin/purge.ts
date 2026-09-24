@@ -1,13 +1,13 @@
 /**
- * Purge instantâneo: manda o servidor de entrega esquecer as rotas de um host.
+ * Instant purge: tells the delivery server to forget a host's routes.
  *
- * O servidor guarda as rotas de cada host em cache (CACHE_TTL, 30 s por
- * padrão). Sem purge, pausar ou remover um domínio só vale quando o cache
- * vence. Com purge, a próxima request já vai ao Supabase e vê o estado novo.
+ * The server caches each host's routes (CACHE_TTL, 30 s by default). Without
+ * a purge, pausing or removing a domain only takes effect when the cache
+ * expires. With a purge, the next request goes to Supabase and sees the new state.
  *
- * Bate em ORIGIN_URL/_purge com o header X-Purge-Token (igual ao PURGE_TOKEN
- * do server/.env). Sem ORIGIN_URL ou PURGE_TOKEN aqui, não faz nada: o
- * servidor responderia 404 de qualquer jeito.
+ * Hits ORIGIN_URL/_purge with the X-Purge-Token header (same as PURGE_TOKEN
+ * in server/.env). Without ORIGIN_URL or PURGE_TOKEN here, it does nothing:
+ * the server would answer 404 anyway.
  */
 
 export type PurgeResult = { ok: true; purged: number } | { ok: false; skipped: true } | { ok: false; skipped: false; error: string };
@@ -28,7 +28,7 @@ export async function purgeHost(host: string): Promise<PurgeResult> {
       body: JSON.stringify({ host }),
     });
     if (!res.ok) {
-      // 404 aqui quase sempre é token diferente do server/.env (o servidor não confirma a rota).
+      // A 404 here almost always means a token different from server/.env (the server doesn't confirm the route).
       return { ok: false, skipped: false, error: res.status === 404 ? "token rejected or wrong ORIGIN_URL" : `HTTP ${res.status}` };
     }
     const data = (await res.json()) as { purged?: number };

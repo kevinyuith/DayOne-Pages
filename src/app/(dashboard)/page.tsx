@@ -10,7 +10,7 @@ import { countOverview, hitCountries, hitStats, hitTimeseries, listDomains, rece
 
 const num = new Intl.NumberFormat("en-US");
 
-/** Fração e texto "N% of requests" (com "<1%" para não mostrar 0% de algo que existe). */
+/** Fraction and "N% of requests" text (with "<1%" so something that exists never shows as 0%). */
 function share(part: number, total: number): { share: number; detail: string } {
   if (total <= 0) return { share: 0, detail: "—" };
   const f = part / total;
@@ -19,16 +19,16 @@ function share(part: number, total: number): { share: number; detail: string } {
 }
 
 /**
- * Filtros na URL (ver dashboard-filters.ts): período, domínio, resultado,
- * dispositivo, país e bots. Cards, gráfico e a tabela seguem todos eles;
- * o "Quick access" é cadastro, não tráfego, e não muda.
+ * Filters in the URL (see dashboard-filters.ts): period, domain, outcome,
+ * device, country and bots. The cards, chart and table all follow them;
+ * "Quick access" is registered data, not traffic, and doesn't change.
  */
 export default async function DashboardPage({
   searchParams,
 }: {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
-  // Server Component dinâmico (a rota é force-dynamic): ler o relógio por request é intencional.
+  // Dynamic Server Component (the route is force-dynamic): reading the clock per request is intentional.
   // eslint-disable-next-line react-hooks/purity
   const nowMs = Date.now();
   const [sp, domains] = await Promise.all([searchParams, listDomains()]);
@@ -55,8 +55,8 @@ export default async function DashboardPage({
   const filtered = activeFilterCount(filters) > 0;
   const scope = domains.find((d) => d.id === filters.domain)?.domain;
 
-  // Os 5 números do período filtrado. Served/Blocked/Bots são as séries do gráfico (mesma cor);
-  // Bots cruza os outros (um bot pode ser servido), então as frações não somam 100%.
+  // The 5 numbers for the filtered period. Served/Blocked/Bots are the chart's series (same color);
+  // Bots overlaps the others (a bot can be served), so the fractions don't add up to 100%.
   const stats5: Stat[] = [
     { label: "Total requests", value: num.format(stats.total), detail: range.label },
     { label: "Served", value: num.format(stats.served), series: "served", ...share(stats.served, stats.total) },
@@ -66,9 +66,8 @@ export default async function DashboardPage({
   ];
 
   const quickAccess = [
-    { label: "Domains", value: counts.domains, detail: `${counts.domainsActive} active`, href: "/dominios" },
-    { label: "Page templates", value: counts.pages, detail: `${counts.domainPages} copied to domains`, href: "/paginas" },
-    { label: "Routes", value: counts.routes, detail: "Path rules", href: "/dominios" },
+    { label: "Domains", value: counts.domains, detail: `${counts.domainsActive} active`, href: "/domains" },
+    { label: "Page templates", value: counts.pages, detail: `${counts.domainPages} copied to domains`, href: "/templates" },
   ];
 
   return (

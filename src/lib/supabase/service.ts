@@ -1,51 +1,51 @@
 import { createClient } from "@supabase/supabase-js";
 
 /**
- * O client de serviço — o ÚNICO client Supabase deste projeto.
+ * The service client — the ONLY Supabase client in this project.
  *
- * Não há login no Supabase nem no dashboard: todas as leituras e escritas
- * passam por aqui, com a chave de serviço.
+ * There's no login in Supabase or in the dashboard: every read and write goes
+ * through here, with the service key.
  *
- * A chave de serviço tem BYPASSRLS. Isso significa, sem meias palavras: a RLS
- * do schema `pages` não protege nada do que este módulo faz, e o painel em si
- * não pede senha. Quem protege o painel é a rede na frente do deploy
- * (Cloudflare Access, allowlist de IP). Sem isso, qualquer um com a URL edita
- * tudo.
+ * The service key has BYPASSRLS. In plain words, that means: the RLS of the
+ * `pages` schema protects nothing this module does, and the dashboard itself
+ * asks for no password. What protects the dashboard is the network in front of
+ * the deploy (Cloudflare Access, IP allowlist). Without it, anyone with the URL
+ * can edit everything.
  *
- * Três guardas mantêm a chave fora do navegador:
- *   1. `SUPABASE_SERVICE_KEY` não tem prefixo NEXT_PUBLIC_ — o Next não a
- *      substitui no pacote do cliente.
- *   2. A guarda `typeof window` abaixo derruba na hora se este módulo for
- *      parar num pacote de cliente.
- *   3. `npm run check:secrets` procura o valor em `.next/static/` depois do
- *      build. É a única das três que é prova, não intenção.
+ * Three guards keep the key out of the browser:
+ *   1. `SUPABASE_SERVICE_KEY` has no NEXT_PUBLIC_ prefix — Next doesn't inline
+ *      it into the client bundle.
+ *   2. The `typeof window` guard below crashes right away if this module ever
+ *      ends up in a client bundle.
+ *   3. `npm run check:secrets` looks for the value in `.next/static/` after the
+ *      build. It's the only one of the three that is proof, not intent.
  *
- * Sem cache de módulo: uma instância por chamada. Client guardado entre
- * requisições serviria o estado de um pedido para outro.
+ * No module-level cache: one instance per call. A client kept across requests
+ * would carry one request's state into another.
  */
 
 if (typeof window !== "undefined") {
-  throw new Error("src/lib/supabase/service.ts foi importado no navegador. Este módulo é do servidor.");
+  throw new Error("src/lib/supabase/service.ts was imported in the browser. This module is server-only.");
 }
 
 export const SERVICE_KEY_VAR = "SUPABASE_SERVICE_KEY";
 
-/** Configurado? Booleano, nunca o valor. */
+/** Configured? A boolean, never the value. */
 export function serviceConfigured(): boolean {
   return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env[SERVICE_KEY_VAR]);
 }
 
-/** Um client novo, preso ao schema `pages`, com a chave de serviço. */
+/** A new client, bound to the `pages` schema, with the service key. */
 export function supabaseService() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env[SERVICE_KEY_VAR];
 
-  if (!url) throw new Error("NEXT_PUBLIC_SUPABASE_URL ausente.");
-  if (!key) throw new Error(`${SERVICE_KEY_VAR} ausente.`);
+  if (!url) throw new Error("NEXT_PUBLIC_SUPABASE_URL is missing.");
+  if (!key) throw new Error(`${SERVICE_KEY_VAR} is missing.`);
 
   return createClient(url, key, {
     db: { schema: "pages" },
-    // Não há usuário nesta conexão, há uma chave: nada a persistir nem renovar.
+    // There's no user on this connection, just a key: nothing to persist or refresh.
     auth: { persistSession: false, autoRefreshToken: false },
   });
 }

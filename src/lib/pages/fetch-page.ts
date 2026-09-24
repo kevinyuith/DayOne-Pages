@@ -2,17 +2,17 @@ import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 
 /**
- * Busca o HTML de uma página pública, para "Criar template → copiar de um
- * link". Roda no servidor do painel.
+ * Fetches the HTML of a public page, for "Create template → copy from a
+ * link". Runs on the dashboard server.
  *
- * O painel não tem login, então esta busca não pode virar porta para a rede
- * interna: só http/https, e todo host (inclusive os de cada redirect,
- * seguidos um a um) precisa resolver SÓ para IP público — nada de localhost,
- * rede privada, link-local (metadados da AWS em 169.254.169.254) ou CGNAT.
- * Sobra a janela de DNS rebinding entre a checagem e o fetch; para um painel
- * interno, aceitável.
+ * The dashboard has no login, so this fetch can't become a door into the
+ * internal network: only http/https, and every host (including those of each
+ * redirect, followed one by one) must resolve ONLY to public IPs — no localhost,
+ * private network, link-local (AWS metadata at 169.254.169.254) or CGNAT.
+ * The DNS rebinding window between the check and the fetch remains; for an
+ * internal dashboard, that's acceptable.
  *
- * Limites: 10 s, 5 MB, 5 redirects, só respostas HTML.
+ * Limits: 10 s, 5 MB, 5 redirects, HTML responses only.
  */
 
 const TIMEOUT_MS = 10_000;
@@ -28,12 +28,12 @@ function ipv4Private(ip: string): boolean {
   return (
     a === 0 || a === 10 || a === 127 ||
     (a === 100 && b >= 64 && b <= 127) || // CGNAT
-    (a === 169 && b === 254) || // link-local, metadados de nuvem
+    (a === 169 && b === 254) || // link-local, cloud metadata
     (a === 172 && b >= 16 && b <= 31) ||
     (a === 192 && b === 168) ||
     (a === 192 && b === 0) ||
     (a === 198 && (b === 18 || b === 19)) ||
-    a >= 224 // multicast e reservados
+    a >= 224 // multicast and reserved
   );
 }
 
@@ -45,7 +45,7 @@ function ipPrivate(ip: string): boolean {
   return v6 === "::" || v6 === "::1" || v6.startsWith("fc") || v6.startsWith("fd") || v6.startsWith("fe80") || v6.startsWith("ff");
 }
 
-/** O host resolve só para IPs públicos? */
+/** Does the host resolve only to public IPs? */
 async function publicHost(hostname: string): Promise<boolean> {
   const host = hostname.replace(/^\[|\]$/g, "");
   if (isIP(host)) return !ipPrivate(host);
@@ -58,7 +58,7 @@ async function publicHost(hostname: string): Promise<boolean> {
   }
 }
 
-/** Lê o corpo até MAX_BYTES; null se passar. */
+/** Reads the body up to MAX_BYTES; null if it goes over. */
 async function readCapped(res: Response): Promise<Uint8Array | null> {
   if (!res.body) return new Uint8Array();
   const reader = res.body.getReader();
@@ -83,7 +83,7 @@ async function readCapped(res: Response): Promise<Uint8Array | null> {
   return out;
 }
 
-/** Decodifica pelo charset do header ou do <meta charset> (UTF-8 se nenhum ou desconhecido). */
+/** Decodes using the charset from the header or <meta charset> (UTF-8 if none or unknown). */
 function decode(bytes: Uint8Array, contentType: string): string {
   const fromHeader = contentType.match(/charset=["']?([\w-]+)/i)?.[1];
   const head = new TextDecoder("latin1").decode(bytes.subarray(0, 2048));
@@ -93,7 +93,7 @@ function decode(bytes: Uint8Array, contentType: string): string {
     try {
       return new TextDecoder(label).decode(bytes);
     } catch {
-      // charset desconhecido: tenta o próximo
+      // unknown charset: try the next one
     }
   }
   return new TextDecoder().decode(bytes);

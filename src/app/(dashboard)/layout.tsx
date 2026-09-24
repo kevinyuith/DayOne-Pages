@@ -3,9 +3,9 @@ import { Sidebar } from "@/components/sidebar";
 import { SIDEBAR_COOKIE } from "@/lib/navigation";
 
 /**
- * Todas as telas do painel leem o banco a cada request. Sem isto o Next
- * tentaria pré-renderizar `/`, `/dominios` e `/paginas` no build: bateria no
- * Supabase em tempo de build (falha sem env) e congelaria dados no HTML.
+ * Every dashboard screen reads the database on each request. Without this, Next
+ * would try to prerender `/`, `/domains` and `/templates` at build: it would hit
+ * Supabase at build time (failing without env) and freeze data into the HTML.
  */
 export const dynamic = "force-dynamic";
 

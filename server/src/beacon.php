@@ -1,24 +1,25 @@
 <?php
 /**
- * Aviso de carregamento: separa "a página carregou no navegador" de ping,
- * curl, prefetch e robô de prévia de link, que também viram "served".
+ * Load notice: tells "the page loaded in the browser" apart from pings,
+ * curl, prefetch and link-preview bots, which also count as "served".
  *
- *   1. Página HTML servida (200/304) ganha um id de visita no cookie dop_v
- *      (HttpOnly, 10 min) e, antes do </body>, um script mínimo.
- *   2. No evento load, o script faz sendBeacon("/_dop/l", "t=<ms>"), com o
- *      tempo desde o início da navegação. No primeiro clique que sai da
- *      página (link ou data-href que navega; "#…" não conta), manda "c=1".
- *   3. /_dop/l responde 204 na hora e, depois da resposta, grava o id em
- *      pages.hit_loads (RPC log_load; o clique, log_click). A tela de Logs
- *      junta com hits.visit_id, e a tela Funil soma carregamentos e cliques
- *      por página (teste A/B entre as páginas de um funil).
+ *   1. A served HTML page (200/304) gets a visit id in the dop_v cookie
+ *      (HttpOnly, 10 min) and, before </body>, a minimal script.
+ *   2. On the load event, the script calls sendBeacon("/_dop/l", "t=<ms>"),
+ *      with the time since navigation start. On the first click that leaves
+ *      the page (a link or data-href that navigates; "#…" doesn't count), it
+ *      sends "c=1".
+ *   3. /_dop/l answers 204 right away and, after the response, stores the id
+ *      in pages.hit_loads (RPC log_load; the click, log_click). The Logs
+ *      screen joins it with hits.visit_id, and the Funnel screen sums loads
+ *      and clicks per page (A/B test between the pages of a funnel).
  *
- * O id vai no cookie, não no HTML, para o script ser sempre o mesmo: o corpo
- * continua cacheável e um 304 (que não tem corpo) ainda leva o id novo no
- * Set-Cookie. O ETag ganha BEACON_ETAG para cópias antigas, sem o script,
- * não serem reaproveitadas pelo navegador.
+ * The id goes in the cookie, not in the HTML, so the script is always the
+ * same: the body stays cacheable and a 304 (which has no body) still carries
+ * the new id in Set-Cookie. The ETag gets BEACON_ETAG so old copies, without
+ * the script, are not reused by the browser.
  *
- * Só mede. Não muda o que o visitante vê.
+ * It only measures. It doesn't change what the visitor sees.
  */
 declare(strict_types=1);
 
@@ -26,21 +27,21 @@ defined('DAYONE_ENTRY') || (http_response_code(404) && exit);
 
 const BEACON_PATH = '/_dop/l';
 const BEACON_COOKIE = 'dop_v';
-/** Sufixo do ETag das páginas com o script. Mudou o script, muda a versão. */
+/** ETag suffix of pages with the script. Changed the script, bump the version. */
 const BEACON_ETAG = '-b2';
 const BEACON_SCRIPT = '<script data-dop-beacon>(function(){function b(d){try{navigator.sendBeacon("' . BEACON_PATH . '",d)}catch(e){}}'
     . 'function s(){b("t="+Math.round(performance.now()))}if(document.readyState==="complete")s();else addEventListener("load",s,{once:true});'
     . 'var c=false;addEventListener("click",function(e){if(c)return;var t=e.target,a=t&&t.closest&&t.closest("a[href],[data-href]");if(!a)return;'
     . 'var h=a.getAttribute("data-href")||a.getAttribute("href")||"";if(!h||h.charAt(0)==="#"||h.indexOf("javascript:")===0)return;c=true;b("c=1")},true)})();</script>';
 
-/** A resposta desta rota leva o aviso? Só página HTML (.html, .php ou sem extensão). */
+/** Does this route's response carry the notice? Only HTML pages (.html, .php or no extension). */
 function beacon_applies(array $route, Request $req): bool
 {
     $type = (string) ($route['content_type'] ?? '') ?: 'text/html';
     return str_starts_with(strtolower($type), 'text/html') && is_logged_path($req->path);
 }
 
-/** O script antes do último </body>; sem </body>, no fim. */
+/** The script before the last </body>; without </body>, at the end. */
 function beacon_inject(string $html): string
 {
     $pos = strripos($html, '</body>');
@@ -58,9 +59,9 @@ function beacon_cookie(string $visitId): string
 }
 
 /**
- * POST /_dop/l → 204 + [id da visita, ms, clicou?] para gravar depois da
- * resposta ("c=1" = o visitante clicou para fora da página). Sem cookie
- * válido, 204 e nada a gravar. Outro método: 404.
+ * POST /_dop/l → 204 + [visit id, ms, clicked?] to store after the response
+ * ("c=1" = the visitor clicked out of the page). Without a valid cookie, 204
+ * and nothing to store. Other method: 404.
  *
  * @return array{0: int, 1: array<string,string>, 2: ?string, 3: ?string, 4: ?int, 5: bool}
  */
@@ -77,45 +78,4 @@ function handle_beacon(Request $req, string $body): array
     $t = $form['t'] ?? null;
     $ms = is_string($t) && ctype_digit($t) && (int) $t <= 600000 ? (int) $t : null;
     return [204, ['Cache-Control' => 'no-store'], null, $visitId, $ms, ($form['c'] ?? null) === '1'];
-}
-
-// ── Aviso de visita/clique das amostras do funil (teste A/B) ────────────────
-
-const FUNNEL_EVENT_PATH = '/_dop/e';
-
-/**
- * POST /_dop/e ("e=v|c&p=<id da amostra>&k=<etapa>&s=<path>") → 204 na hora +
- * o evento para gravar depois da resposta (pages.log_funnel_event). O runtime
- * só manda com data-dop-ev no <body>, que o servidor põe (ab_apply). Sem o
- * cookie dop_ab válido, de robô ou malformado: 204 e nada a gravar. Outro
- * método: 404.
- *
- * @return array{0: int, 1: array<string,string>, 2: ?string, 3: ?array{host: string, path: string, step: string, kind: string, event: string, visitor: string}}
- */
-function handle_funnel_event(Request $req, string $body): array
-{
-    if ($req->method !== 'POST') {
-        return [...not_found(), null];
-    }
-    $ok = [204, ['Cache-Control' => 'no-store'], null];
-    [$visitor] = ab_parse_cookie((string) ($req->cookies[AB_COOKIE] ?? ''));
-    if ($visitor === null || is_bot_ua($req->userAgent)) {
-        return [...$ok, null];
-    }
-    parse_str($body, $form);
-    $event = ['v' => 'view', 'c' => 'click'][(string) ($form['e'] ?? '')] ?? null;
-    $step = (string) ($form['p'] ?? '');
-    $kind = (string) ($form['k'] ?? '');
-    $path = normalize_path((string) ($form['s'] ?? ''));
-    $host = normalize_host($req->rawHost);
-    if (
-        $event === null
-        || preg_match('/^p_[a-z0-9]{1,16}$/', $step) !== 1
-        || !in_array($kind, ['presell', 'main', 'backredirect'], true)
-        || !str_starts_with($path, '/') || strlen($path) > 512
-        || !is_valid_host($host)
-    ) {
-        return [...$ok, null];
-    }
-    return [...$ok, ['host' => $host, 'path' => $path, 'step' => $step, 'kind' => $kind, 'event' => $event, 'visitor' => $visitor]];
 }

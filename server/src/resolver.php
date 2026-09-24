@@ -1,16 +1,16 @@
 <?php
 /**
- * O resolvedor: decide de onde vêm as rotas de (host, path).
+ * The resolver: decides where the routes for (host, path) come from.
  *
- *   HIT       cache fresco e com todo conteúdo em disco
- *   MISS      foi ao Supabase e regravou
- *   STALE     Supabase falhou; serviu a cópia expirada
- *   UPDATING  outro worker está atualizando; serviu a cópia expirada
- *   (null)    nada em disco e Supabase fora → quem chama responde 503
+ *   HIT       fresh cache with all content on disk
+ *   MISS      went to Supabase and rewrote it
+ *   STALE     Supabase failed; served the expired copy
+ *   UPDATING  another worker is refreshing; served the expired copy
+ *   (null)    nothing on disk and Supabase down → the caller answers 503
  *
- * Com SWR=1 e php-fpm, uma entrada STALE é servida na hora e atualizada
- * DEPOIS de a resposta ir embora (fastcgi_finish_request): o visitante
- * nunca espera pelo Supabase depois da primeira visita.
+ * With SWR=1 and php-fpm, a STALE entry is served right away and refreshed
+ * AFTER the response goes out (fastcgi_finish_request): the visitor never
+ * waits for Supabase after the first visit.
  */
 declare(strict_types=1);
 
@@ -48,7 +48,7 @@ function resolve_routes(string $host, string $path): ?array
         }
     }
 
-    // Outro worker está no Supabase.
+    // Another worker is at Supabase.
     if ($entry !== null) {
         return ['routes' => $entry['routes'], 'xcache' => 'UPDATING', 'refresh' => false];
     }
@@ -62,46 +62,111 @@ function resolve_routes(string $host, string $path): ?array
     return null;
 }
 
+/** One content cache cleanup every so many refreshes (on average). */
+const CONTENT_GC_EVERY = 500;
+
 /**
- * Vai ao Supabase e regrava o cache. Devolve as rotas (sem conteúdo) ou
- * null se o Supabase falhou. Quem chama já segura o lock, ou aceita correr.
+ * Goes to Supabase and rewrites the cache. Returns the routes (without
+ * content) or null if Supabase failed. The caller already holds the lock, or
+ * accepts the race.
+ *
+ * resolve brings only each content's hash; the HTML only comes (content_get)
+ * for the hashes not yet on disk — in practice, only when a page changes.
  */
 function refresh_routes(string $host, string $path): ?array
 {
     $r = supabase_resolve($host, $path);
     if (!$r['ok']) {
-        error_log("[dayone-pages] supabase falhou para $host$path: " . ($r['error'] ?? '?'));
+        error_log("[dayone-pages] supabase failed for $host$path: " . ($r['error'] ?? '?'));
         return null;
     }
+    $routes = $r['routes'];
 
-    foreach ($r['routes'] as &$row) {
-        if (!empty($row['slug_id']) && isset($row['content']) && !empty($row['content_hash'])) {
-            cache_put_content((string) $row['slug_id'], (string) $row['content_hash'], (string) $row['content']);
-            // Sabendo de antemão que a slug NÃO tem etapas de funil (nem modo
-            // servidor, nem amostras A/B), o 304 sai sem ler o conteúdo do disco (ver serve_slug).
-            $row['funnel'] = funnel_has_sections((string) $row['content']) || funnel_is_server_mode((string) $row['content']);
-        }
-        // Teste A/B entre páginas: o conteúdo de cada página do sorteio vai para o cache também.
-        if (is_array($row['split'] ?? null)) {
-            foreach ($row['split'] as &$c) {
-                if (is_array($c) && !empty($c['slug_id']) && isset($c['content']) && !empty($c['content_hash'])) {
-                    cache_put_content((string) $c['slug_id'], (string) $c['content_hash'], (string) $c['content']);
-                    $c['funnel'] = funnel_has_sections((string) $c['content']) || funnel_is_server_mode((string) $c['content']);
-                }
+    // HTML that comes along (a resolve that still sends the content) goes straight to disk.
+    foreach ($routes as $row) {
+        foreach (array_merge([$row], is_array($row['split'] ?? null) ? $row['split'] : []) as $c) {
+            if (is_array($c) && isset($c['content']) && !empty($c['content_hash'])) {
+                cache_put_content((string) $c['content_hash'], (string) $c['content']);
             }
-            unset($c);
+        }
+    }
+
+    // The HTML missing on disk: one (page, slug) request per missing hash.
+    $refs = [];
+    foreach ($routes as $row) {
+        if (($row['action'] ?? '') !== 'SERVE' || empty($row['slug_id'])) {
+            continue;
+        }
+        foreach (array_merge([$row], is_array($row['split'] ?? null) ? $row['split'] : []) as $c) {
+            $hash = is_array($c) ? (string) ($c['content_hash'] ?? '') : '';
+            if ($hash !== '' && !empty($c['page_id']) && !cache_has_content($hash)) {
+                $refs[$c['page_id'] . '|' . $row['slug']] = ['page_id' => (string) $c['page_id'], 'slug' => (string) $row['slug']];
+            }
+        }
+    }
+    if ($refs) {
+        $got = supabase_content_get(array_values($refs));
+        if (!$got['ok']) {
+            error_log("[dayone-pages] content_get failed for $host$path: " . ($got['error'] ?? '?'));
+            return null;
+        }
+        // Store by the hash that came back; if the page changed between the resolve and now, the route now points to it.
+        $fresh = [];
+        foreach ($got['contents'] as $c) {
+            cache_put_content($c['content_hash'], $c['content']);
+            $fresh[$c['page_id'] . '|' . $c['slug']] = $c['content_hash'];
+        }
+        foreach ($routes as &$row) {
+            if (($row['action'] ?? '') !== 'SERVE' || empty($row['slug_id'])) {
+                continue;
+            }
+            $row['content_hash'] = $fresh[($row['page_id'] ?? '') . '|' . $row['slug']] ?? $row['content_hash'];
+            if (is_array($row['split'] ?? null)) {
+                foreach ($row['split'] as &$c) {
+                    if (is_array($c)) {
+                        $c['content_hash'] = $fresh[($c['page_id'] ?? '') . '|' . $row['slug']] ?? $c['content_hash'];
+                    }
+                }
+                unset($c);
+            }
+        }
+        unset($row);
+    }
+    // In use: the cleanup leaves them alone.
+    foreach (route_content_ids($routes) as $id) {
+        cache_touch_content($id);
+    }
+
+    // Knowing up front that the slug has NO funnel steps (neither server
+    // mode nor A/B samples), the 304 goes out without reading the content from disk (see serve_slug).
+    $flag = static function (array $c): array {
+        $html = !empty($c['slug_id']) && !empty($c['content_hash']) ? cache_read_content((string) $c['content_hash']) : null;
+        if ($html !== null) {
+            $c['funnel'] = funnel_has_sections($html) || funnel_is_server_mode($html);
+        }
+        return $c;
+    };
+    foreach ($routes as &$row) {
+        $row = $flag($row);
+        // A/B test between pages: the same flag for each page in the draw.
+        if (is_array($row['split'] ?? null)) {
+            $row['split'] = array_map(static fn($c) => is_array($c) ? $flag($c) : $c, $row['split']);
         }
     }
     unset($row);
 
-    $routes = strip_content($r['routes']);
+    $routes = strip_content($routes);
     if (!host_over_cap($host)) {
         cache_put_routes($host, $path, $routes);
+    }
+    if (random_int(1, CONTENT_GC_EVERY) === 1) {
+        // One day beyond the max age of an expired copy: nothing that could still be served is removed.
+        cache_gc_content(config()['stale_max_age'] + 86400);
     }
     return $routes;
 }
 
-/** A atualização em segundo plano do SWR: com lock, sem pressa. */
+/** The SWR background refresh: with the lock, no rush. */
 function refresh_in_background(string $host, string $path): void
 {
     $lock = try_lock("$host|$path");

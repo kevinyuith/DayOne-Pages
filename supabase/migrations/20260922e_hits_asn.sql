@@ -1,20 +1,20 @@
 -- ============================================================================
--- DayOne Pages — ASN do visitante em pages.hits
+-- DayOne Pages — the visitor's ASN in pages.hits
 --
--- O PHP descobre o ASN pela Team Cymru (DNS TXT em origin.asn.cymru.com) depois
--- de responder e manda em p_asn / p_as_name. Parâmetros com DEFAULT NULL: o PHP
--- anterior continua funcionando. Aplicar ANTES de subir o PHP novo.
+-- The PHP finds the ASN through Team Cymru (DNS TXT at origin.asn.cymru.com) after
+-- responding and sends it in p_asn / p_as_name. Parameters with DEFAULT NULL: the previous
+-- PHP keeps working. Apply BEFORE deploying the new PHP.
 --
--- DROP + CREATE: mudar a lista de parâmetros com CREATE OR REPLACE criaria uma
--- sobrecarga, e o PostgREST recusaria a chamada por ambiguidade. O corpo mantém
--- o filtro de páginas de 20260922d.
+-- DROP + CREATE: changing the parameter list with CREATE OR REPLACE would create an
+-- overload, and PostgREST would refuse the call as ambiguous. The body keeps
+-- the page filter from 20260922d.
 -- ============================================================================
 
 ALTER TABLE pages.hits ADD COLUMN IF NOT EXISTS asn     integer;
 ALTER TABLE pages.hits ADD COLUMN IF NOT EXISTS as_name text;
 
-COMMENT ON COLUMN pages.hits.asn     IS 'Número do sistema autônomo (ASN) do IP, via Team Cymru. NULL se não achou.';
-COMMENT ON COLUMN pages.hits.as_name IS 'Nome do ASN, ex.: "GOOGLE-CLOUD-PLATFORM - Google LLC, US".';
+COMMENT ON COLUMN pages.hits.asn     IS 'Autonomous system number (ASN) of the IP, via Team Cymru. NULL if not found.';
+COMMENT ON COLUMN pages.hits.as_name IS 'ASN name, e.g. "GOOGLE-CLOUD-PLATFORM - Google LLC, US".';
 
 DROP FUNCTION IF EXISTS pages.log_hit(text, uuid, text, text, text, int, text, text, boolean, text, text, text, text);
 

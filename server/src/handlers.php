@@ -1,14 +1,14 @@
 <?php
 /**
- * Endpoints internos: /_health e /_purge.
+ * Internal endpoints: /_health and /_purge.
  *
- * /_health não depende do Supabase — é liveness. Devolve o marcador
- * X-DayOne-Pages (SERVER_ID), que é como o dashboard confirma que um domínio
- * chegou neste servidor.
+ * /_health doesn't depend on Supabase — it's liveness. It returns the
+ * X-DayOne-Pages marker (SERVER_ID), which is how the dashboard confirms that
+ * a domain reached this server.
  *
- * /_purge apaga as entradas de rotas de um host (ou tudo). Só POST, com
- * X-Purge-Token comparado em tempo constante. Sem token configurado ou com
- * token errado responde 404, não 401: não confirma que a rota existe.
+ * /_purge deletes a host's routes entries (or everything). POST only, with
+ * X-Purge-Token compared in constant time. With no token configured or a
+ * wrong token it answers 404, not 401: it doesn't confirm the route exists.
  */
 declare(strict_types=1);
 

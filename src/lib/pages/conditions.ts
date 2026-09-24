@@ -1,29 +1,29 @@
 import { z } from "zod";
 
 /**
- * O contrato de `domain_routes.conditions` — dashboard ⇄ banco ⇄ servidor PHP.
+ * The contract of the domain filter's conditions (`domains.filter`) — dashboard ⇄ database ⇄ PHP server.
  *
- * O banco só devolve o JSON; quem avalia é o servidor (server/src/conditions.php),
- * e quem garante a forma é este schema, na escrita. Toda chave é opcional e
- * `{}` significa "sempre casa". Chave desconhecida é recusada aqui e tratada
- * como "não casa" pelo servidor.
+ * The database only returns the JSON; the server evaluates it (server/src/conditions.php),
+ * and this schema guarantees its shape, on write. Every key is optional and
+ * `{}` means "always matches". An unknown key is rejected here and treated
+ * as "doesn't match" by the server.
  *
- *   countries       ISO-3166 alpha-2, maiúsculo. Vem do header CF-IPCountry.
- *   countries_mode  "block" inverte a lista: casa quem NÃO está nela. Ausente = "permitir só".
- *   devices         mobile | tablet | desktop, pelo User-Agent.
- *   languages       ISO 639-1 (duas letras), minúsculo. Vem do Accept-Language do navegador.
- *   languages_mode  igual a countries_mode, para os idiomas.
- *   query           por parâmetro: "present" | "absent" | { equals: "valor" }.
- *   referrer        texto contido no header Referer (case-insensitive).
- *   bot             true = User-Agent de crawler/scraper. SÓ com action=BLOCK
- *                   (CHECK no banco). Serve para barrar, nunca para trocar conteúdo.
+ *   countries       ISO-3166 alpha-2, uppercase. Comes from the CF-IPCountry header.
+ *   countries_mode  "block" inverts the list: matches whoever is NOT in it. Absent = "allow only".
+ *   devices         mobile | tablet | desktop, from the User-Agent.
+ *   languages       ISO 639-1 (two letters), lowercase. Comes from the browser's Accept-Language.
+ *   languages_mode  same as countries_mode, for languages.
+ *   query           per parameter: "present" | "absent" | { equals: "value" }.
+ *   referrer        text contained in the Referer header (case-insensitive).
+ *   bot             true = crawler/scraper User-Agent. Only the domain's bot block uses it
+ *                   (the filter rejects it). Meant for blocking, never for swapping content.
  */
 
 export const DEVICES = ["mobile", "tablet", "desktop"] as const;
 export type Device = (typeof DEVICES)[number];
 export const DEVICE_LABELS: Record<Device, string> = { mobile: "Mobile", tablet: "Tablet", desktop: "Desktop" };
 
-/** Sentido de uma lista (país/idioma): permitir só os listados, ou bloquear os listados. */
+/** Direction of a list (country/language): allow only the listed ones, or block the listed ones. */
 export const LIST_MODES = ["allow", "block"] as const;
 export type ListMode = (typeof LIST_MODES)[number];
 export const LIST_MODE_LABELS: Record<ListMode, string> = { allow: "Allow only", block: "Block" };
@@ -45,23 +45,23 @@ export const conditionsSchema = z
     referrer: z.string().min(1).max(200).optional(),
     bot: z.literal(true).optional(),
   })
-  // Um modo sem a lista dele não decide nada: recusa aqui para não gravar lixo.
+  // A mode without its list decides nothing: reject it here so no junk gets saved.
   .refine((c) => !c.countries_mode || (c.countries?.length ?? 0) > 0, { message: "countries_mode requires countries", path: ["countries_mode"] })
   .refine((c) => !c.languages_mode || (c.languages?.length ?? 0) > 0, { message: "languages_mode requires languages", path: ["languages_mode"] });
 
 export type RouteConditions = z.infer<typeof conditionsSchema>;
 
-/** Linha do formulário de parâmetros. */
+/** A row of the parameters form. */
 export type QueryRuleRow = { key: string; mode: QueryMode; value: string };
 
 /**
- * Lê as condições do FormData do formulário de rota/filtro.
+ * Reads the conditions from the FormData of the route/filter form.
  *
- * Campos: `countries` (texto: "BR, US"), `countries_mode` ("allow"|"block"),
- * `devices` (checkboxes), `languages` (texto: "en, es"), `languages_mode`
- * ("allow"|"block"), `query_key`, `query_mode`, `query_value` (listas
- * paralelas), `referrer`, `bot` (checkbox). O modo só é gravado quando a lista
- * correspondente existe; "allow" é o padrão e nunca vai para o JSON.
+ * Fields: `countries` (text: "BR, US"), `countries_mode` ("allow"|"block"),
+ * `devices` (checkboxes), `languages` (text: "en, es"), `languages_mode`
+ * ("allow"|"block"), `query_key`, `query_mode`, `query_value` (parallel
+ * lists), `referrer`, `bot` (checkbox). The mode is only saved when the
+ * matching list exists; "allow" is the default and never goes into the JSON.
  */
 export function parseConditionsForm(fd: FormData): { ok: true; value: RouteConditions } | { ok: false; reason: string } {
   const raw: Record<string, unknown> = {};
@@ -108,7 +108,7 @@ export function parseConditionsForm(fd: FormData): { ok: true; value: RouteCondi
   return { ok: true, value: parsed.data };
 }
 
-/** Converte as condições gravadas para as linhas do formulário. */
+/** Converts the saved conditions into the form rows. */
 export function conditionsToForm(c: RouteConditions | null | undefined): {
   countries: string;
   countriesMode: ListMode;
@@ -134,7 +134,7 @@ export function conditionsToForm(c: RouteConditions | null | undefined): {
   };
 }
 
-/** Resumo curto para a tabela de rotas. */
+/** Short summary for the routes table. */
 export function summarizeConditions(c: RouteConditions | null | undefined): string {
   if (!c) return "Always";
   const parts: string[] = [];

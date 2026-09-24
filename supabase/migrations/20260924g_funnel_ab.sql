@@ -2,7 +2,7 @@
 -- DayOne Pages — funnel library and A/B test of each funnel step
 --
 -- 1. Funnels are templates with kind = 'FUNNEL'. They live in their own
---    dashboard screen (Funil), with their own folder tree: folders.scope says
+--    dashboard screen (Funnel), with their own folder tree: folders.scope says
 --    which screen a folder belongs to ('TEMPLATE' or 'FUNNEL'); a subfolder
 --    always has the scope of its parent. A domain gets a copy of a funnel the
 --    same way it gets a copy of a template (domain_page_copy).
@@ -25,12 +25,12 @@
 ALTER TABLE pages.pages DROP CONSTRAINT IF EXISTS pages_kind_check;
 ALTER TABLE pages.pages ADD CONSTRAINT pages_kind_check
   CHECK (kind = ANY (ARRAY['PRESELL', 'ADVERTORIAL', 'VSL', 'CHECKOUT', 'SAFE', 'OTHER', 'FUNNEL']));
-COMMENT ON COLUMN pages.pages.kind IS 'Page kind. FUNNEL = a funnel (shown in the Funil screen instead of Templates).';
+COMMENT ON COLUMN pages.pages.kind IS 'Page kind. FUNNEL = a funnel (shown in the Funnel screen instead of Templates).';
 
 ALTER TABLE pages.folders ADD COLUMN IF NOT EXISTS scope text NOT NULL DEFAULT 'TEMPLATE';
 ALTER TABLE pages.folders DROP CONSTRAINT IF EXISTS ck_folders_scope;
 ALTER TABLE pages.folders ADD CONSTRAINT ck_folders_scope CHECK (scope IN ('TEMPLATE', 'FUNNEL'));
-COMMENT ON COLUMN pages.folders.scope IS 'Which dashboard screen the folder belongs to: TEMPLATE (Templates) or FUNNEL (Funil).';
+COMMENT ON COLUMN pages.folders.scope IS 'Which dashboard screen the folder belongs to: TEMPLATE (Templates) or FUNNEL (Funnel).';
 CREATE INDEX IF NOT EXISTS idx_pages_folders_scope ON pages.folders (scope);
 
 -- A subfolder has the scope of its parent.

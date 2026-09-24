@@ -1,23 +1,23 @@
 -- ============================================================================
--- DayOne Pages — registro de hits (tráfego) + agregações para o dashboard
+-- DayOne Pages — hit logging (traffic) + aggregations for the dashboard
 --
--- Incremental e idempotente. Tudo no schema `pages`.
+-- Incremental and idempotent. Everything in the `pages` schema.
 --
---   pages.hits            uma linha por request servido pelo servidor de entrega
---   pages.log_hit(...)    escrita: chamada pelo servidor PHP (anon + server key),
---                         mesmo esquema de pages.resolve (SECURITY DEFINER)
---   pages.hit_stats       contadores do período (para os cards)
---   pages.hit_timeseries  série por bucket (para o gráfico), sem buracos
---   pages.recent_hits     últimos N (para os Access Logs)
+--   pages.hits            one row per request served by the delivery server
+--   pages.log_hit(...)    write: called by the PHP server (anon + server key),
+--                         same scheme as pages.resolve (SECURITY DEFINER)
+--   pages.hit_stats       counters for the period (for the cards)
+--   pages.hit_timeseries  series per bucket (for the chart), with no gaps
+--   pages.recent_hits     last N (for the Access Logs)
 --
--- PRIVACIDADE: por decisão do usuário (18/09), guardamos IP e User-Agent crus
--- (PII). Recomenda-se uma retenção (ex.: apagar hits com mais de 90 dias) — não
--- criada aqui para não assumir o prazo. `visitantes únicos` = IPs distintos.
+-- PRIVACY: by the user's decision (09/18), we store raw IP and User-Agent
+-- (PII). A retention policy is recommended (e.g. delete hits older than 90 days) — not
+-- created here so as not to assume the period. `unique visitors` = distinct IPs.
 -- ============================================================================
 
 
 -- ┌──────────────────────────────────────────────────────────────────────────┐
--- │ Tabela                                                                    │
+-- │ Table                                                                    │
 -- └──────────────────────────────────────────────────────────────────────────┘
 
 CREATE TABLE IF NOT EXISTS pages.hits (
@@ -28,16 +28,16 @@ CREATE TABLE IF NOT EXISTS pages.hits (
   path          text        NOT NULL,
   outcome       text        NOT NULL,   -- served|redirect|blocked|bot|notfound|error|other
   status_code   smallint,
-  country       text,                   -- ISO-2 (CF-IPCountry) ou NULL
+  country       text,                   -- ISO-2 (CF-IPCountry) or NULL
   device        text,                   -- mobile|tablet|desktop
   is_bot        boolean     NOT NULL DEFAULT false,
   referrer_host text,
-  ip            text,                   -- IP cru (PII, por decisão do usuário)
+  ip            text,                   -- raw IP (PII, by the user's decision)
   user_agent    text,
   CONSTRAINT ck_hits_outcome CHECK (outcome IN ('served','redirect','blocked','bot','notfound','error','other'))
 );
 
-COMMENT ON TABLE pages.hits IS 'Um registro por request servido pelo servidor de entrega. Alimenta os cards/gráfico/logs do dashboard. Contém IP/UA crus (PII).';
+COMMENT ON TABLE pages.hits IS 'One record per request served by the delivery server. Feeds the dashboard cards/chart/logs. Contains raw IP/UA (PII).';
 
 CREATE INDEX IF NOT EXISTS idx_pages_hits_created         ON pages.hits (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_pages_hits_domain_created  ON pages.hits (domain_id, created_at DESC);
@@ -47,12 +47,12 @@ REVOKE ALL ON pages.hits FROM anon, authenticated;
 
 
 -- ┌──────────────────────────────────────────────────────────────────────────┐
--- │ Escrita: pages.log_hit — chamada pelo servidor PHP                        │
+-- │ Write: pages.log_hit — called by the PHP server                          │
 -- └──────────────────────────────────────────────────────────────────────────┘
 --
--- Mesma porta do `anon` que pages.resolve: exige uma chave válida de
--- pages.server_keys. SECURITY DEFINER para inserir sem o servidor ter a service
--- key. Chave errada → 28000 (403 no PostgREST). Fire-and-forget do lado do PHP.
+-- Same `anon` door as pages.resolve: requires a valid key from
+-- pages.server_keys. SECURITY DEFINER to insert without the server having the service
+-- key. Wrong key → 28000 (403 in PostgREST). Fire-and-forget on the PHP side.
 
 CREATE OR REPLACE FUNCTION pages.log_hit(
   p_key           text,
@@ -100,11 +100,11 @@ GRANT EXECUTE ON FUNCTION pages.log_hit(text, uuid, text, text, text, int, text,
 
 
 -- ┌──────────────────────────────────────────────────────────────────────────┐
--- │ Leitura (dashboard): stats, série temporal, recentes                      │
+-- │ Read (dashboard): stats, time series, recent                             │
 -- └──────────────────────────────────────────────────────────────────────────┘
 --
--- SECURITY DEFINER + grant só ao service_role (o dashboard). O painel não tem
--- login; quem o protege é a rede na frente.
+-- SECURITY DEFINER + grant only to service_role (the dashboard). The panel has no
+-- login; what protects it is the network in front.
 
 CREATE OR REPLACE FUNCTION pages.hit_stats(p_since timestamptz, p_domain uuid DEFAULT NULL)
 RETURNS TABLE (total bigint, served bigint, blocked bigint, bots bigint, uniques bigint)

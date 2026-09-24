@@ -4,17 +4,17 @@ export type Stat = {
   label: string;
   value: string;
   detail: string;
-  /** Série do gráfico que este número resume: ganha a marca da cor dela. */
+  /** Chart series this number summarizes: gets that series' color mark. */
   series?: SeriesKey;
-  /** Fração do total (0–1): desenha o medidor na cor da série. */
+  /** Fraction of the total (0–1): draws the meter in the series color. */
   share?: number;
 };
 
 /**
- * A faixa de métricas do topo do dashboard: um cartão só, dividido em células
- * por linhas finas (o fundo `bg-border` aparece no `gap-px`). Sem ícones: a
- * identidade vem do rótulo e, nas séries do gráfico, da mesma marca de cor da
- * legenda. No celular a primeira célula ocupa a linha inteira (5 = 1 + 2 + 2).
+ * The metrics strip at the top of the dashboard: a single card, split into cells
+ * by thin lines (the `bg-border` background shows through the `gap-px`). No icons:
+ * identity comes from the label and, for the chart series, from the same color mark as
+ * the legend. On phones the first cell takes the whole row (5 = 1 + 2 + 2).
  */
 export function StatStrip({ stats }: { stats: Stat[] }) {
   return (
@@ -34,7 +34,7 @@ function StatCell({ stat, className }: { stat: Stat; className: string }) {
         {color ? <span aria-hidden className="h-0.5 w-3 shrink-0 rounded-full" style={{ background: color }} /> : null}
         <span className="truncate">{stat.label}</span>
       </p>
-      {/* Número grande em algarismos proporcionais (tabular só em colunas). */}
+      {/* Big number in proportional figures (tabular only in columns). */}
       <p className="mt-3 text-[28px] font-semibold leading-none tracking-tight">
         <span className="sensitive">{stat.value}</span>
       </p>

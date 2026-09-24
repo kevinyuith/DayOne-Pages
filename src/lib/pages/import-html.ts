@@ -1,15 +1,15 @@
 /**
- * HTML trazido de outro site ("Criar template → copiar de um link"), pronto
- * para virar template: os endereços relativos (imagens, CSS, scripts,
- * srcset, url() do CSS, links e forms) viram absolutos em relação à página
- * de origem. Sem isso, `/img/logo.png` quebraria ao ser servido de outro
- * domínio. Os links continuam apontando para o site de origem; troque-os no
- * painel Links do editor.
+ * HTML brought in from another site ("Create template → copy from a link"),
+ * ready to become a template: relative addresses (images, CSS, scripts,
+ * srcset, CSS url(), links and forms) become absolute relative to the source
+ * page. Without this, `/img/logo.png` would break when served from another
+ * domain. Links keep pointing at the source site; swap them in the editor's
+ * Links panel.
  *
- * `<base>` sai (os endereços já estão resolvidos). `#âncora`, `data:`,
- * `mailto:`, `tel:`, `javascript:` e marcadores `{{...}}` ficam como estão.
+ * `<base>` is removed (the addresses are already resolved). `#anchor`, `data:`,
+ * `mailto:`, `tel:`, `javascript:` and `{{...}}` placeholders stay as they are.
  *
- * Só no cliente (DOMParser).
+ * Client-only (DOMParser).
  */
 
 const URL_ATTRS = ["src", "href", "poster", "action", "background", "data-src", "data-href", "data-bg", "data-background"];

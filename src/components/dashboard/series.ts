@@ -1,12 +1,12 @@
 /**
- * As três séries do tráfego, compartilhadas pelo gráfico e pelos cards (a
- * mesma cor marca a mesma série nos dois). Arquivo sem "use client" de
- * propósito: o page.tsx (servidor) lê os valores daqui.
+ * The three traffic series, shared by the chart and the cards (the same
+ * color marks the same series in both). This file has no "use client" on
+ * purpose: page.tsx (server) reads the values from here.
  *
- * Cores validadas (scripts/validate_palette.js da skill dataviz, todos os
- * pares, superfícies #ffffff e #141414): faixa de luminosidade, croma, CVD
- * (pior par 8.6), visão normal e contraste passam nos dois modos. Verde e
- * vermelho batem com os selos Served/Blocked da tabela; violeta com o "Bot".
+ * Validated colors (scripts/validate_palette.js from the dataviz skill, all
+ * pairs, surfaces #ffffff and #141414): lightness band, chroma, CVD
+ * (worst pair 8.6), normal vision and contrast pass in both modes. Green and
+ * red match the table's Served/Blocked badges; violet matches "Bot".
  */
 export const SERIES = [
   { key: "served", label: "Served", color: "#059669" },

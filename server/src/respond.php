@@ -1,26 +1,27 @@
 <?php
 /**
- * De rotas candidatas a uma resposta.
+ * From candidate routes to a response.
  *
- * As rotas chegam em ordem de prioridade, com a FALLBACK (página padrão do
- * domínio) por último. A primeira cujas `conditions` casam decide:
+ * Routes arrive in priority order, with the FALLBACK (the domain's default
+ * page) last. The first whose `conditions` match decides:
  *
- *   SERVE     slug_id nulo → 404 (a rota existe mas a slug não; não pula
- *             para a próxima, para o erro aparecer em vez de sumir).
- *             If-None-Match igual ao hash → 304. Senão 200 com o HTML.
- *             Slug com funil em modo servidor (funnel.php): só a etapa atual
- *             sai, o ETag ganha o id da etapa e a resposta varia por Cookie.
- *             Página HTML ganha o aviso de carregamento (beacon.php).
- *             Marcadores {{chave}} viram os dados do domínio (placeholders.php).
- *   REDIRECT  Location = redirect_url (+ query original se preserve_query).
- *   BLOCK     o status configurado, com uma página mínima.
+ *   SERVE     null slug_id → 404 (the route exists but the slug doesn't; it
+ *             doesn't skip to the next one, so the error shows up instead of
+ *             vanishing).
+ *             If-None-Match equal to the hash → 304. Otherwise 200 with the HTML.
+ *             Slug with a server-mode funnel (funnel.php): only the current step
+ *             goes out, the ETag gets the step id and the response varies by Cookie.
+ *             An HTML page gets the load notice (beacon.php).
+ *             {{key}} placeholders become the domain's data (placeholders.php).
+ *   REDIRECT  Location = redirect_url (+ original query if preserve_query).
+ *   BLOCK     the configured status, with a minimal page.
  *
- * Rota com condição `bot` fora de BLOCK é ignorada: detecção de bot serve
- * para barrar, nunca para trocar o conteúdo.
+ * A route with a `bot` condition outside BLOCK is ignored: bot detection is
+ * for barring, never for swapping the content.
  *
- * Nenhuma casou: robots.txt tem uma resposta padrão; o resto é 404.
- * Sem rota nenhuma (domínio pausado ou desconhecido): 404 em tudo, até no
- * robots.txt — domínio fora do ar não responde nada.
+ * None matched: robots.txt has a default response; the rest is 404.
+ * No routes at all (paused or unknown domain): 404 for everything, even
+ * robots.txt — a domain that is offline answers nothing.
  */
 declare(strict_types=1);
 
@@ -29,9 +30,9 @@ defined('DAYONE_ENTRY') || (http_response_code(404) && exit);
 const PRIVATE_NO_CACHE = 'private, no-cache';
 
 /**
- * Devolve [status, headers, body, outcome, rota]. `outcome` classifica o hit
- * para o registro de tráfego: served | redirect | blocked | bot | notfound |
- * error. `rota` é a que decidiu (null se nenhuma casou), também para o registro.
+ * Returns [status, headers, body, outcome, route]. `outcome` classifies the
+ * hit for the traffic log: served | redirect | blocked | bot | notfound |
+ * error. `route` is the one that decided (null if none matched), also for the log.
  *
  * @return array{0: int, 1: array<string,string>, 2: ?string, 3: string, 4: ?array}
  */
@@ -42,7 +43,7 @@ function decide(array $routes, Request $req): array
         $action = (string) ($route['action'] ?? '');
 
         if (array_key_exists('bot', $cond) && $action !== 'BLOCK') {
-            error_log('[dayone-pages] rota com condição bot fora de BLOCK ignorada: ' . ($route['route_id'] ?? '?'));
+            error_log('[dayone-pages] route with bot condition outside BLOCK ignored: ' . ($route['route_id'] ?? '?'));
             continue;
         }
         if (!conditions_match($cond, $req)) {
@@ -51,7 +52,7 @@ function decide(array $routes, Request $req): array
 
         switch ($action) {
             case 'SERVE':
-                // Teste A/B entre as páginas de um funil: a rota passa a ser a página sorteada.
+                // A/B test between the pages of a funnel: the route becomes the drawn page.
                 [$route, $splitCookie] = split_pick($route, $req->cookies);
                 $r = serve_slug($route, $req);
                 if (isset($route['split_count'])) {
@@ -81,13 +82,13 @@ function decide(array $routes, Request $req): array
     return [...not_found(), 'notfound', null];
 }
 
-/** Traduz o status de uma rota SERVE em outcome de tráfego. */
+/** Maps a SERVE route's status to a traffic outcome. */
 function serve_outcome(int $status): string
 {
     return match ($status) {
         404 => 'notfound',
         503 => 'error',
-        default => 'served', // 200 e 304
+        default => 'served', // 200 and 304
     };
 }
 
@@ -101,7 +102,7 @@ function serve_slug(array $route, Request $req): array
     $slugId = (string) ($route['slug_id'] ?? '');
     $hash = (string) ($route['content_hash'] ?? '');
     if ($slugId === '' || $hash === '') {
-        // A rota casou mas a slug não existe. robots.txt ganha o padrão; o resto é 404.
+        // The route matched but the slug doesn't exist. robots.txt gets the default; the rest is 404.
         return $req->path === '/robots.txt' ? robots_default() : not_found();
     }
 
@@ -111,18 +112,19 @@ function serve_slug(array $route, Request $req): array
         'Vary' => 'CF-IPCountry, User-Agent, Accept-Language',
     ];
 
-    // Página HTML leva o aviso de carregamento (beacon.php) e o ETag ganha a
-    // versão do script.
+    // An HTML page carries the load notice (beacon.php) and the ETag gets the
+    // script version.
     $beacon = beacon_applies($route, $req);
     $tag = $beacon ? BEACON_ETAG : '';
 
-    // Marcadores {{chave}}: o hash dos valores entra no ETag (placeholders.php).
+    // {{key}} placeholders: the hash of the values goes into the ETag (placeholders.php).
     $values = placeholder_values($route, $req);
     $ptag = placeholders_etag($values);
 
-    // Slug que o cache já marcou como "não é funil em modo servidor": o ETag é
-    // só o hash e o 304 sai sem ler o conteúdo do disco. Cache antigo (sem a
-    // marca) ou funil: lê o conteúdo, porque a etapa entra no ETag.
+    // A slug the cache already flagged as "not a server-mode funnel": the ETag
+    // is just the hash and the 304 goes out without reading the content from
+    // disk. Old cache (without the flag) or funnel: reads the content, because
+    // the step goes into the ETag.
     if (($route['funnel'] ?? null) === false) {
         $headers['ETag'] = '"' . $hash . $ptag . $tag . '"';
         if ($req->ifNoneMatch !== null && etag_matches($req->ifNoneMatch, $headers['ETag'])) {
@@ -130,14 +132,14 @@ function serve_slug(array $route, Request $req): array
         }
     }
 
-    $body = cache_read_content($slugId, $hash);
+    $body = cache_read_content($hash);
     if ($body === null) {
-        error_log("[dayone-pages] conteúdo ausente no cache para slug $slugId ($hash)");
+        error_log("[dayone-pages] content missing from cache for slug $slugId ($hash)");
         return [503, ['Content-Type' => 'text/html; charset=utf-8', 'Cache-Control' => 'no-store', 'Retry-After' => '10'], plain_page('One moment', 'Updating the page. Please try again in a few seconds.')];
     }
 
-    // Teste A/B: cada etapa com várias amostras fica com a sorteada para este
-    // visitante (cookie dop_ab); a combinação entra no ETag.
+    // A/B test: each step with several samples keeps the one drawn for this
+    // visitor (dop_ab cookie); the combination goes into the ETag.
     $ab = ab_apply($body, $req->cookies);
     $abTag = '';
     if ($ab) {
@@ -148,8 +150,8 @@ function serve_slug(array $route, Request $req): array
         }
     }
 
-    // Funil em modo servidor: a etapa entra no ETag (cada etapa é um corpo
-    // diferente na MESMA URL). Com teste A/B ou funil, a resposta varia por Cookie.
+    // Server-mode funnel: the step goes into the ETag (each step is a different
+    // body at the SAME URL). With an A/B test or a funnel, the response varies by Cookie.
     $funnel = funnel_apply($body, $req->cookies);
     $etag = '"' . $hash . $abTag . ($funnel ? '-' . $funnel['step'] : '') . $ptag . $tag . '"';
     if ($funnel) {
@@ -199,7 +201,7 @@ function block(array $route): array
         $status = 404;
     }
     if ($status === 404) {
-        // Bloqueio com 404 é igual a um 404 de verdade: o visitante não sabe que foi barrado.
+        // A block with 404 is identical to a real 404: the visitor doesn't know they were barred.
         return not_found();
     }
     $title = match ($status) {

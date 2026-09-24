@@ -5,10 +5,10 @@ import { useState } from "react";
 import { ArrowRightIcon, CloseIcon, WarningIcon } from "@/components/icons";
 
 /**
- * Aviso no topo do dashboard, numa linha só: aparece quando há domínios ativos
- * que ainda não passaram na verificação de DNS — sinal real, vindo do banco.
- * Some ao fechar; como reflete uma condição ainda não resolvida, volta a
- * aparecer no reload.
+ * Single-line notice at the top of the dashboard: shows up when there are active
+ * domains that have not passed the DNS check yet — a real signal, from the database.
+ * Goes away when dismissed; since it reflects an unresolved condition, it comes back
+ * on reload.
  */
 export function AlertBanner({ attentionCount }: { attentionCount: number }) {
   const [dismissed, setDismissed] = useState(false);
@@ -23,7 +23,7 @@ export function AlertBanner({ attentionCount }: { attentionCount: number }) {
       className="mb-6 flex items-start gap-3 rounded-lg border border-amber-500/25 bg-amber-500/[0.06] py-2 pl-3.5 pr-2 text-sm sm:items-center"
     >
       <WarningIcon className="mt-0.5 size-4 shrink-0 text-amber-600 sm:mt-0 dark:text-amber-400" aria-hidden />
-      {/* No celular o link desce para baixo do texto; da largura sm em diante fica na mesma linha. */}
+      {/* On phones the link drops below the text; from sm width up it stays on the same line. */}
       <div className="flex min-w-0 flex-1 flex-col items-start gap-1 sm:flex-row sm:items-center sm:gap-3">
         <p className="min-w-0 flex-1">
           <span className="font-medium">
@@ -32,7 +32,7 @@ export function AlertBanner({ attentionCount }: { attentionCount: number }) {
           <span className="text-muted">Point the DNS and run the check on each domain.</span>
         </p>
         <Link
-          href="/dominios"
+          href="/domains"
           className="-ml-2 inline-flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 font-medium text-amber-700 transition-colors hover:bg-amber-500/10 sm:ml-0 dark:text-amber-300"
         >
           Review domains

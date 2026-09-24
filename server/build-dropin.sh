@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# Monta a versão "soltar na pasta do site": para hospedagem com painel
-# (CloudPanel, Plesk...), onde a pasta do site É o webroot e não dá para pôr
-# src/ e .env fora dele.
+# Builds the "drop into the site folder" version: for hosting with a control
+# panel (CloudPanel, Plesk...), where the site folder IS the webroot and you
+# can't put src/ and .env outside it.
 #
-#   index.php      ponto de entrada (único arquivo que o nginx precisa chamar)
-#   config.php     configuração (no lugar do .env; nunca é entregue como texto)
-#   _dayone/       o código de src/, cada arquivo com trava contra acesso direto
-#   _cache/        criado sozinho na primeira visita
+#   index.php      entry point (the only file nginx needs to call)
+#   config.php     configuration (instead of .env; never delivered as text)
+#   _dayone/       the code from src/, each file with a guard against direct access
+#   _cache/        created automatically on the first visit
 #
-# A fonte continua sendo server/src/ — esta pasta é GERADA, não editada.
-# Uso: bash server/build-dropin.sh [destino]     (padrão: server/dist/dropin)
+# The source is still server/src/ — this folder is GENERATED, not edited.
+# Usage: bash server/build-dropin.sh [destination]     (default: server/dist/dropin)
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 OUT="${1:-$HERE/dist/dropin}"
@@ -19,9 +19,9 @@ cp "$HERE"/src/*.php "$OUT/_dayone/"
 cp "$HERE/dropin/index.php" "$OUT/index.php"
 cp "$HERE/dropin/config.php" "$OUT/config.php"
 
-# Todo arquivo interno tem de carregar a trava. Sem ela, um pedido direto roda o arquivo.
+# Every internal file must carry the guard. Without it, a direct request runs the file.
 for f in "$OUT"/_dayone/*.php "$OUT/config.php"; do
-  grep -q "defined('DAYONE_ENTRY')" "$f" || { echo "SEM TRAVA: $f" >&2; exit 1; }
+  grep -q "defined('DAYONE_ENTRY')" "$f" || { echo "NO GUARD: $f" >&2; exit 1; }
 done
 for f in "$OUT"/index.php "$OUT"/config.php "$OUT"/_dayone/*.php; do php -l "$f" >/dev/null; done
-echo "drop-in montado em $OUT"
+echo "drop-in built at $OUT"

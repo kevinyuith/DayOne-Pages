@@ -1,17 +1,17 @@
 -- ============================================================================
--- DayOne Pages — idiomas no filtro + bloqueio de bots por domínio
+-- DayOne Pages — languages in the filter + per-domain bot blocking
 --
--- Aplicar SOBRE 20260918_domain_filter.sql. Incremental e idempotente.
+-- Apply ON TOP of 20260918_domain_filter.sql. Incremental and idempotent.
 --
--- O que entra:
---   1. pages.domains.block_bots — interruptor "bloquear bots/conexões suspeitas"
---   2. match_routes() — um candidato de BLOQUEIO (403) no TOPO quando block_bots
+-- What goes in:
+--   1. pages.domains.block_bots — "block bots/suspicious connections" switch
+--   2. match_routes() — a BLOCK (403) candidate at the TOP when block_bots
 --
--- Idiomas e o sentido allow/block das listas (país/idioma) NÃO precisam de
--- coluna nem de CHECK: moram dentro do jsonb `filter` (chaves `languages`,
--- `languages_mode`, `countries_mode`), avaliadas pela camada de serving. O
--- CHECK ck_domains_filter_no_bot (de 20260918) continua valendo: o filtro nunca
--- carrega `bot` — bot só BLOQUEIA, e é isso que a coluna abaixo faz.
+-- Languages and the allow/block direction of the lists (country/language) need NO
+-- column or CHECK: they live inside the `filter` jsonb (keys `languages`,
+-- `languages_mode`, `countries_mode`), evaluated by the serving layer. The
+-- CHECK ck_domains_filter_no_bot (from 20260918) still holds: the filter never
+-- carries `bot` — bot only BLOCKS, and that is what the column below does.
 -- ============================================================================
 
 
@@ -23,20 +23,20 @@ ALTER TABLE pages.domains
   ADD COLUMN IF NOT EXISTS block_bots boolean NOT NULL DEFAULT false;
 
 COMMENT ON COLUMN pages.domains.block_bots IS
-  'Bloqueia crawlers/conexões automatizadas (responde 403) antes de qualquer rota. Não troca a página — só barra.';
+  'Blocks crawlers/automated connections (answers 403) before any route. Does not change the page — it only blocks.';
 
 
 -- ┌──────────────────────────────────────────────────────────────────────────┐
--- │ 2. match_routes() — bot gate no topo + filtro do domínio                  │
+-- │ 2. match_routes() — bot gate at the top + domain filter                  │
 -- └──────────────────────────────────────────────────────────────────────────┘
 --
--- Muda só o CTE `dom` (traz block_bots) e o CTE `candidates` (uma linha nova de
--- BLOQUEIO com prioridade -1, antes de tudo). O resto é igual à versão de
--- 20260918. A camada de serving avalia as `conditions` de cada linha e serve a
--- primeira que passar; o bot gate casa apenas User-Agent de bot.
+-- Only the `dom` CTE (brings block_bots) and the `candidates` CTE (a new
+-- BLOCK row with priority -1, before everything) change. The rest is the same as the
+-- 20260918 version. The serving layer evaluates each row's `conditions` and serves the
+-- first one that passes; the bot gate only matches a bot User-Agent.
 --
--- Ordem de prioridade: bot gate (-1) → regras manuais (0..100000) →
--- filtro (2147483646) → fallback (2147483647).
+-- Priority order: bot gate (-1) → manual rules (0..100000) →
+-- filter (2147483646) → fallback (2147483647).
 
 CREATE OR REPLACE FUNCTION pages.match_routes(p_host text, p_path text)
 RETURNS TABLE (
@@ -66,9 +66,9 @@ LANGUAGE sql STABLE SET search_path = '' AS $function$
     WHERE d.status = 'ACTIVE' AND d.domain = req.host
   ),
   candidates AS (
-    -- 0. Bloqueio de bots do domínio: se ligado, um BLOCK 403 que só casa bots,
-    --    antes de qualquer rota. Não troca a página — barra a conexão.
-    --    Sendo o PRIMEIRO SELECT do CTE, é ele quem nomeia as colunas: alias em todas.
+    -- 0. The domain's bot blocking: if on, a BLOCK 403 that only matches bots,
+    --    before any route. It does not change the page — it blocks the connection.
+    --    Being the FIRST SELECT of the CTE, it names the columns: alias on all of them.
     SELECT NULL::uuid AS route_id, dom.id AS domain_id, -1 AS priority, 'BOTGATE' AS match_type,
            NULL::text AS path_pattern, '{"bot": true}'::jsonb AS conditions, 'BLOCK' AS action,
            NULL::uuid AS page_id, NULL::text AS slug, NULL::text AS redirect_url,
@@ -77,7 +77,7 @@ LANGUAGE sql STABLE SET search_path = '' AS $function$
     WHERE dom.block_bots
 
     UNION ALL
-    -- 1. Regras manuais do domínio (prioridade explícita).
+    -- 1. The domain's manual rules (explicit priority).
     SELECT r.id AS route_id, r.domain_id, r.priority, r.match_type, r.path_pattern, r.conditions, r.action,
            r.page_id,
            CASE WHEN r.action = 'SERVE' THEN coalesce(r.slug, req.path) END AS slug,
@@ -94,15 +94,15 @@ LANGUAGE sql STABLE SET search_path = '' AS $function$
           END
 
     UNION ALL
-    -- 2. Filtro do domínio: passou nas condições → página de aprovação.
-    --    Entra logo antes do fallback; só existe quando há filtro e página.
+    -- 2. Domain filter: passed the conditions → pass page.
+    --    Comes right before the fallback; only exists when there is a filter and a page.
     SELECT NULL, dom.id, 2147483646, 'FILTER', NULL, dom.filter, 'SERVE',
            dom.filter_pass_page_id, req.path, NULL, NULL, true
     FROM dom, req
     WHERE dom.filter IS NOT NULL AND dom.filter_pass_page_id IS NOT NULL
 
     UNION ALL
-    -- 3. Fallback: página de reprovação do filtro, senão a página padrão.
+    -- 3. Fallback: the filter's fail page, otherwise the default page.
     SELECT NULL, dom.id, 2147483647, 'FALLBACK', NULL, '{}'::jsonb, 'SERVE',
            coalesce(dom.filter_fail_page_id, dom.default_page_id), req.path, NULL, NULL, true
     FROM dom, req
@@ -119,7 +119,7 @@ LANGUAGE sql STABLE SET search_path = '' AS $function$
 $function$;
 
 COMMENT ON FUNCTION pages.match_routes(text, text) IS
-  'Bot gate (block_bots) + regras do domínio + filtro + fallback, em ordem de prioridade. Só casa o PATH; '
-  'as `conditions` (bot gate, regras e filtro) são avaliadas na camada de serving. '
-  'Ordem: bot gate (BLOCK 403 só p/ bots) → regras manuais → filtro (passou → filter_pass_page) → fallback (filter_fail_page ou default_page). '
-  'conditions aceita ainda countries_mode/languages/languages_mode; primeira cujas conditions passam vence; SERVE com slug_id NULL → 404.';
+  'Bot gate (block_bots) + domain rules + filter + fallback, in priority order. Only matches the PATH; '
+  'the `conditions` (bot gate, rules and filter) are evaluated in the serving layer. '
+  'Order: bot gate (BLOCK 403 for bots only) → manual rules → filter (passed → filter_pass_page) → fallback (filter_fail_page or default_page). '
+  'conditions also accepts countries_mode/languages/languages_mode; the first one whose conditions pass wins; SERVE with slug_id NULL → 404.';

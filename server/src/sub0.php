@@ -1,26 +1,27 @@
 <?php
 /**
- * Entrada por www.: 302 para o domínio sem www. Se a URL traz campanha
- * (sub1, utm_campaign ou campaign com valor), ganha `sub0` = timestamp cifrado.
+ * Entry via www.: 302 to the domain without www. If the URL carries a campaign
+ * (sub1, utm_campaign or campaign with a value), it gets `sub0` = encrypted timestamp.
  *
- *   GET https://www.x.com/oferta?utm_campaign=a
- *   → 302 Location: https://x.com/oferta?utm_campaign=a&sub0=<token>
- *   GET https://www.x.com/oferta?utm_source=fb&sub1=a&sub2=b
- *   → 302 Location: https://x.com/oferta?utm_source=fb&sub0=<token>&sub1=a&sub2=b
- *   GET https://www.x.com/oferta?utm_source=fb
- *   → 302 Location: https://x.com/oferta?utm_source=fb            (sem campanha, sem sub0)
+ *   GET https://www.x.com/offer?utm_campaign=a
+ *   → 302 Location: https://x.com/offer?utm_campaign=a&sub0=<token>
+ *   GET https://www.x.com/offer?utm_source=fb&sub1=a&sub2=b
+ *   → 302 Location: https://x.com/offer?utm_source=fb&sub0=<token>&sub1=a&sub2=b
+ *   GET https://www.x.com/offer?utm_source=fb
+ *   → 302 Location: https://x.com/offer?utm_source=fb            (no campaign, no sub0)
  *
- * Só quando a request seria servida como página (outcome served, rota que
- * casou, path .html/.php/sem extensão). Bloqueio, 404, redirect de rota e
- * arquivos (.css, .js, robots.txt) seguem como sempre, no próprio www. O
- * sub0 entra logo antes do sub1 (sem sub1, no fim). Com campanha, um sub0 que
- * já venha na URL é trocado pelo novo; sem campanha a query segue intacta. O destino é sempre https: todo domínio tem o
- * Cloudflare na frente.
+ * Only when the request would be served as a page (outcome served, a route
+ * that matched, path .html/.php/no extension). Block, 404, route redirect and
+ * files (.css, .js, robots.txt) go on as always, on the www. itself. The sub0
+ * goes right before sub1 (without sub1, at the end). With a campaign, a sub0
+ * already in the URL is replaced by the new one; without a campaign the query
+ * stays intact. The destination is always https: every domain has Cloudflare
+ * in front.
  *
- * Token: base64url(nonce 12 B ‖ cifrado ‖ tag 16 B), AES-256-GCM com chave
- * SHA-256(SUB0_KEY), que por padrão é "DAYONE". O texto claro é o unix
- * timestamp em segundos ("1790000000"), então o token tem 51 caracteres.
- * GCM é autenticado: token adulterado ou de outra chave não decifra.
+ * Token: base64url(nonce 12 B ‖ ciphertext ‖ tag 16 B), AES-256-GCM with key
+ * SHA-256(SUB0_KEY), which defaults to "DAYONE". The plaintext is the unix
+ * timestamp in seconds ("1790000000"), so the token is 51 characters long.
+ * GCM is authenticated: a tampered token or one from another key doesn't decrypt.
  */
 declare(strict_types=1);
 
@@ -28,11 +29,11 @@ defined('DAYONE_ENTRY') || (http_response_code(404) && exit);
 
 const SUB0_PARAM = 'sub0';
 const SUB0_CIPHER = 'aes-256-gcm';
-/** Parâmetros de campanha que fazem o sub0 ser gerado (basta um, com valor). */
+/** Campaign parameters that make sub0 be generated (one is enough, with a value). */
 const SUB0_TRIGGERS = ['sub1', 'utm_campaign', 'campaign'];
 
 /**
- * O 302 da entrada por www, ou null quando a request segue normal.
+ * The 302 for the www entry, or null when the request goes on as normal.
  *
  * @return array{0: int, 1: array<string,string>, 2: string}|null
  */
@@ -51,7 +52,7 @@ function www_entry_redirect(Request $req, string $outcome, ?array $route): ?arra
     return [302, ['Location' => $location, 'Cache-Control' => 'no-store'], ''];
 }
 
-/** A query crua tem algum destes parâmetros com valor não vazio? Nome sem diferenciar maiúsculas. */
+/** Does the raw query have any of these parameters with a non-empty value? Case-insensitive name. */
 function query_has_any(string $query, array $names): bool
 {
     foreach (explode('&', $query) as $pair) {
@@ -63,7 +64,7 @@ function query_has_any(string $query, array $names): bool
     return false;
 }
 
-/** Põe `$pair` logo antes do primeiro parâmetro `$before` (nome sem diferenciar maiúsculas); sem ele, no fim. */
+/** Puts `$pair` right before the first `$before` parameter (case-insensitive name); without it, at the end. */
 function query_insert_before(string $query, string $pair, string $before): string
 {
     $pairs = array_values(array_filter(explode('&', $query), fn (string $p) => $p !== ''));
@@ -78,7 +79,7 @@ function query_insert_before(string $query, string $pair, string $before): strin
     return implode('&', $pairs);
 }
 
-/** Query crua sem o parâmetro `$name` (em qualquer ocorrência); os demais ficam como vieram. */
+/** Raw query without the `$name` parameter (every occurrence); the others stay as they came. */
 function query_without(string $query, string $name): string
 {
     $keep = array_filter(
@@ -96,7 +97,7 @@ function sub0_encrypt(int $timestamp, string $key): string
     return rtrim(strtr(base64_encode($nonce . $cipher . $tag), '+/', '-_'), '=');
 }
 
-/** O timestamp dentro do token, ou null se não decifrar com esta chave. */
+/** The timestamp inside the token, or null if it doesn't decrypt with this key. */
 function sub0_decrypt(string $token, string $key): ?int
 {
     if (preg_match('/^[A-Za-z0-9_-]+$/', $token) !== 1) {

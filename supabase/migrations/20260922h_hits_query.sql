@@ -1,18 +1,18 @@
 -- ============================================================================
--- DayOne Pages — parâmetros da URL (query string) em pages.hits
+-- DayOne Pages — URL parameters (query string) in pages.hits
 --
--- O path continua gravado sem a query (é normalizado); a query crua, como veio
--- (utm_*, fbclid, gclid…), vai em `query`, até 2048 caracteres. Pode ter IDs
--- de clique e, em links mal montados, e-mail/telefone: é PII como IP e UA.
--- p_query tem DEFAULT NULL: o PHP anterior continua funcionando.
+-- The path is still stored without the query (it is normalized); the raw query, as it came
+-- (utm_*, fbclid, gclid…), goes in `query`, up to 2048 characters. It can hold click
+-- IDs and, in badly built links, email/phone: it is PII like IP and UA.
+-- p_query has DEFAULT NULL: the previous PHP keeps working.
 --
--- DROP + CREATE pela mesma razão de 20260922e (mudar a lista de parâmetros).
--- O corpo mantém filtro de páginas, hostname, ASN, cookies, região e decisão.
+-- DROP + CREATE for the same reason as 20260922e (changing the parameter list).
+-- The body keeps the page filter, hostname, ASN, cookies, region and decision.
 -- ============================================================================
 
 ALTER TABLE pages.hits ADD COLUMN IF NOT EXISTS query text;
 
-COMMENT ON COLUMN pages.hits.query IS 'Query string crua da request (sem o "?"), até 2048 chars. PII.';
+COMMENT ON COLUMN pages.hits.query IS 'Raw query string of the request (without the "?"), up to 2048 chars. PII.';
 
 DROP FUNCTION IF EXISTS pages.log_hit(text, uuid, text, text, text, int, text, text, boolean, text, text, text, text, int, text, text, text, uuid, uuid, text, text);
 

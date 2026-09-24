@@ -1,8 +1,8 @@
 /**
- * Navegador a partir do User-Agent, para exibição: "Chrome 140", "Safari 26",
- * "Instagram (app)", "Googlebot", "curl 8.4". A ordem das regras importa:
- * bots e apps se disfarçam de Chrome/Safari, e Edge/Opera/Samsung trazem
- * "Chrome/" no UA.
+ * Browser from the User-Agent, for display: "Chrome 140", "Safari 26",
+ * "Instagram (app)", "Googlebot", "curl 8.4". The order of the rules matters:
+ * bots and apps disguise themselves as Chrome/Safari, and Edge/Opera/Samsung
+ * carry "Chrome/" in the UA.
  */
 export function browserFromUA(ua: string | null): string | null {
   if (!ua) return null;
@@ -46,11 +46,11 @@ export function browserFromUA(ua: string | null): string | null {
 const WINDOWS_NT: Record<string, string> = { "10.0": "10/11", "6.3": "8.1", "6.2": "8", "6.1": "7" };
 
 /**
- * Sistema e versão a partir do User-Agent: "iOS 26.6", "Android 14",
- * "Windows 10/11", "macOS". Os navegadores CONGELAM parte disso, e aí a versão
- * não aparece em vez de aparecer errada: macOS vem sempre 10.15.7, Chrome no
- * Android manda "Android 10; K", Windows 11 diz NT 10.0. No iOS 26 o token do
- * sistema ficou em 18.x, mas o Version/ do Safari acompanha o sistema.
+ * OS and version from the User-Agent: "iOS 26.6", "Android 14",
+ * "Windows 10/11", "macOS". Browsers FREEZE part of this, so the version is
+ * left out rather than shown wrong: macOS always reads 10.15.7, Chrome on
+ * Android sends "Android 10; K", Windows 11 says NT 10.0. On iOS 26 the OS
+ * token stayed at 18.x, but Safari's Version/ tracks the OS.
  */
 export function osFromUA(ua: string | null): string | null {
   if (!ua) return null;

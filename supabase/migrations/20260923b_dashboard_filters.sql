@@ -1,21 +1,21 @@
 -- ============================================================================
--- DayOne Pages — filtros do dashboard (período, resultado, dispositivo, país, bots)
+-- DayOne Pages — dashboard filters (period, outcome, device, country, bots)
 --
--- As três leituras do dashboard ganham os mesmos filtros opcionais:
---   p_outcomes   text[]   resultado (served, redirect, blocked, bot, notfound, error, other)
+-- The three dashboard reads get the same optional filters:
+--   p_outcomes   text[]   outcome (served, redirect, blocked, bot, notfound, error, other)
 --   p_devices    text[]   mobile | tablet | desktop
 --   p_countries  text[]   ISO-2
---   p_hide_bots  boolean  tira os hits com is_bot
--- NULL ou array vazio = sem filtro. Todos têm DEFAULT: a chamada antiga
--- (só p_since/p_domain) continua valendo.
+--   p_hide_bots  boolean  drops the hits with is_bot
+-- NULL or empty array = no filter. All of them have a DEFAULT: the old call
+-- (only p_since/p_domain) still works.
 --
--- hit_timeseries ganha p_origin: a série diária precisa de dias alinhados à
--- meia-noite local, não à de UTC ('epoch', que segue sendo o default).
--- recent_hits ganha p_since: os Access Logs seguem o período escolhido.
--- hit_countries (nova) lista os países do período, para o popover de filtros.
+-- hit_timeseries gets p_origin: the daily series needs days aligned to
+-- local midnight, not UTC's ('epoch', which is still the default).
+-- recent_hits gets p_since: the Access Logs follow the chosen period.
+-- hit_countries (new) lists the period's countries, for the filters popover.
 --
--- DROP + CREATE porque a lista de parâmetros muda (CREATE OR REPLACE criaria
--- uma sobrecarga e o PostgREST não saberia qual chamar).
+-- DROP + CREATE because the parameter list changes (CREATE OR REPLACE would create
+-- an overload and PostgREST would not know which one to call).
 -- ============================================================================
 
 DROP FUNCTION IF EXISTS pages.hit_stats(timestamptz, uuid);
@@ -125,7 +125,7 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = '' AS $$
   LIMIT greatest(1, least(coalesce(p_limit, 20), 200));
 $$;
 
--- Países com hit no período (e domínio), do mais frequente ao menos.
+-- Countries with a hit in the period (and domain), from most to least frequent.
 CREATE OR REPLACE FUNCTION pages.hit_countries(p_since timestamptz, p_domain uuid DEFAULT NULL)
 RETURNS TABLE (country text, hits bigint)
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = '' AS $$

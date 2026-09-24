@@ -1,14 +1,17 @@
 import type { RouteConditions } from "./conditions";
 
 /**
- * Tipos e vocabulários do schema `pages`.
+ * Types and vocabularies of the `pages` schema.
  *
- * Os valores em MAIÚSCULAS são os CHECKs do banco; os rótulos são o que a
- * tela mostra. Quem precisa do valor usa a constante; quem precisa do texto
- * usa o mapa de rótulos. Não há terceiro lugar.
+ * The UPPERCASE values are the database CHECKs; the labels are what the
+ * screen shows. Whoever needs the value uses the constant; whoever needs the
+ * text uses the labels map. There's no third place.
  */
 
-/** FUNNEL = um funil (Pre Lander → Lander → Backredirect, com amostras): fica na tela Funil, não em Templates. */
+/**
+ * Page kinds. FUNNEL = funnel page (Funnel screen) and its copies on the
+ * domains; a template is never FUNNEL (TEMPLATE_KINDS).
+ */
 export const PAGE_KINDS = ["PRESELL", "ADVERTORIAL", "VSL", "CHECKOUT", "SAFE", "OTHER", "FUNNEL"] as const;
 export type PageKind = (typeof PAGE_KINDS)[number];
 export const PAGE_KIND_LABELS: Record<PageKind, string> = {
@@ -29,6 +32,17 @@ export const PAGE_STATUS_LABELS: Record<PageStatus, string> = {
   ARCHIVED: "Archived",
 };
 
+/** Who a domain is for. A label: serving does not depend on it. */
+export const DOMAIN_TYPES = ["MEDIA_BUYER", "VENDOR"] as const;
+export type DomainType = (typeof DOMAIN_TYPES)[number];
+export const DOMAIN_TYPE_LABELS: Record<DomainType, string> = {
+  MEDIA_BUYER: "Media Buyer",
+  VENDOR: "Vendor",
+};
+export function isDomainType(v: unknown): v is DomainType {
+  return typeof v === "string" && (DOMAIN_TYPES as readonly string[]).includes(v);
+}
+
 export const DOMAIN_STATUSES = ["ACTIVE", "PAUSED", "ARCHIVED"] as const;
 export type DomainStatus = (typeof DOMAIN_STATUSES)[number];
 export const DOMAIN_STATUS_LABELS: Record<DomainStatus, string> = {
@@ -37,42 +51,23 @@ export const DOMAIN_STATUS_LABELS: Record<DomainStatus, string> = {
   ARCHIVED: "Archived",
 };
 
-export const MATCH_TYPES = ["EXACT", "PREFIX", "REGEX", "ANY"] as const;
-export type MatchType = (typeof MATCH_TYPES)[number];
-export const MATCH_TYPE_LABELS: Record<MatchType, string> = {
-  EXACT: "Exact",
-  PREFIX: "Prefix",
-  REGEX: "Regex",
-  ANY: "Any path",
-};
-
-export const ROUTE_ACTIONS = ["SERVE", "REDIRECT", "BLOCK"] as const;
-export type RouteAction = (typeof ROUTE_ACTIONS)[number];
-export const ROUTE_ACTION_LABELS: Record<RouteAction, string> = {
-  SERVE: "Serve page",
-  REDIRECT: "Redirect",
-  BLOCK: "Block",
-};
-
-export const REDIRECT_CODES = [301, 302, 307, 308] as const;
-export const BLOCK_CODES = [403, 404, 410, 451] as const;
-
-/** Um template (pages.pages). As páginas que os domínios servem são cópias guardadas em domains.site. */
+/**
+ * A page (pages.pages): a template, a domain's page or a funnel's page.
+ * The slugs and the HTML live in the row's own `slugs` column.
+ */
 export type Page = {
   id: string;
   name: string;
   kind: PageKind;
   status: PageStatus;
   notes: string | null;
-  /** Pasta na tela de páginas; null = raiz. */
+  /** Folder on the pages screen; null = root. */
   folder_id: string | null;
-  /** O funil do dayone-main (F1, F2…) a que a página pertence; null = nenhum. */
-  funnel_id: string | null;
   created_at: string;
   updated_at: string;
 };
 
-/** Cores de pasta: chave gravada no banco → classes da UI (ver `FOLDER_COLOR_CLASSES`). */
+/** Folder colors: key saved in the database → UI classes (see `FOLDER_COLOR_CLASSES`). */
 export const FOLDER_COLORS = ["blue", "emerald", "violet", "amber", "rose", "slate"] as const;
 export type FolderColor = (typeof FOLDER_COLORS)[number];
 export const FOLDER_COLOR_LABELS: Record<FolderColor, string> = {
@@ -87,8 +82,8 @@ export function isFolderColor(v: unknown): v is FolderColor {
   return typeof v === "string" && (FOLDER_COLORS as readonly string[]).includes(v);
 }
 
-/** Pasta da tela de páginas (aninhável: parent_id). */
-/** Em qual tela a pasta (e o que ela guarda) aparece: Templates ou Funil. Cada tela tem a sua árvore. */
+/** Folder on the pages screen (nestable: parent_id). */
+/** Which screen the folder (and what it holds) shows up on: Templates or Funnel. Each screen has its own tree. */
 export const FOLDER_SCOPES = ["TEMPLATE", "FUNNEL"] as const;
 export type FolderScope = (typeof FOLDER_SCOPES)[number];
 export function isFolderScope(v: unknown): v is FolderScope {
@@ -105,6 +100,7 @@ export type Folder = {
   updated_at: string;
 };
 
+/** A page slug. `id` is the path itself (unique within the page). */
 export type PageSlug = {
   id: string;
   page_id: string;
@@ -114,24 +110,25 @@ export type PageSlug = {
   content_type: string;
   content_hash: string;
   is_active: boolean;
-  published_at: string | null;
   created_at: string;
   updated_at: string;
 };
 
-/** A slug sem o conteúdo — para listas e barra lateral. */
+/** The slug without its content — for lists and the sidebar. */
 export type PageSlugSummary = Omit<PageSlug, "content">;
 
 export type Domain = {
   id: string;
   domain: string;
+  /** null = not chosen yet. */
+  type: DomainType | null;
   status: DomainStatus;
   default_page_id: string | null;
   filter: RouteConditions | null;
   filter_pass_page_id: string | null;
   filter_fail_page_id: string | null;
   block_bots: boolean;
-  /** Valores dos marcadores {{chave}} das páginas do domínio (ver placeholders.ts). */
+  /** Values of the {{key}} placeholders of the domain's pages (see placeholders.ts). */
   placeholders: Record<string, unknown>;
   settings: Record<string, unknown>;
   notes: string | null;
@@ -142,39 +139,18 @@ export type Domain = {
   updated_at: string;
 };
 
-export type DomainRoute = {
-  id: string;
-  domain_id: string;
-  name: string | null;
-  priority: number;
-  is_active: boolean;
-  match_type: MatchType;
-  path_pattern: string | null;
-  conditions: RouteConditions;
-  action: RouteAction;
-  page_id: string | null;
-  slug: string | null;
-  redirect_url: string | null;
-  status_code: number | null;
-  preserve_query: boolean;
-  notes: string | null;
-  created_at: string;
-  updated_at: string;
-};
-
-/** Referência curta a uma página, como aparece embutida em domínios e rotas. */
+/** Short reference to a page, as embedded in domains and routes. */
 export type PageRef = Pick<Page, "id" | "name" | "kind" | "status">;
 
 export function isPageKind(v: unknown): v is PageKind {
   return typeof v === "string" && (PAGE_KINDS as readonly string[]).includes(v);
 }
+
+/** The kinds a template (pages.pages) can have: all but FUNNEL. */
+export const TEMPLATE_KINDS = PAGE_KINDS.filter((k): k is Exclude<PageKind, "FUNNEL"> => k !== "FUNNEL");
+export function isTemplateKind(v: unknown): v is Exclude<PageKind, "FUNNEL"> {
+  return typeof v === "string" && (TEMPLATE_KINDS as readonly string[]).includes(v);
+}
 export function isPageStatus(v: unknown): v is PageStatus {
   return typeof v === "string" && (PAGE_STATUSES as readonly string[]).includes(v);
 }
-export function isMatchType(v: unknown): v is MatchType {
-  return typeof v === "string" && (MATCH_TYPES as readonly string[]).includes(v);
-}
-export function isRouteAction(v: unknown): v is RouteAction {
-  return typeof v === "string" && (ROUTE_ACTIONS as readonly string[]).includes(v);
-}
-

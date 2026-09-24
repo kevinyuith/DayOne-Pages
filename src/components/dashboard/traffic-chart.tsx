@@ -6,21 +6,21 @@ import { APP_TZ } from "@/lib/time-zone";
 import type { HitBucket } from "@/lib/pages/queries";
 
 /**
- * Traffic: uma linha por série (Served/Blocked/Bots) ao longo do período
- * (buckets por hora em Today/24h, por dia em 7/30 dias).
+ * Traffic: one line per series (Served/Blocked/Bots) over the period
+ * (hourly buckets for Today/24h, daily for 7/30 days).
  *
- * Desenhado na largura e altura reais da área (ResizeObserver), não num
- * viewBox esticado: o texto dos eixos fica em 11px em qualquer tela. Eixo Y
- * com passos redondos (0/20/40/60), grade em linha fina contínua. Served, a
- * série principal, ganha um véu de área; série sem nenhum valor no período não
- * é desenhada (ficaria em cima do eixo) e aparece apagada na legenda.
- * Hover e teclado (setas, Home/End, Esc): linha vertical + tooltip com todas
- * as séries do ponto. Uma tabela sr-only repete os números para leitor de tela.
+ * Drawn at the area's real width and height (ResizeObserver), not in a
+ * stretched viewBox: axis text stays at 11px on any screen. Y axis
+ * with round steps (0/20/40/60), grid in a thin solid line. Served, the
+ * main series, gets an area veil; a series with no value in the period is not
+ * drawn (it would sit on the axis) and shows up dimmed in the legend.
+ * Hover and keyboard (arrows, Home/End, Esc): vertical line + tooltip with all
+ * the series at that point. An sr-only table repeats the numbers for screen readers.
  */
 
 const PAD = { top: 12, right: 8, bottom: 28, left: 40 };
 
-/** Passo "redondo" e inteiro ≥ raw: 1, 2, 5, 10, 20, 25, 50, 100… */
+/** "Round" integer step ≥ raw: 1, 2, 5, 10, 20, 25, 50, 100… */
 function niceStep(raw: number): number {
   const pow = 10 ** Math.floor(Math.log10(Math.max(raw, 1)));
   for (const m of [1, 2, 2.5, 5, 10]) {
@@ -31,7 +31,7 @@ function niceStep(raw: number): number {
 }
 
 const fmt = new Intl.NumberFormat("en-US");
-// Fuso fixo: os buckets diários são meia-noite de APP_TZ, e o SSR não depende do fuso do servidor.
+// Fixed time zone: daily buckets are APP_TZ midnight, and SSR does not depend on the server's time zone.
 const hourFmt = new Intl.DateTimeFormat("en-US", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: APP_TZ });
 const dayFmt = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: APP_TZ });
 const weekdayFmt = new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: APP_TZ });
@@ -53,7 +53,7 @@ export function TrafficChart({
   const n = buckets.length;
   const totals = Object.fromEntries(SERIES.map((s) => [s.key, buckets.reduce((sum, b) => sum + b[s.key], 0)])) as Record<SeriesKey, number>;
   const hasData = SERIES.some((s) => totals[s.key] > 0);
-  // Um filtro novo pode encurtar a série com o hover ainda aberto.
+  // A new filter can shorten the series while the hover is still open.
   const hover = hoverRaw !== null && hoverRaw < n ? hoverRaw : null;
 
   useEffect(() => {
@@ -78,14 +78,14 @@ export function TrafficChart({
   const areaPath = (key: SeriesKey) =>
     `${linePath(key)}L${xFor(n - 1).toFixed(1)},${yFor(0).toFixed(1)}L${xFor(0).toFixed(1)},${yFor(0).toFixed(1)}Z`;
 
-  // Rótulos do eixo X a cada `every` pontos, contados a partir do último (o agora sempre tem rótulo).
+  // X axis labels every `every` points, counted from the last one (now always gets a label).
   const every = Math.max(1, Math.ceil(n / Math.max(2, Math.floor(plotW / 84))));
   const xTicks = buckets.map((_, i) => i).filter((i) => (n - 1 - i) % every === 0);
   const axisLabel = (iso: string) => {
     const d = new Date(iso);
     if (granularity === "day") return dayFmt.format(d);
     const hh = hourFmt.format(d);
-    // Na virada do dia o rótulo mostra a data, para situar o eixo.
+    // At the day boundary the label shows the date, to anchor the axis.
     return hh === "00:00" ? dayFmt.format(d) : hh;
   };
   const tipLabel = (iso: string) => {
@@ -94,7 +94,7 @@ export function TrafficChart({
     return `${dayFmt.format(d)} · ${hourFmt.format(d)}–${hourFmt.format(new Date(d.getTime() + 3600_000))}`;
   };
 
-  // De trás para a frente: Served (a principal) por cima das outras.
+  // Back to front: Served (the main one) on top of the others.
   const drawn = SERIES.filter((s) => totals[s.key] > 0).reverse();
   const served = SERIES[0];
 
@@ -159,7 +159,7 @@ export function TrafficChart({
           onBlur={() => setHover(null)}
           onPointerMove={(e) => pickAt(e.clientX)}
           onPointerDown={(e) => pickAt(e.clientX)}
-          // No toque o pointerleave vem logo depois do pointerup: o tooltip fica até tocar fora (blur).
+          // On touch, pointerleave comes right after pointerup: the tooltip stays until tapping outside (blur).
           onPointerLeave={(e) => e.pointerType === "mouse" && setHover(null)}
           className="relative mt-5 h-[220px] touch-pan-y rounded-md outline-none focus-visible:ring-2 focus-visible:ring-accent/50 sm:h-[280px] xl:h-[320px]"
         >

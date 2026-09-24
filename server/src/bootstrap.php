@@ -1,14 +1,14 @@
 <?php
 /**
- * DayOne Pages — servidor de entrega.
+ * DayOne Pages — delivery server.
  *
- * Bootstrap: carrega o .env, monta a configuração e liga os handlers de erro.
- * Depois disto, `src/app.php` cuida da request.
+ * Bootstrap: loads the .env, builds the configuration and installs the error
+ * handlers. After this, `src/app.php` handles the request.
  *
- * Sem framework e sem composer de propósito: o servidor faz uma coisa só
- * (achar o HTML de um host+path e servi-lo com cache), e cada dependência
- * seria uma coisa a mais para manter numa máquina que precisa ficar de pé
- * mesmo quando o Supabase não está.
+ * No framework and no composer on purpose: the server does one thing only
+ * (find the HTML for a host+path and serve it with cache), and every
+ * dependency would be one more thing to maintain on a machine that must stay
+ * up even when Supabase is down.
  */
 declare(strict_types=1);
 
@@ -16,7 +16,7 @@ defined('DAYONE_ENTRY') || (http_response_code(404) && exit);
 
 const DAYONE_ROOT = __DIR__ . '/..';
 
-/** Lê KEY=VALUE do arquivo, sem sobrescrever o que já veio do ambiente. */
+/** Reads KEY=VALUE from the file, without overwriting what already came from the environment. */
 function dayone_load_env(string $file): void
 {
     if (!is_file($file)) {
@@ -44,12 +44,12 @@ function dayone_load_env(string $file): void
 dayone_load_env(DAYONE_ROOT . '/.env');
 
 /**
- * Alternativa ao .env: um `config.php` que devolve um array CHAVE => valor.
+ * Alternative to .env: a `config.php` that returns a KEY => value array.
  *
- * Existe para o layout em que a pasta do site É o webroot (hospedagem com
- * painel). Ali um `.env` pode ser baixado por qualquer um se o nginx não
- * bloquear dotfiles; um `.php` nunca é entregue como texto, e a trava
- * DAYONE_ENTRY no topo dele faz o pedido direto responder 404.
+ * It exists for the layout where the site folder IS the webroot (hosting with
+ * a control panel). There a `.env` can be downloaded by anyone if nginx
+ * doesn't block dotfiles; a `.php` is never delivered as text, and the
+ * DAYONE_ENTRY guard at its top makes a direct request answer 404.
  */
 function dayone_load_config_php(string $file): void
 {
@@ -69,7 +69,7 @@ function dayone_load_config_php(string $file): void
 
 dayone_load_config_php(DAYONE_ROOT . '/config.php');
 
-/** A configuração, num lugar só. Lida uma vez por processo. */
+/** The configuration, in one place. Read once per process. */
 function config(): array
 {
     static $config = null;
@@ -92,7 +92,7 @@ function config(): array
         'cache_ttl'         => $int('CACHE_TTL', 30),
         'negative_ttl'      => $int('NEGATIVE_TTL', 30),
         'stale_max_age'     => $int('STALE_MAX_AGE', 604800),
-        'swr'               => $int('SWR', 0) === 1,
+        'swr'               => $int('SWR', 1) === 1,
         'max_path_len'      => $int('MAX_PATH_LEN', 200),
         'max_paths_per_host'=> $int('MAX_PATHS_PER_HOST', 2000),
         'supabase_timeout'  => $int('SUPABASE_TIMEOUT', 5),
@@ -112,24 +112,24 @@ set_error_handler(static function (int $severity, string $message, string $file,
     if (!(error_reporting() & $severity)) {
         return false;
     }
-    // Deprecation não derruba request: vai para o log e a vida segue. Uma
-    // função marcada como deprecada numa versão nova do PHP não pode virar
-    // 500 em todos os sites de uma vez.
+    // A deprecation doesn't kill the request: it goes to the log and life goes
+    // on. A function marked deprecated in a new PHP version must not turn into
+    // a 500 on every site at once.
     if ($severity === E_DEPRECATED || $severity === E_USER_DEPRECATED) {
-        error_log("[dayone-pages] deprecated: $message em $file:$line");
+        error_log("[dayone-pages] deprecated: $message in $file:$line");
         return true;
     }
     throw new ErrorException($message, 0, $severity, $file, $line);
 });
 
 set_exception_handler(static function (Throwable $e): void {
-    error_log('[dayone-pages] erro não tratado: ' . $e->getMessage() . ' em ' . $e->getFile() . ':' . $e->getLine());
+    error_log('[dayone-pages] unhandled error: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
     if (!headers_sent()) {
         http_response_code(500);
         header('Content-Type: text/plain; charset=utf-8');
         header('Cache-Control: no-store');
     }
-    echo "Erro interno.\n";
+    echo "Internal error.\n";
 });
 
 require __DIR__ . '/http.php';

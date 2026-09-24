@@ -1,18 +1,18 @@
 /**
- * Utilidades da edição visual: como a canvas marca, descreve e serializa o
- * documento do usuário.
+ * Visual editing utilities: how the canvas marks, describes and serializes the
+ * user's document.
  *
- * A canvas é um iframe MESMA-ORIGEM porém com `sandbox="allow-same-origin"`
- * (sem `allow-scripts`): o pai enxerga e mexe no DOM, e os scripts da página
- * do usuário NÃO rodam enquanto se edita. Ao selecionar, cada elemento do body
- * ganha um `data-dop-uid` temporário; ao salvar, `serialize` clona o documento
- * e remove TODO artefato do editor (uids, base/estilo injetados, contentEditable),
- * devolvendo o HTML exatamente como o servidor vai entregar.
+ * The canvas is a SAME-ORIGIN iframe but with `sandbox="allow-same-origin"`
+ * (no `allow-scripts`): the parent sees and changes the DOM, and the user's
+ * page scripts do NOT run while editing. On selection, every body element
+ * gets a temporary `data-dop-uid`; on save, `serialize` clones the document
+ * and removes EVERY editor artifact (uids, injected base/style, contentEditable),
+ * returning the HTML exactly as the server will deliver it.
  *
- * Os uids são sequenciais na ordem do documento. Por isso um documento parseado
- * com `parseHtml` (DOMParser) a partir do MESMO HTML recebe os MESMOS uids que
- * a canvas — é o que permite aos painéis (Links, Camadas) apontarem para um
- * elemento da canvas sem tocar no iframe.
+ * The uids are sequential in document order. That's why a document parsed
+ * with `parseHtml` (DOMParser) from the SAME HTML gets the SAME uids as
+ * the canvas — which is what lets the panels (Links, Layers) point to a
+ * canvas element without touching the iframe.
  */
 
 export const UID_ATTR = "data-dop-uid";
@@ -20,17 +20,17 @@ export const STYLE_ID = "dop-editor-style";
 const BASE_MARK = "data-dop-base";
 
 /**
- * Link "atrelado": um elemento que não é <a> mas navega ao clique. Fica no
- * HTML salvo (não é artefato do editor) junto com um <script> pequeno que
- * delega o clique — ver `lib/pages/links.ts`.
+ * "Attached" link: an element that isn't an <a> but navigates on click. It stays
+ * in the saved HTML (it's not an editor artifact) along with a small <script>
+ * that delegates the click — see `lib/pages/links.ts`.
  */
 export const HREF_ATTR = "data-href";
 export const TARGET_ATTR = "data-target";
 
 /**
- * Sub-páginas: seções do body marcadas com `data-dop-page="<id>"`. Uma slug
- * com várias delas mostra a inicial e troca as outras no navegador, sem mudar
- * a URL — ver `lib/pages/subpages.ts` e `lib/pages/runtime.ts`.
+ * Sub-pages: body sections marked with `data-dop-page="<id>"`. A slug with
+ * several of them shows the initial one and switches to the others in the
+ * browser, without changing the URL — see `lib/pages/subpages.ts` and `lib/pages/runtime.ts`.
  */
 export const PAGE_ATTR = "data-dop-page";
 export const PAGE_NAME_ATTR = "data-dop-name";
@@ -38,33 +38,29 @@ export const PAGE_KIND_ATTR = "data-dop-kind";
 export const PAGE_START_ATTR = "data-dop-start";
 export const PAGE_TRIGGER_ATTR = "data-dop-trigger";
 /**
- * Peso (0–100) de uma amostra no teste A/B: com duas ou mais seções do mesmo
- * tipo, o servidor sorteia uma por visitante na proporção dos pesos.
+ * Weight (0–100) of a variant in the A/B test: with two or more sections of the
+ * same kind, the server draws one per visitor in proportion to the weights.
  */
 export const PAGE_WEIGHT_ATTR = "data-dop-weight";
-/**
- * No <body>, posto SÓ pelo servidor de entrega: liga o aviso de visita/clique
- * de cada amostra (`/_dop/e`). Preview e canvas não têm, então não contam.
- */
-export const FUNNEL_EVENTS_ATTR = "data-dop-ev";
-/** Marca (SÓ no editor) qual sub-página a canvas está mostrando. Sai no serialize. */
+/** Marks (editor ONLY) which sub-page the canvas is showing. Removed by serialize. */
 export const PAGE_CURRENT_ATTR = "data-dop-current";
 /**
- * No <body>: como o funil troca de etapa. Ausente/"browser" = tudo no HTML e
- * o runtime troca no navegador; "server" = o servidor PHP entrega só a etapa
- * atual (cookie `dop_step`) e o runtime grava o cookie e recarrega.
+ * On the <body>: how the funnel switches steps. Absent/"browser" = everything is
+ * in the HTML and the runtime switches in the browser; "server" = the PHP server
+ * delivers only the current step (cookie `dop_step`) and the runtime sets the
+ * cookie and reloads.
  */
 export const FUNNEL_MODE_ATTR = "data-dop-funnel";
-/** Cookie que guarda a etapa atual no modo servidor. Igual a FUNNEL_COOKIE em server/src/funnel.php. */
+/** Cookie that holds the current step in server mode. Same as FUNNEL_COOKIE in server/src/funnel.php. */
 export const FUNNEL_COOKIE = "dop_step";
 
-/** O script que faz `data-href` navegar e as sub-páginas trocarem. Fica no HTML salvo. */
+/** The script that makes `data-href` navigate and sub-pages switch. Stays in the saved HTML. */
 export const RUNTIME_ATTR = "data-dop-runtime";
 
-/** Elementos onde não faz sentido selecionar/editar como bloco. */
+/** Elements that make no sense to select/edit as a block. */
 const SKIP = new Set(["HTML", "HEAD", "BODY", "SCRIPT", "STYLE", "META", "LINK", "TITLE", "BASE", "TEMPLATE", "NOSCRIPT"]);
 
-/** Sem filhos-elemento e não-vazio: dá para editar o texto direto. */
+/** No element children and non-empty: the text can be edited directly. */
 const VOID = new Set(["IMG", "INPUT", "BR", "HR", "IFRAME", "VIDEO", "AUDIO", "SOURCE", "EMBED", "SVG", "CANVAS"]);
 
 export type SelectionStyle = {
@@ -76,11 +72,11 @@ export type SelectionStyle = {
 };
 
 /**
- * De onde vem o link do elemento selecionado:
- * - `anchor`: ele mesmo é <a>/<area> (ou <form>, via `action`);
- * - `inherited`: está DENTRO de um <a> — editar mexe no <a> pai;
- * - `attached`: tem `data-href` (link atrelado pelo editor);
- * - `none`: sem link — dá para atrelar um.
+ * Where the selected element's link comes from:
+ * - `anchor`: it is itself an <a>/<area> (or a <form>, via `action`);
+ * - `inherited`: it's INSIDE an <a> — editing changes the parent <a>;
+ * - `attached`: it has `data-href` (link attached by the editor);
+ * - `none`: no link — one can be attached.
  */
 export type LinkSource = "anchor" | "inherited" | "attached" | "none";
 
@@ -92,17 +88,17 @@ export type SelectionInfo = {
   linkSource: LinkSource;
   linkTarget: string;
   text: string;
-  /** O elemento só tem texto (dá para editar num campo). */
+  /** The element only has text (it can be edited in a field). */
   textEditable: boolean;
   hidden: boolean;
   style: SelectionStyle;
 };
 
-/** Um nó da árvore de camadas (painel Layers). */
+/** A node of the layer tree (Layers panel). */
 export type LayerNode = {
   uid: string;
   tag: string;
-  /** `#id`, `.classe` ou um trecho do texto — o que identificar melhor. */
+  /** `#id`, `.class` or a snippet of the text — whichever identifies it best. */
   label: string;
   hidden: boolean;
   isLink: boolean;
@@ -113,7 +109,7 @@ export function isSkipped(el: Element): boolean {
   return SKIP.has(el.tagName);
 }
 
-/** Marca os elementos do body com uid sequencial (idempotente por reindexação). */
+/** Tags the body's elements with a sequential uid (idempotent, since it reindexes). */
 export function assignUids(doc: Document): void {
   const body = doc.body;
   if (!body) return;
@@ -129,8 +125,8 @@ export function elementByUid(doc: Document, uid: string): HTMLElement | null {
 }
 
 /**
- * Parseia HTML num Document inerte (scripts não rodam) já com uids — os mesmos
- * que a canvas atribui ao mesmo HTML. Só no cliente (DOMParser).
+ * Parses HTML into an inert Document (scripts don't run) with uids already set —
+ * the same ones the canvas assigns to the same HTML. Client-only (DOMParser).
  */
 export function parseHtml(html: string): Document {
   const doc = new DOMParser().parseFromString(html, "text/html");
@@ -138,7 +134,7 @@ export function parseHtml(html: string): Document {
   return doc;
 }
 
-/** Injeta `<base>` (para caminhos relativos) e o estilo do editor no <head>. */
+/** Injects `<base>` (for relative paths) and the editor style into the <head>. */
 export function injectCanvasChrome(doc: Document, baseHref?: string): void {
   const head = doc.head ?? doc.documentElement.appendChild(doc.createElement("head"));
   if (baseHref && !head.querySelector(`base[${BASE_MARK}]`)) {
@@ -150,14 +146,14 @@ export function injectCanvasChrome(doc: Document, baseHref?: string): void {
   if (!doc.getElementById(STYLE_ID)) {
     const style = doc.createElement("style");
     style.id = STYLE_ID;
-    // Sem interações reais aqui: a seleção é desenhada pelo pai, por cima do
-    // iframe. Só marcamos o cursor e neutralizamos âncoras durante a edição.
+    // No real interactions here: the selection is drawn by the parent, over the
+    // iframe. We only set the cursor and neutralize anchors while editing.
     style.textContent = [
       `*{cursor:default}`,
       `[${UID_ATTR}]:hover{outline:1px dashed rgba(59,130,246,.5);outline-offset:1px}`,
       `[contenteditable="true"]{outline:2px solid #3b82f6;outline-offset:2px}`,
       `[${HREF_ATTR}]{cursor:pointer}`,
-      // Sub-páginas: a canvas mostra só a atual (o `hidden` gravado é ignorado aqui).
+      // Sub-pages: the canvas shows only the current one (the saved `hidden` is ignored here).
       `[${PAGE_ATTR}]:not([${PAGE_CURRENT_ATTR}]){display:none!important}`,
       `[${PAGE_ATTR}][${PAGE_CURRENT_ATTR}]{display:block!important}`,
     ].join("");
@@ -167,7 +163,7 @@ export function injectCanvasChrome(doc: Document, baseHref?: string): void {
 
 const px = (v: string) => (v && v !== "0px" ? v : "");
 
-/** O elemento que carrega o link de `el`: ele mesmo, o <a> que o envolve, ou nada. */
+/** The element carrying `el`'s link: itself, the <a> wrapping it, or nothing. */
 export function linkHolder(el: HTMLElement): { holder: HTMLElement; source: LinkSource } | null {
   if (el.hasAttribute(HREF_ATTR)) return { holder: el, source: "attached" };
   if (el.tagName === "A" || el.tagName === "AREA" || el.tagName === "FORM") return { holder: el, source: "anchor" };
@@ -210,13 +206,13 @@ export function describe(el: HTMLElement): SelectionInfo {
   };
 }
 
-/** Conta elementos ocultados pelo editor (para o indicador "N hidden"). */
+/** Counts the elements hidden by the editor (for the "N hidden" indicator). */
 export function countHidden(doc: Document): number {
-  // Sub-páginas não-iniciais são `hidden` por design — não contam.
+  // Non-initial sub-pages are `hidden` by design — they don't count.
   return doc.body?.querySelectorAll(`[style*="display: none"]:not([${PAGE_ATTR}]), [style*="display:none"]:not([${PAGE_ATTR}]), [hidden]:not([${PAGE_ATTR}])`).length ?? 0;
 }
 
-/** Texto curto de um elemento, para rótulos de painel. */
+/** Short text of an element, for panel labels. */
 export function shortText(el: Element, max = 40): string {
   const t = (el.textContent ?? "").replace(/\s+/g, " ").trim();
   if (t) return t.length > max ? `${t.slice(0, max - 1)}…` : t;
@@ -227,7 +223,7 @@ export function shortText(el: Element, max = 40): string {
   return "";
 }
 
-/** Árvore do body (ou de `root`, ex.: a sub-página atual) para o painel de camadas. */
+/** Tree of the body (or of `root`, e.g. the current sub-page) for the layers panel. */
 export function buildLayers(doc: Document, root?: Element | null): LayerNode[] {
   const walk = (parent: Element): LayerNode[] => {
     const out: LayerNode[] = [];
@@ -254,7 +250,7 @@ export function buildLayers(doc: Document, root?: Element | null): LayerNode[] {
   return from ? walk(from) : [];
 }
 
-/** Clona o documento, tira TODO artefato do editor e devolve o HTML final. */
+/** Clones the document, strips EVERY editor artifact and returns the final HTML. */
 export function serialize(doc: Document): string {
   const clone = doc.documentElement.cloneNode(true) as HTMLElement;
   clone.querySelectorAll(`[${UID_ATTR}]`).forEach((el) => el.removeAttribute(UID_ATTR));
@@ -269,7 +265,7 @@ function rgbToHex(rgb: string): string {
   const m = rgb.match(/rgba?\(([^)]+)\)/);
   if (!m) return "";
   const [r, g, b, a] = m[1].split(",").map((s) => parseFloat(s));
-  if (a === 0) return ""; // transparente: deixa o campo vazio
+  if (a === 0) return ""; // transparent: leave the field empty
   const h = (v: number) => Math.round(v).toString(16).padStart(2, "0");
   return `#${h(r)}${h(g)}${h(b)}`;
 }

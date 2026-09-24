@@ -1,23 +1,23 @@
 -- ============================================================================
--- DayOne Pages — "a página carregou de verdade" (aviso de carregamento)
+-- DayOne Pages — "the page really loaded" (load notice)
 --
--- O servidor grava o hit ao RECEBER a request: ping, curl, prefetch e robô de
--- prévia de link também viram "served". Para separar, cada página HTML servida
--- ganha um id de visita (cookie dop_v, 32 hex) e um script mínimo que, no
--- evento load do navegador, faz sendBeacon para /_dop/l. O servidor lê o
--- cookie e chama pages.log_load, que grava em pages.hit_loads.
+-- The server stores the hit when it RECEIVES the request: ping, curl, prefetch and link
+-- preview bots also become "served". To tell them apart, each HTML page served
+-- gets a visit id (cookie dop_v, 32 hex) and a minimal script that, on the
+-- browser's load event, does a sendBeacon to /_dop/l. The server reads the
+-- cookie and calls pages.log_load, which writes to pages.hit_loads.
 --
--- Tabela à parte (e não UPDATE em hits) porque o aviso costuma chegar ANTES do
--- hit: o hit é gravado depois da resposta, com reverse DNS e ASN no meio. A
--- tela de Logs junta hits.visit_id com hit_loads.visit_id.
+-- A separate table (and not an UPDATE on hits) because the notice usually arrives BEFORE the
+-- hit: the hit is stored after the response, with reverse DNS and ASN in between. The
+-- Logs screen joins hits.visit_id with hit_loads.visit_id.
 --
--- p_visit_id tem DEFAULT NULL: o PHP anterior continua funcionando.
--- DROP + CREATE de log_hit pela mesma razão de 20260922e.
+-- p_visit_id has DEFAULT NULL: the previous PHP keeps working.
+-- DROP + CREATE of log_hit for the same reason as 20260922e.
 -- ============================================================================
 
 ALTER TABLE pages.hits ADD COLUMN IF NOT EXISTS visit_id text;
 
-COMMENT ON COLUMN pages.hits.visit_id IS 'Id da visita (cookie dop_v) quando a resposta foi uma página HTML com o aviso de carregamento. Liga com pages.hit_loads.';
+COMMENT ON COLUMN pages.hits.visit_id IS 'Visit id (cookie dop_v) when the response was an HTML page with the load notice. Links to pages.hit_loads.';
 
 CREATE TABLE IF NOT EXISTS pages.hit_loads (
   visit_id  text        PRIMARY KEY CHECK (visit_id ~ '^[0-9a-f]{32}$'),
@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS pages.hit_loads (
   load_ms   int         CHECK (load_ms BETWEEN 0 AND 600000)
 );
 
-COMMENT ON TABLE pages.hit_loads IS 'Aviso do navegador de que a página carregou (evento load). load_ms = ms desde o início da navegação.';
+COMMENT ON TABLE pages.hit_loads IS 'The browser''s notice that the page loaded (load event). load_ms = ms since the start of navigation.';
 
 ALTER TABLE pages.hit_loads ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON pages.hit_loads FROM anon, authenticated;

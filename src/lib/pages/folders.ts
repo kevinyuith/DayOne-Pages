@@ -1,11 +1,11 @@
 import type { Folder } from "./types";
 
 /**
- * Árvore de pastas da tela /paginas. As pastas vêm todas do banco (são
- * poucas) e a tela monta o que precisa: filhas de uma pasta, o caminho até a
- * raiz (breadcrumb) e "X é descendente de Y" (para não mover uma pasta para
- * dentro dela mesma). Tudo tolera dado torto — um ciclo no banco não trava a
- * tela, só corta o caminho.
+ * Folder tree of the /templates screen. All folders come from the database
+ * (there are few) and the screen builds what it needs: a folder's children, the
+ * path to the root (breadcrumb) and "X is a descendant of Y" (so a folder isn't
+ * moved into itself). Everything tolerates bad data — a cycle in the database
+ * doesn't hang the screen, it just cuts the path.
  */
 
 export type FolderMap = Map<string, Folder>;
@@ -16,12 +16,12 @@ export function folderMap(folders: Folder[]): FolderMap {
 
 const byName = (a: Folder, b: Folder) => a.name.localeCompare(b.name, "pt-BR", { sensitivity: "base" });
 
-/** Pastas diretamente dentro de `parentId` (null = raiz), por nome. */
+/** Folders directly inside `parentId` (null = root), by name. */
 export function childFolders(folders: Folder[], parentId: string | null): Folder[] {
   return folders.filter((f) => (f.parent_id ?? null) === parentId).sort(byName);
 }
 
-/** Caminho da raiz até a pasta (inclusive). Vazio se não existir. */
+/** Path from the root to the folder (inclusive). Empty if it doesn't exist. */
 export function folderPath(map: FolderMap, id: string | null): Folder[] {
   const out: Folder[] = [];
   const seen = new Set<string>();
@@ -34,12 +34,12 @@ export function folderPath(map: FolderMap, id: string | null): Folder[] {
   return out;
 }
 
-/** `id` está dentro de `ancestorId` (em qualquer nível)? */
+/** Is `id` inside `ancestorId` (at any level)? */
 export function isInside(map: FolderMap, id: string | null, ancestorId: string): boolean {
   return folderPath(map, id).some((f) => f.id === ancestorId);
 }
 
-/** "Funis / F1 / F1-a" — para mostrar onde um resultado de busca está. */
+/** "Funnels / F1 / F1-a" — to show where a search result lives. */
 export function folderPathLabel(map: FolderMap, id: string | null, root = "Templates"): string {
   const path = folderPath(map, id);
   return path.length ? path.map((f) => f.name).join(" / ") : root;
@@ -48,9 +48,9 @@ export function folderPathLabel(map: FolderMap, id: string | null, root = "Templ
 export type FolderOption = { id: string | null; label: string; depth: number };
 
 /**
- * Lista achatada para um <select> "Mover para…": raiz + todas as pastas em
- * ordem de árvore, com profundidade. `exclude` tira uma pasta e a subárvore
- * dela (a pasta que está sendo movida).
+ * Flattened list for a "Move to…" <select>: root + every folder in tree
+ * order, with depth. `exclude` drops a folder and its subtree (the folder
+ * being moved).
  */
 export function folderOptions(folders: Folder[], exclude: string | null = null, root = "Templates"): FolderOption[] {
   const out: FolderOption[] = [{ id: null, label: root, depth: 0 }];

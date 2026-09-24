@@ -1,42 +1,43 @@
 import { SUFFIXES_ANY_CASE, SUFFIXES_EXACT, companyName } from "./company-name";
 
 /**
- * "Criar template" por link ou por HTML colado: acha no conteúdo textos que
- * parecem dados da empresa (e o ano do copyright e o domínio de origem) e
- * sugere trocá-los pelos marcadores {{...}}. O usuário confirma cada um antes
- * — a detecção é por padrão de texto e erra; nada é trocado sem o "sim".
+ * "Create template" from a link or pasted HTML: finds text in the content that
+ * looks like company data (plus the copyright year and the source domain) and
+ * suggests replacing it with {{...}} placeholders. The user confirms each one
+ * first — detection is by text pattern and gets things wrong; nothing is
+ * replaced without a "yes".
  *
- * Procura só no texto visível e em alt/title/aria-label/placeholder e nas
- * metas de descrição/og/twitter; e-mail e telefone também nos links mailto:
- * e tel:. Nunca dentro de <script>/<style> nem em outros atributos (classe,
- * src, href comum).
+ * Looks only in visible text, in alt/title/aria-label/placeholder and in the
+ * description/og/twitter metas; email and phone also in mailto: and tel:
+ * links. Never inside <script>/<style> nor in other attributes (class,
+ * src, plain href).
  *
- * `findPlaceholderCandidates` é puro (lista de textos → achados); a leitura e
- * a reescrita do HTML (DOMParser) ficam em `detectPlaceholders` /
- * `applyPlaceholderFindings`, só no cliente.
+ * `findPlaceholderCandidates` is pure (list of texts → findings); reading and
+ * rewriting the HTML (DOMParser) live in `detectPlaceholders` /
+ * `applyPlaceholderFindings`, client-only.
  */
 
 export type PlaceholderFinding = {
-  /** Chave estável da linha (tipo + texto). */
+  /** Stable row key (kind + text). */
   id: string;
-  /** O marcador que entra (ex.: "company.email"). */
+  /** The placeholder that goes in (e.g. "company.email"). */
   key: string;
-  /** O texto encontrado. */
+  /** The text found. */
   text: string;
-  /** O que fica no lugar (quase sempre `{{key}}`; no copyright, "© {{year}}"). */
+  /** What takes its place (almost always `{{key}}`; for the copyright, "© {{year}}"). */
   replacement: string;
-  /** Quantas vezes aparece (depois que os achados maiores já foram trocados). */
+  /** How many times it appears (after the longer findings have been replaced). */
   count: number;
 };
 
-// ── Padrões ──────────────────────────────────────────────────────────────────
+// ── Patterns ─────────────────────────────────────────────────────────────────
 
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
 
 /**
- * Sufixos para ACHAR uma razão social: como se escrevem de fato (e em
- * maiúsculas), com ponto opcional. "Company" fica de fora: "About Our
- * Company" não é razão social.
+ * Suffixes for FINDING a legal name: as they're actually written (and in
+ * uppercase), with an optional dot. "Company" is left out: "About Our
+ * Company" isn't a legal name.
  */
 const DETECT_SUFFIXES = [
   ...new Set([
@@ -46,14 +47,14 @@ const DETECT_SUFFIXES = [
 ].sort((a, b) => b.length - a.length);
 const SUFFIX = `(?:${DETECT_SUFFIXES.map(escapeRe).join("|")})\\.?(?![\\p{L}\\p{N}])`;
 
-// Palavra de nome: começa com maiúscula ou número e tem letra; conectores minúsculos entre elas.
+// Name word: starts with an uppercase letter or a digit and has a letter; lowercase connectors between words.
 const CAP_WORD = String.raw`(?!${SUFFIX})(?=[\p{L}\p{N}&'’.\-]*\p{L})[\p{Lu}\p{N}][\p{L}\p{N}&'’.\-]*`;
 const JOINER = String.raw`(?:&|of|and|the|de|da|do|dos|das|del|e|y)`;
 const LEGAL_RE = new RegExp(
   `${CAP_WORD}(?:\\s+(?:${CAP_WORD}|${JOINER})){0,6}(?:(?:,?\\s+|\\s*[-–—&]\\s*)${SUFFIX}){1,3}`,
   "gu",
 );
-/** Palavras que abrem frase, não nome ("Copyright Acme LLC" → "Acme LLC"). */
+/** Words that open a sentence, not a name ("Copyright Acme LLC" → "Acme LLC"). */
 const LEADING_NOISE = new Set(
   "copyright contact about welcome visit by from at powered operated owned managed sold offered provided brought presented all rights reserved".split(" "),
 );
@@ -72,14 +73,14 @@ const BR_ADDRESS_RE = /\b(?:Rua|R\.|Avenida|Av\.|Alameda|Al\.|Travessa|Rodovia|P
 
 const COPYRIGHT_RE = /(©|\(c\)|Copyright)\s*((?:\d{4}\s*[-–]\s*)?)(\d{4})(?!\d)/giu;
 
-// ── Achar (puro) ─────────────────────────────────────────────────────────────
+// ── Find (pure) ──────────────────────────────────────────────────────────────
 
 type Candidate = { key: string; text: string; replacement?: string };
 
 function cleanLegal(match: string): string | null {
   const words = match.trim().split(/\s+/);
   while (words.length > 1 && LEADING_NOISE.has(words[0].toLowerCase())) words.shift();
-  // Sem o ponto do fim: quase sempre é o da frase ("… LLC. All rights reserved"), e a página fica com ele.
+  // Without the trailing dot: it almost always belongs to the sentence ("… LLC. All rights reserved"), and the page keeps it.
   const legal = words.join(" ").replace(/^[&,\-–—\s]+/, "").replace(/\.$/, "");
   if (legal.length < 4 || legal.length > 90) return null;
   const name = companyName(legal);
@@ -88,7 +89,7 @@ function cleanLegal(match: string): string | null {
 
 const digits = (s: string) => s.replace(/\D/g, "");
 
-/** Mesmo telefone com ou sem o código do país ("+1 555…" e "(555)…"). */
+/** Same phone with or without the country code ("+1 555…" and "(555)…"). */
 function samePhone(a: string, b: string): boolean {
   const da = digits(a);
   const db = digits(b);
@@ -97,13 +98,13 @@ function samePhone(a: string, b: string): boolean {
 
 function phoneLike(s: string): boolean {
   const n = digits(s).length;
-  // 10 a 15 dígitos e algum sinal de telefone (+, parênteses ou separador): tira datas, preços e ids.
+  // 10 to 15 digits and some phone sign (+, parentheses or a separator): rules out dates, prices and ids.
   return n >= 10 && n <= 15 && /[+()\s.-]/.test(s) && !/^\d{4}[-./]\d{2}[-./]\d{2}/.test(s);
 }
 
 /**
- * Candidatos a marcador nos textos. `sourceHost` (link) faz o domínio de
- * origem virar {{domain}}.
+ * Placeholder candidates in the texts. `sourceHost` (link) turns the source
+ * domain into {{domain}}.
  */
 export function findPlaceholderCandidates(texts: string[], opts: { sourceHost?: string; mailtos?: string[]; tels?: string[] } = {}): Candidate[] {
   const out = new Map<string, Candidate>();
@@ -126,7 +127,7 @@ export function findPlaceholderCandidates(texts: string[], opts: { sourceHost?: 
     for (const m of t.matchAll(BR_ADDRESS_RE)) add({ key: "company.address", text: m[0] });
     for (const m of t.matchAll(COPYRIGHT_RE)) add({ key: "year", text: m[0], replacement: `${m[1]} ${m[2]}{{year}}` });
   }
-  // Telefone depois do número de registro: um CNPJ não pode virar telefone.
+  // Phones after the registration number: a CNPJ must not become a phone.
   const numbers = [...out.values()].filter((c) => c.key === "company.number").map((c) => digits(c.text));
   for (const t of texts) {
     for (const m of t.matchAll(PHONE_RE)) {
@@ -134,7 +135,7 @@ export function findPlaceholderCandidates(texts: string[], opts: { sourceHost?: 
     }
   }
   for (const e of opts.mailtos ?? []) add({ key: "company.email", text: e });
-  // tel: sem o mesmo telefone visível na página vira achado próprio.
+  // A tel: without the same phone visible on the page becomes its own finding.
   const phones = [...out.values()].filter((c) => c.key === "company.phone").map((c) => c.text);
   for (const p of opts.tels ?? []) if (phoneLike(p) && !phones.some((v) => samePhone(v, p))) add({ key: "company.phone", text: p });
 
@@ -144,9 +145,9 @@ export function findPlaceholderCandidates(texts: string[], opts: { sourceHost?: 
   return [...out.values()];
 }
 
-// ── Contar e trocar ──────────────────────────────────────────────────────────
+// ── Count and replace ────────────────────────────────────────────────────────
 
-/** Troca, num texto, cada achado (do maior para o menor) respeitando bordas de palavra. */
+/** Replaces each finding in a text (longest to shortest), respecting word boundaries. */
 function replaceFindings(value: string, findings: PlaceholderFinding[], counts?: Map<string, number>): string {
   let out = value;
   for (const f of findings) {
@@ -161,7 +162,7 @@ function replaceFindings(value: string, findings: PlaceholderFinding[], counts?:
 
 const byLengthDesc = (a: { text: string }, b: { text: string }) => b.text.length - a.text.length;
 
-// ── HTML (DOMParser, só no cliente) ──────────────────────────────────────────
+// ── HTML (DOMParser, client-only) ────────────────────────────────────────────
 
 const SKIP = new Set(["SCRIPT", "STYLE", "TEMPLATE"]);
 const TEXT_ATTRS = ["alt", "title", "aria-label", "placeholder"];
@@ -203,7 +204,7 @@ export function detectPlaceholders(html: string, sourceUrl?: string): Placeholde
     tels: hrefs.filter((h) => /^tel:/i.test(h)).map((h) => linkValue(h, "tel:")),
   });
 
-  // Conta com os maiores primeiro, como na troca: "Acme Health" dentro de "Acme Health LLC" não conta duas vezes.
+  // Counts the longest first, as in the replacement: "Acme Health" inside "Acme Health LLC" doesn't count twice.
   const findings: PlaceholderFinding[] = candidates
     .map((c) => ({ id: `${c.key}|${c.text}`, key: c.key, text: c.text, replacement: c.replacement ?? `{{${c.key}}}`, count: 0 }))
     .sort(byLengthDesc);
@@ -216,7 +217,7 @@ export function detectPlaceholders(html: string, sourceUrl?: string): Placeholde
   return findings.map((f) => ({ ...f, count: counts.get(f.id) ?? 0 })).filter((f) => f.count > 0);
 }
 
-/** O achado de e-mail/telefone que corresponde a um link mailto:/tel: (telefone pelos dígitos). */
+/** The email/phone finding that matches a mailto:/tel: link (phone by its digits). */
 function mailtoOrTelFinding(href: string, findings: PlaceholderFinding[]): PlaceholderFinding | undefined {
   if (/^mailto:/i.test(href)) {
     const email = linkValue(href, "mailto:").toLowerCase();
@@ -230,8 +231,8 @@ function mailtoOrTelFinding(href: string, findings: PlaceholderFinding[]): Place
 }
 
 /**
- * Troca os achados escolhidos no HTML. Documento completo sai com o doctype;
- * fragmento sai como fragmento.
+ * Replaces the chosen findings in the HTML. A complete document comes out with
+ * the doctype; a fragment comes out as a fragment.
  */
 export function applyPlaceholderFindings(html: string, chosen: PlaceholderFinding[]): string {
   const doc = new DOMParser().parseFromString(html, "text/html");

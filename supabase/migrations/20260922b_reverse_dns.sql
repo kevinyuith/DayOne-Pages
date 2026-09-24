@@ -1,11 +1,11 @@
 -- ============================================================================
--- DayOne Pages — reverse DNS para identificar servidores de bots
+-- DayOne Pages — reverse DNS to identify bot servers
 -- ============================================================================
 
--- Adiciona coluna de hostname resolvido via reverse DNS
+-- Adds a column for the hostname resolved via reverse DNS
 ALTER TABLE pages.hits ADD COLUMN IF NOT EXISTS hostname text;
 
-COMMENT ON COLUMN pages.hits.hostname IS 'Hostname resolvido via reverse DNS do IP (pode ajudar a identificar bots/data centers)';
+COMMENT ON COLUMN pages.hits.hostname IS 'Hostname resolved via reverse DNS of the IP (can help identify bots/data centers)';
 
--- Cria índice para buscar por hostname
+-- Creates an index to search by hostname
 CREATE INDEX IF NOT EXISTS idx_pages_hits_hostname ON pages.hits (hostname);

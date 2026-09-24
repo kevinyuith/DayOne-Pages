@@ -1,97 +1,106 @@
-# DayOne Pages — servidor de entrega
+# DayOne Pages — delivery server
 
-Um front controller PHP que responde por **qualquer domínio** apontado para
-esta máquina: consulta no Supabase (schema `pages`) o que aquele host + path
-deve responder, cacheia em disco por 30 segundos e serve. Se o Supabase cair,
-serve a cópia que tem.
+A PHP front controller that answers for **any domain** pointed at this
+machine: it asks Supabase (schema `pages`) what that host + path should
+return, caches it on disk for 30 seconds and serves it. If Supabase goes down,
+it serves the copy it has.
 
-Sem framework, sem composer. Requisitos: PHP 8.2+ com `curl` e `json`.
+No framework, no composer. Requirements: PHP 8.2+ with `curl` and `json`.
 
-## Como funciona
+## How it works
 
 ```
 Cloudflare ──HTTP:80──► nginx (catch-all) ──► php-fpm ──► public/index.php
                                                               │
-                                             cache/routes/<host>/<path>.json  (rotas, TTL 30 s)
-                                             cache/content/<slug>-<hash>.bin  (HTML por slug)
+                                             cache/routes/<host>/<path>.php   (routes + content hash, TTL 30 s)
+                                             cache/content/<hash>.php         (HTML by its sha256)
                                                               │ MISS
-                                             POST {SUPABASE_URL}/rest/v1/rpc/resolve  (Content-Profile: pages)
+                                             POST {SUPABASE_URL}/rest/v1/rpc/resolve      (hashes only; Content-Profile: pages)
+                                             POST {SUPABASE_URL}/rest/v1/rpc/content_get  (only the HTML missing on disk)
 ```
 
-| Situação | Resposta | `X-Cache` |
+Content is addressed by hash (sha256 of the HTML, computed by the database in
+`pages.pages.slugs`): a hash never changes content, so the file on disk never
+needs to be invalidated. Every 30 s the server only rechecks the decision
+(which pages, conditions, draw) — a few bytes, no HTML — and only downloads
+HTML when a new hash shows up (edited page). With `SWR=1` (the default) and php-fpm, the recheck happens after the
+response: the visitor gets the stored copy and never waits for Supabase.
+Content that no route has used for `STALE_MAX_AGE` + 1 day goes in the cleanup.
+
+| Situation | Response | `X-Cache` |
 |---|---|---|
-| cache fresco | serve | `HIT` |
-| cache expirado ou ausente, Supabase ok | consulta, regrava, serve | `MISS` |
-| Supabase fora, há cópia expirada | serve a cópia (até `STALE_MAX_AGE`) | `STALE` |
-| Supabase fora, sem cópia | 503 + `Retry-After` | — |
-| outro worker atualizando | serve a cópia expirada | `UPDATING` |
-| domínio desconhecido | 404 (cache negativo `NEGATIVE_TTL`) | `MISS`/`HIT` |
+| fresh cache | serves | `HIT` |
+| cache expired or missing, Supabase ok | queries, rewrites, serves | `MISS` |
+| Supabase down, expired copy exists | serves the copy (up to `STALE_MAX_AGE`) | `STALE` |
+| Supabase down, no copy | 503 + `Retry-After` | — |
+| another worker refreshing | serves the expired copy | `UPDATING` |
+| unknown domain | 404 (negative cache `NEGATIVE_TTL`) | `MISS`/`HIT` |
 
-As rotas do domínio são avaliadas em ordem de prioridade; a primeira cujas
-condições (país, dispositivo, idioma, parâmetros de URL, referrer) casam
-decide: servir uma slug, redirecionar ou bloquear. `bot` só é honrado em
-rotas de bloqueio.
+The domain's routes are evaluated in priority order; the first whose
+conditions (country, device, language, URL parameters, referrer) match
+decides: serve a slug, redirect or block. `bot` is only honored on block
+routes.
 
-### Funil em modo servidor (`dop_step`)
+### Server-mode funnel (`dop_step`)
 
-Uma slug com sub-páginas (presell → principal → back redirect, ver README da
-raiz) pode ser gravada com `<body data-dop-funnel="server">`. Aí o HTML da
-slug vai para o cache como está (todas as seções), mas **na resposta** o
-servidor (`src/funnel.php`) entrega só a etapa atual:
+A slug with sub-pages (presell → main → back redirect, see the root README)
+can be saved with `<body data-dop-funnel="server">`. Then the slug's HTML goes
+into the cache as is (all sections), but **in the response** the server
+(`src/funnel.php`) delivers only the current step:
 
-- etapa = cookie `dop_step=<id>` se apontar para uma seção que existe; senão
-  a inicial (`data-dop-start`);
-- as outras `<section data-dop-page>` são removidas do HTML; a servida perde o
-  `hidden`; o `<body>` recebe `data-dop-cur/-next/-start/-main/-br/-br-trigger`
-  para o runtime da página saber para onde ir;
-- o runtime avança gravando `dop_step` (`Path` = o path da slug, 1 dia) e
-  recarregando a mesma URL. A URL nunca muda e o fonte de uma etapa não
-  contém as outras.
+- step = the `dop_step=<id>` cookie if it points to an active section that exists;
+  otherwise the Pre Lander if it is active, else the Lander (the fixed funnel rule);
+- the other `<section data-dop-page>` are removed from the HTML; the served one
+  loses `hidden`; the `<body>` gets `data-dop-cur/-next/-start/-main/-br/-br-trigger`
+  so the page runtime knows where to go;
+- the runtime moves forward by setting `dop_step` (`Path` = the slug's path, 1 day) and
+  reloading the same URL. The URL never changes and the source of one step
+  doesn't contain the others.
 
-O `ETag` vira `"<hash>-<etapa>"` e a resposta leva `Vary: Cookie`. O HTML
-sempre vem da origem (o Cloudflare não cacheia HTML por padrão); se um dia
-ligar cache de HTML, funil em modo servidor exige *Bypass* nessa slug.
-Sem o atributo (modo navegador), nada disso roda e o HTML sai inteiro.
+The `ETag` becomes `"<hash>-<step>"` and the response carries `Vary: Cookie`. The HTML
+always comes from the origin (Cloudflare doesn't cache HTML by default); if HTML
+caching is ever turned on, a server-mode funnel requires *Bypass* on that slug.
+Without the attribute (browser mode), none of this runs and the whole HTML goes out.
 
-O corte é por contagem de `<section>` numa cópia do HTML com comentários,
-`<script>`, `<style>` e `<template>` apagados (mesmo tamanho), então um
-`</section>` dentro deles não conta. Se mesmo assim o servidor reconhecer
-menos de duas etapas numa slug em modo servidor, ele serve o HTML inteiro e
-registra no log (`funil em modo servidor com N etapa(s)`) — a página continua
-funcionando, no modo navegador.
+The cut is done by counting `<section>` in a copy of the HTML with comments,
+`<script>`, `<style>` and `<template>` blanked out (same length), so a
+`</section>` inside them doesn't count. If even so the server recognizes
+no step in a server-mode slug, it serves the whole HTML and
+logs it (`server-mode funnel with no recognized step`) — the page keeps
+working, in browser mode.
 
-**Ordem de deploy:** o servidor PHP antes do dashboard, para uma slug salva
-em modo servidor já ser cortada por etapa desde a primeira visita.
+**Deploy order:** the PHP server before the dashboard, so a slug saved in
+server mode is already cut by step from the first visit.
 
-### Entrada por `www.` (`sub0`)
+### Entry via `www.` (`sub0`)
 
-Uma página que seria servida em `www.x.com` vira um **302** para o domínio sem
-www, com os parâmetros originais. Se a URL traz campanha — `sub1`,
-`utm_campaign` ou `campaign`, com valor — ganha também `sub0` = unix timestamp
-cifrado (`src/sub0.php`):
+A page that would be served on `www.x.com` becomes a **302** to the domain
+without www, with the original parameters. If the URL carries a campaign — `sub1`,
+`utm_campaign` or `campaign`, with a value — it also gets `sub0` = encrypted unix
+timestamp (`src/sub0.php`):
 
 ```
-GET https://www.x.com/oferta?utm_campaign=c1
-→ 302 Location: https://x.com/oferta?utm_campaign=c1&sub0=<token>   (Cache-Control: no-store)
-GET https://www.x.com/oferta?utm_source=fb&sub1=a&sub2=b
-→ 302 Location: https://x.com/oferta?utm_source=fb&sub0=<token>&sub1=a&sub2=b   (sub0 logo antes do sub1)
-GET https://www.x.com/oferta?utm_source=fb
-→ 302 Location: https://x.com/oferta?utm_source=fb                  (sem campanha, sem sub0)
+GET https://www.x.com/offer?utm_campaign=c1
+→ 302 Location: https://x.com/offer?utm_campaign=c1&sub0=<token>   (Cache-Control: no-store)
+GET https://www.x.com/offer?utm_source=fb&sub1=a&sub2=b
+→ 302 Location: https://x.com/offer?utm_source=fb&sub0=<token>&sub1=a&sub2=b   (sub0 right before sub1)
+GET https://www.x.com/offer?utm_source=fb
+→ 302 Location: https://x.com/offer?utm_source=fb                  (no campaign, no sub0)
 ```
 
-- Só páginas servidas (200/304). Bloqueio, bot, 404, redirect de rota e
-  arquivos (`.js`, `robots.txt`…) seguem normais no próprio www.
-- O `sub0` entra logo antes do primeiro `sub1`; sem `sub1`, no fim da query.
-- Com campanha, um `sub0` que já venha na URL é trocado pelo novo; sem
-  campanha a query segue intacta. O hop é registrado nos Logs como
-  `redirect` com decisão `REDIRECT · WWW`.
-- O vhost do nginx NÃO pode redirecionar `www` por conta própria (bloco
-  `server_name ~^www\.…; return 301`): isso responde antes do PHP e o sub0
-  nunca sai.
-- Token: `base64url(nonce 12 B ‖ cifrado ‖ tag 16 B)`, AES-256-GCM, chave
-  `SHA-256(SUB0_KEY)` (padrão `DAYONE`); texto claro = segundos, ex.
-  `1790000000`. 51 caracteres. Para decifrar em PHP: `sub0_decrypt($token, 'DAYONE')`;
-  em Node:
+- Only served pages (200/304). Block, bot, 404, route redirect and
+  files (`.js`, `robots.txt`…) go on as normal on the www. itself.
+- `sub0` goes right before the first `sub1`; without `sub1`, at the end of the query.
+- With a campaign, a `sub0` already in the URL is replaced by the new one; without
+  a campaign the query stays intact. The hop is recorded in the Logs as
+  `redirect` with decision `REDIRECT · WWW`.
+- The nginx vhost must NOT redirect `www` on its own (a
+  `server_name ~^www\.…; return 301` block): that answers before PHP and the sub0
+  never goes out.
+- Token: `base64url(nonce 12 B ‖ ciphertext ‖ tag 16 B)`, AES-256-GCM, key
+  `SHA-256(SUB0_KEY)` (default `DAYONE`); plaintext = seconds, e.g.
+  `1790000000`. 51 characters. To decrypt in PHP: `sub0_decrypt($token, 'DAYONE')`;
+  in Node:
 
 ```js
 const b = Buffer.from(token, "base64url");
@@ -100,65 +109,65 @@ d.setAuthTag(b.subarray(-16));
 const ts = Number(d.update(b.subarray(12, -16), undefined, "utf8") + d.final("utf8"));
 ```
 
-### Aviso de carregamento (`/_dop/l`)
+### Load notice (`/_dop/l`)
 
-O hit é gravado quando a request CHEGA, então ping, `curl`, prefetch e robô
-de prévia de link também aparecem como servidos. Para saber quem de fato
-carregou a página (`src/beacon.php`):
+The hit is stored when the request ARRIVES, so pings, `curl`, prefetch and
+link-preview bots also show up as served. To know who actually loaded the
+page (`src/beacon.php`):
 
-- página HTML servida (200/304) ganha o cookie `dop_v=<32 hex>` (HttpOnly,
-  10 min) e, antes do último `</body>`, um script mínimo que no evento `load`
-  faz `sendBeacon("/_dop/l", "t=<ms desde o início da navegação>")`;
-- `POST /_dop/l` responde 204 na hora e, depois, grava o id em
-  `pages.hit_loads` (RPC `log_load`); o hit leva o mesmo id em `visit_id`;
-- a tela de Logs mostra **Carregou** (✓ + tempo), "não" (o navegador não
-  avisou) ou "—" (não se aplica: redirect, 404, arquivo, registro antigo).
+- a served HTML page (200/304) gets the `dop_v=<32 hex>` cookie (HttpOnly,
+  10 min) and, before the last `</body>`, a minimal script that on the `load` event
+  calls `sendBeacon("/_dop/l", "t=<ms since navigation start>")`;
+- `POST /_dop/l` answers 204 right away and, afterwards, stores the id in
+  `pages.hit_loads` (RPC `log_load`); the hit carries the same id in `visit_id`;
+- the Logs screen shows **Loaded** (✓ + time), "no" (the browser didn't
+  report) or "—" (not applicable: redirect, 404, file, old record).
 
-O script é igual em toda resposta (o id vai no cookie), então o HTML continua
-cacheável e um 304 também leva id novo. O ETag das páginas ganha `-b1`
-(`BEACON_ETAG`): mudou o script, suba a versão. Navegador automatizado também
-roda JavaScript — "carregou" prova que um navegador renderizou, não que era
-uma pessoa.
+The script is the same in every response (the id goes in the cookie), so the HTML stays
+cacheable and a 304 also carries a new id. The pages' ETag gets `-b2`
+(`BEACON_ETAG`): changed the script, bump the version. An automated browser also
+runs JavaScript — "loaded" proves a browser rendered the page, not that it was
+a person.
 
-### Marcadores `{{chave}}` (`src/placeholders.php`)
+### `{{key}}` placeholders (`src/placeholders.php`)
 
-Cada domínio guarda os dados da empresa em `pages.domains.placeholders`
-(`company.llc` = razão social, `company.number`, `company.address`,
-`company.phone`, `company.email`), e o `resolve` devolve esses valores (mais
-`domain`) em toda rota. `company.name` é calculado: a razão social sem o
-sufixo jurídico ("Acme Health LLC" → "Acme Health"; lista em
-`company_name()`, casos em `tests/company-names.json`). A cada visita entram os automáticos: `url`
-(`https://domínio` + path, sem query), `slug` (path servido), `lang` e
-`language` (primeiro idioma do Accept-Language; sem ele, inglês), `date`
-(hoje em Nova York, por extenso nesse idioma: "September 23, 2026", "23 de
-setembro de 2026"…) e `year`. Ao servir, `{{chave}}` vira o valor.
+Each domain stores the company data in `pages.domains.placeholders`
+(`company.llc` = legal name, `company.number`, `company.address`,
+`company.phone`, `company.email`), and `resolve` returns these values (plus
+`domain`) on every route. `company.name` is computed: the legal name without the
+legal suffix ("Acme Health LLC" → "Acme Health"; list in
+`company_name()`, cases in `tests/company-names.json`). On every visit the automatic ones come in: `url`
+(`https://domain` + path, no query), `slug` (served path), `lang` and
+`language` (first language of Accept-Language; without it, English), `date`
+(today in New York, spelled out in that language: "September 23, 2026", "23 de
+setembro de 2026"…) and `year`. When serving, `{{key}}` becomes the value.
 
-- só chave conhecida é trocada (espaços dentro valem: `{{ company.phone }}`);
-  `{{ qualquer_outra }}` fica intacta, então página com Vue/Alpine não quebra;
-- valor vazio vira texto vazio;
-- HTML/XML: valor escapado; `text/plain`: cru; CSS/JS/JSON: nada muda;
-- o ETag ganha `-p<8 hex>` (hash dos valores): muda por idioma, por dia e
-  quando um dado do domínio muda (a resposta já varia por Accept-Language). Rota sem `placeholders` (cache de antes,
-  `resolve` antigo) não troca nada e não mexe no ETag.
+- only a known key is replaced (inner spaces are fine: `{{ company.phone }}`);
+  `{{ any_other }}` stays intact, so a page with Vue/Alpine doesn't break;
+- an empty value becomes empty text;
+- HTML/XML: value escaped; `text/plain`: raw; CSS/JS/JSON: nothing changes;
+- the ETag gets `-p<8 hex>` (hash of the values): it changes per language, per day and
+  when a domain field changes (the response already varies by Accept-Language). A route without `placeholders` (older cache,
+  old `resolve`) replaces nothing and doesn't touch the ETag.
 
-A lista de campos do painel e o preview do editor ficam em
-`src/lib/pages/placeholders.ts`, com as mesmas regras.
+The panel's field list and the editor preview live in
+`src/lib/pages/placeholders.ts`, with the same rules.
 
-## Instalação (Ubuntu/Debian)
+## Installation (Ubuntu/Debian)
 
-> **Só para um VPS limpo e dedicado.** Os arquivos de `deploy/` assumem que esta
-> máquina não hospeda mais nada. **Não os aplique num servidor com painel
-> (CloudPanel, Plesk, cPanel) nem num que já responda por domínios em produção:**
+> **Only for a clean, dedicated VPS.** The files in `deploy/` assume this
+> machine hosts nothing else. **Don't apply them on a server with a control panel
+> (CloudPanel, Plesk, cPanel) or on one that already answers for domains in production:**
 >
-> - `deploy/nginx/dayone-pages.conf` declara `default_server` na porta 80. Se já
->   existir um, o nginx recusa recarregar; se não existir, este passa a responder
->   por TODO domínio apontado para o IP, e os que não estiverem cadastrados no
->   painel viram 404.
-> - `deploy/cloudflare-allowlist.sh` fecha a porta 80 para tudo que não for
->   Cloudflare. Domínio com registro `A` direto para o IP sai do ar.
-> - O roteiro abaixo apaga `sites-enabled/default`.
+> - `deploy/nginx/dayone-pages.conf` declares `default_server` on port 80. If one
+>   already exists, nginx refuses to reload; if none exists, this one starts answering
+>   for EVERY domain pointed at the IP, and those not registered in the
+>   panel become 404.
+> - `deploy/cloudflare-allowlist.sh` closes port 80 to everything that isn't
+>   Cloudflare. A domain with an `A` record pointing straight at the IP goes offline.
+> - The steps below delete `sites-enabled/default`.
 >
-> Num servidor com painel, crie o site pelo painel e adapte só o vhost dele.
+> On a server with a control panel, create the site through the panel and adapt only its vhost.
 
 
 ```bash
@@ -167,7 +176,7 @@ mkdir -p /var/www/dayone-pages /var/cache/dayone-pages /var/log/php
 cp -r server /var/www/dayone-pages/
 chown -R www-data:www-data /var/cache/dayone-pages /var/log/php
 
-cp server/.env.example /var/www/dayone-pages/server/.env   # preencha
+cp server/.env.example /var/www/dayone-pages/server/.env   # fill it in
 chown root:www-data /var/www/dayone-pages/server/.env && chmod 640 /var/www/dayone-pages/server/.env
 cp server/deploy/php-fpm/dayone-pages.conf /etc/php/8.3/fpm/pool.d/
 cp server/deploy/nginx/dayone-pages.conf /etc/nginx/sites-available/
@@ -175,66 +184,66 @@ ln -s /etc/nginx/sites-available/dayone-pages.conf /etc/nginx/sites-enabled/
 rm -f /etc/nginx/sites-enabled/default
 
 systemctl restart php8.3-fpm
-bash server/deploy/cloudflare-allowlist.sh   # firewall só para o Cloudflare + real_ip; recarrega o nginx
+bash server/deploy/cloudflare-allowlist.sh   # firewall for Cloudflare only + real_ip; reloads nginx
 curl -si http://127.0.0.1/_health                # 200 + X-DayOne-Pages
 ```
 
-**Antes de rodar o `cloudflare-allowlist.sh`:** ele liga o `ufw`. O script libera
-a porta do SSH (lida do `sshd -T`) antes de ligar, mas mantenha uma segunda
-sessão SSH aberta e saiba onde fica o console de emergência do seu provedor.
-Depois de rodar, abra uma sessão SSH NOVA para confirmar que entra, e só então
-feche a antiga. O script foi testado contra um `ufw` simulado, não num Ubuntu
-real: confira o resultado com `ufw status` na primeira vez.
+**Before running `cloudflare-allowlist.sh`:** it enables `ufw`. The script allows
+the SSH port (read from `sshd -T`) before enabling it, but keep a second
+SSH session open and know where your provider's emergency console is.
+After running it, open a NEW SSH session to confirm you can get in, and only then
+close the old one. The script was tested against a simulated `ufw`, not on a real
+Ubuntu: check the result with `ufw status` the first time.
 
-Cron sugerido (root):
+Suggested cron (root):
 
 ```
 0 4 * * 0  bash /var/www/dayone-pages/server/deploy/cloudflare-allowlist.sh
 0 5 * * *  find /var/cache/dayone-pages -type f -mtime +7 -delete
 ```
 
-## Chave do servidor
+## Server key
 
-O servidor não recebe a chave de serviço do Supabase. Ele chama a função
-`pages.resolve(host, path, key)` com a chave publicável mais uma chave própria.
+The server doesn't get the Supabase service key. It calls the function
+`pages.resolve(host, path, key)` with the publishable key plus a key of its own.
 
 ```bash
-openssl rand -hex 32        # → PAGES_SERVER_KEY no server/.env
+openssl rand -hex 32        # → PAGES_SERVER_KEY in server/.env
 ```
 
-E no SQL Editor do projeto:
+And in the project's SQL Editor:
 
 ```sql
 INSERT INTO pages.server_keys (name, key_hash)
-VALUES ('origin-1', encode(sha256(convert_to('<a chave gerada>', 'UTF8')), 'hex'));
+VALUES ('origin-1', encode(sha256(convert_to('<the generated key>', 'UTF8')), 'hex'));
 ```
 
-Para revogar: `UPDATE pages.server_keys SET revoked_at = now() WHERE name = 'origin-1';`
+To revoke: `UPDATE pages.server_keys SET revoked_at = now() WHERE name = 'origin-1';`
 
-## Cloudflare (por domínio)
+## Cloudflare (per domain)
 
-- DNS: `A @ → IP do servidor` (proxy ligado) e `CNAME www → @` (proxy ligado).
-- SSL/TLS: **Flexible** (a origem é só HTTP). *Always Use HTTPS* ligado.
-- Speed: desligar *Auto Minify* e *Rocket Loader* (reescrevem o HTML e quebram o ETag).
-- WAF/Bot Fight Mode: liberar `/_health` (o dashboard consulta para verificar o domínio).
+- DNS: `A @ → server IP` (proxy on) and `CNAME www → @` (proxy on).
+- SSL/TLS: **Flexible** (the origin is HTTP only). *Always Use HTTPS* on.
+- Speed: turn off *Auto Minify* and *Rocket Loader* (they rewrite the HTML and break the ETag).
+- WAF/Bot Fight Mode: allow `/_health` (the dashboard queries it to verify the domain).
 
-## Endpoints internos
+## Internal endpoints
 
-- `GET /_health` → `{"ok":true,"server_id":...,"cache_writable":true}` com header `X-DayOne-Pages: <SERVER_ID>`. Não depende do Supabase.
-- `POST /_purge` com `X-Purge-Token: <PURGE_TOKEN>` e corpo `{"host":"exemplo.com"}` ou `{"all":true}`. Token ausente/errado → 404.
+- `GET /_health` → `{"ok":true,"server_id":...,"cache_writable":true}` with header `X-DayOne-Pages: <SERVER_ID>`. Doesn't depend on Supabase.
+- `POST /_purge` with `X-Purge-Token: <PURGE_TOKEN>` and body `{"host":"example.com"}` or `{"all":true}`. Missing/wrong token → 404.
 
-## Teste local
+## Local testing
 
 ```bash
-php server/tests/run.php                              # unidades: normalização, condições, cache
-cp server/.env.example server/.env                    # preencha SUPABASE_URL, SUPABASE_ANON_KEY, PAGES_SERVER_KEY, SERVER_ID
+php server/tests/run.php                              # units: normalization, conditions, cache
+cp server/.env.example server/.env                    # fill in SUPABASE_URL, SUPABASE_ANON_KEY, PAGES_SERVER_KEY, SERVER_ID
 CACHE_DIR=/tmp/dayone-cache php -S 127.0.0.1:8080 -t server/public server/public/index.php
 
-H='Host: exemplo.com'
+H='Host: example.com'
 curl -si -H "$H" localhost:8080/ | grep -E 'HTTP|X-Cache|ETag'      # MISS
 curl -si -H "$H" localhost:8080/ | grep X-Cache                      # HIT
 curl -si -H 'Host: nope.example' localhost:8080/ | head -1           # 404
 curl -si localhost:8080/_health | grep X-DayOne-Pages
 ```
 
-`php -S` não tem `fastcgi_finish_request`; SWR só age no php-fpm.
+`php -S` doesn't have `fastcgi_finish_request`; SWR only kicks in on php-fpm.

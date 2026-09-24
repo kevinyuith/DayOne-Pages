@@ -1,9 +1,9 @@
 /**
- * Filtros do dashboard (`/`): período, domínio, resultado, dispositivo, país e
- * "esconder bots". Vivem na URL (?range=7d&domain=<id>&outcome=served,blocked
- * &device=mobile&country=US,BR&bots=hide), que a página lê no servidor; assim
- * um filtro sobrevive a refresh e pode ser compartilhado. Sem dependência de
- * servidor: a barra de controles (client) usa o mesmo módulo para montar a URL.
+ * Dashboard filters (`/`): period, domain, outcome, device, country and
+ * "hide bots". They live in the URL (?range=7d&domain=<id>&outcome=served,blocked
+ * &device=mobile&country=US,BR&bots=hide), which the page reads on the server; so
+ * a filter survives a refresh and can be shared. No server dependency: the
+ * control bar (client) uses the same module to build the URL.
  */
 
 import type { HitBucket } from "@/lib/pages/queries";
@@ -20,17 +20,17 @@ export type RangeKey = (typeof RANGES)[number]["key"];
 
 const DEFAULT_RANGE: RangeKey = "24h";
 
-/** Os resultados que dá para filtrar (os de pages.hits, menos o "other" residual). */
+/** The outcomes you can filter by (those in pages.hits, minus the residual "other"). */
 export const OUTCOME_KEYS = ["served", "redirect", "blocked", "bot", "notfound", "error"] as const;
 export const DEVICE_KEYS = ["desktop", "mobile", "tablet"] as const;
 
 export type DashboardFilters = {
   range: RangeKey;
-  /** id em pages.domains, ou null para todos. */
+  /** id in pages.domains, or null for all. */
   domain: string | null;
   outcomes: string[];
   devices: string[];
-  /** ISO-2, maiúsculo. */
+  /** ISO-2, uppercase. */
   countries: string[];
   hideBots: boolean;
 };
@@ -42,7 +42,7 @@ function list(v: string | string[] | undefined): string[] {
   return [...new Set(raw.split(",").map((s) => s.trim()).filter(Boolean))];
 }
 
-/** Lê e valida os filtros da URL; o que não for reconhecido é ignorado. */
+/** Reads and validates the filters from the URL; anything unrecognized is ignored. */
 export function parseDashboardFilters(sp: SearchParams, domainIds: string[]): DashboardFilters {
   const range = RANGES.find((r) => r.key === sp.range)?.key ?? DEFAULT_RANGE;
   const domain = typeof sp.domain === "string" && domainIds.includes(sp.domain) ? sp.domain : null;
@@ -58,7 +58,7 @@ export function parseDashboardFilters(sp: SearchParams, domainIds: string[]): Da
   };
 }
 
-/** URL do dashboard para os filtros dados (o que é padrão fica de fora). */
+/** Dashboard URL for the given filters (defaults are left out). */
 export function dashboardHref(f: DashboardFilters): string {
   const qs = new URLSearchParams();
   if (f.range !== DEFAULT_RANGE) qs.set("range", f.range);
@@ -71,22 +71,23 @@ export function dashboardHref(f: DashboardFilters): string {
   return s ? `/?${s}` : "/";
 }
 
-/** Quantos grupos do popover "Filters" estão ativos (para o selo do botão). */
+/** How many groups of the "Filters" popover are active (for the button's badge). */
 export function activeFilterCount(f: DashboardFilters): number {
   return [f.outcomes.length > 0, f.devices.length > 0, f.countries.length > 0, f.hideBots].filter(Boolean).length;
 }
 
-// ── Período → janela de tempo ───────────────────────────────────────────────
+// ── Period → time window ────────────────────────────────────────────────────
 
 export type RangeWindow = {
   since: Date;
   /**
-   * Tamanho do bucket pedido ao banco. Sempre 1h: o banco não sabe de fuso, e
-   * um dia de NY nem sempre tem 24h (horário de verão). A série diária é
-   * montada somando as horas por dia local (`foldIntoLocalDays`).
+   * Bucket size requested from the database. Always 1h: the database knows
+   * nothing about time zones, and a NY day doesn't always have 24h (daylight
+   * saving). The daily series is built by summing the hours per local day
+   * (`foldIntoLocalDays`).
    */
   bucketMinutes: number;
-  /** Alinhamento dos buckets: meia-noite local (hora cheia, já que o offset de NY é em horas inteiras). */
+  /** Bucket alignment: local midnight (on the hour, since NY's offset is in whole hours). */
   origin: Date;
   granularity: "hour" | "day";
   label: string;
@@ -101,17 +102,17 @@ export function resolveRange(range: RangeKey, nowMs: number): RangeWindow {
     case "today":
       return { ...base, since: new Date(midnight), granularity: "hour" };
     case "7d":
-      // Hoje + os 6 dias anteriores, dias inteiros.
+      // Today + the previous 6 days, whole days.
       return { ...base, since: new Date(localMidnight(nowMs, 6)), granularity: "day" };
     case "30d":
-      // Até ~720 buckets de 1h: cabe no limite de 1000 linhas do PostgREST.
+      // Up to ~720 1h buckets: fits within PostgREST's 1000-row limit.
       return { ...base, since: new Date(localMidnight(nowMs, 29)), granularity: "day" };
     default:
       return { ...base, since: new Date(nowMs - 24 * 60 * 60 * 1000), granularity: "hour" };
   }
 }
 
-/** Soma buckets de 1h por dia local; cada dia fica com o instante da sua primeira hora (a meia-noite local). */
+/** Sums 1h buckets per local day; each day keeps the instant of its first hour (local midnight). */
 export function foldIntoLocalDays(buckets: HitBucket[]): HitBucket[] {
   const days = new Map<string, HitBucket>();
   for (const b of buckets) {

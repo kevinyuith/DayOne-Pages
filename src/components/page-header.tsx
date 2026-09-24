@@ -1,4 +1,4 @@
-/** O cabeçalho de uma tela do painel: só o título (sem texto de descrição embaixo). */
+/** The header of a panel screen: just the title (no description text below it). */
 export function PageHeader({ title }: { title: string }) {
   return (
     <header className="mb-8">

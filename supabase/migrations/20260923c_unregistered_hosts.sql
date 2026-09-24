@@ -1,21 +1,21 @@
 -- ============================================================================
--- DayOne Pages — hosts vistos nos logs que não estão cadastrados
+-- DayOne Pages — hosts seen in the logs that are not registered
 --
--- pages.unregistered_hosts(p_since): hosts de pages.hits sem domain_id,
--- normalizados como pages.domains (sem www.), que têm cara de domínio (mesma
--- regex do CHECK de pages.domains) e ainda não estão cadastrados. Alimenta a
--- lista "Vistos nos logs, sem cadastro" em /dominios e o botão Cadastrar da
--- coluna Domínio dos Logs. p_since NULL = todo o histórico.
+-- pages.unregistered_hosts(p_since): hosts from pages.hits with no domain_id,
+-- normalized like pages.domains (without www.), that look like a domain (same
+-- regex as the CHECK on pages.domains) and are not registered yet. Feeds the
+-- "Seen in the logs, not registered" list in /domains and the Register button in the
+-- Logs' Domain column. p_since NULL = the whole history.
 --
--- Fica de fora o hostname público do EC2 (*.amazonaws.com): é o próprio
--- servidor sendo acessado pelo nome da AWS, nunca domínio de cliente.
+-- The EC2 public hostname (*.amazonaws.com) is left out: it is the server
+-- itself being reached by its AWS name, never a customer domain.
 --
--- pages.log_hit: o PHP tira o domain_id da primeira rota resolvida; domínio
--- cadastrado SEM página padrão não tem rota e o hit caía sem domínio (e
--- continuava aparecendo como "sem cadastro"). Agora, com p_domain NULL, o
--- domínio é achado pelo host normalizado. Mesma assinatura (CREATE OR
--- REPLACE); o corpo é o de 20260923_hit_loads, só com essa linha trocada.
--- Por fim, um backfill: hits antigos sem domínio cujo host já está cadastrado.
+-- pages.log_hit: the PHP takes the domain_id from the first resolved route; a
+-- domain registered WITHOUT a default page has no route and the hit ended up with no domain (and
+-- kept showing as "not registered"). Now, with p_domain NULL, the
+-- domain is found by the normalized host. Same signature (CREATE OR
+-- REPLACE); the body is the one from 20260923_hit_loads, with only that line changed.
+-- Finally, a backfill: old hits with no domain whose host is already registered.
 -- ============================================================================
 
 CREATE OR REPLACE FUNCTION pages.unregistered_hosts(p_since timestamptz DEFAULT NULL)
@@ -85,7 +85,7 @@ BEGIN
   INSERT INTO pages.hits (domain_id, host, path, outcome, status_code, country, device, is_bot, referrer_host, ip, user_agent,
                           hostname, asn, as_name, cookies, region, route_id, page_id, slug, decision, query, redirect_url, visit_id)
   VALUES (
-    -- Sem rota resolvida o PHP manda NULL (domínio sem página padrão): acha pelo host.
+    -- With no resolved route the PHP sends NULL (domain without a default page): find it by host.
     coalesce(p_domain, (SELECT d.id FROM pages.domains d WHERE d.domain = pages.normalize_host(p_host))),
     left(coalesce(p_host, ''), 253),
     left(coalesce(p_path, ''), 2048),

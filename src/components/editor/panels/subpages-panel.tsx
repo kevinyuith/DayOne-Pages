@@ -7,34 +7,31 @@ import { CHECKBOX_CLASS, SELECT_BASE, SELECT_CLASS, TEXTAREA_CLASS } from "@/com
 import { FUNNEL_MODES, FUNNEL_MODE_LABELS, funnelSlots, trafficShares, type BackTrigger, type FunnelMode, type SubPage, type SubPageKind } from "@/lib/pages/subpages";
 
 /**
- * Painel "Funil": as três etapas fixas desta slug — Pre Lander → Lander →
- * Backredirect —, todas na MESMA URL, e as AMOSTRAS de cada uma (teste A/B).
- * Etapa sem código fica inativa. O visitante começa no Pre Lander se ele
- * estiver ativo, senão no Lander; com várias amostras, o servidor sorteia uma
- * por visitante na proporção dos pesos (fixa para ele). Clicar numa amostra
- * troca o que a canvas mostra; as ações mudam o HTML (o pai aplica via
- * `applyDocChange`). O seletor de modo decide quem troca de etapa: o
- * navegador (tudo no HTML) ou o servidor (uma etapa por resposta).
+ * "Funnel" panel: this slug's three fixed steps — Pre Lander → Lander →
+ * Backredirect —, all on the SAME URL, and the SAMPLES of each one (A/B test).
+ * A step with no code is inactive. The visitor starts on the Pre Lander if it
+ * is active, otherwise on the Lander; with several samples, the server draws one
+ * per visitor in proportion to the weights (sticky for that visitor). Clicking a sample
+ * changes what the canvas shows; the actions change the HTML (the parent applies them via
+ * `applyDocChange`). The mode selector decides who switches steps: the
+ * browser (everything in the HTML) or the server (one step per response).
  */
 export type SubPagesActions = {
   select: (id: string) => void;
   activate: (kind: SubPageKind) => void;
   deactivate: (kind: SubPageKind) => void;
-  /** Nova amostra: cópia de `from`, o HTML dado ou o modelo inicial. */
+  /** New sample: a copy of `from`, the given HTML or the starter template. */
   addVersion: (kind: SubPageKind, opts: { from?: string; html?: string }) => void;
   removeVersion: (id: string) => void;
-  /** Troca o conteúdo da amostra pelo HTML de uma página inteira. */
+  /** Replaces the sample's content with the HTML of a whole page. */
   replaceVersion: (id: string, html: string) => void;
   setWeight: (id: string, weight: number) => void;
   splitEvenly: (kind: SubPageKind) => void;
   setTriggers: (ids: string[], triggers: BackTrigger[]) => void;
   setMode: (mode: FunnelMode) => void;
-  /** O HTML da slug `/` de um template (para virar amostra). */
+  /** The HTML of a template's `/` slug (to become a sample). */
   loadTemplate: (templateId: string) => Promise<{ ok: true; html: string } | { ok: false; reason: string }>;
 };
-
-/** Visitantes únicos que viram / clicaram cada amostra (página de domínio). */
-export type StepStats = Record<string, { views: number; clicks: number }>;
 
 const KIND_TONE: Record<SubPageKind, string> = {
   presell: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
@@ -48,7 +45,7 @@ const KIND_HINT: Record<SubPageKind, string> = {
   backredirect: "Shows when the visitor presses back (or tries to leave).",
 };
 
-/** De onde vem o HTML de uma amostra nova (ou do conteúdo novo de uma). */
+/** Where the HTML of a new sample (or of a sample's new content) comes from. */
 type Importing = { kind: SubPageKind; replace: string | null; source: "html" | "template" } | null;
 
 const pct = (n: number) => `${n.toLocaleString("en-US", { maximumFractionDigits: 1 })}%`;
@@ -59,7 +56,6 @@ export function SubPagesPanel({
   mode,
   canEdit,
   actions,
-  stats,
   templates,
 }: {
   pages: SubPage[];
@@ -67,8 +63,6 @@ export function SubPagesPanel({
   mode: FunnelMode;
   canEdit: boolean;
   actions: SubPagesActions;
-  /** Página de domínio: os resultados de cada amostra (30 dias). Template: null. */
-  stats: StepStats | null;
   templates: { id: string; name: string }[];
 }) {
   const [importing, setImporting] = useState<Importing>(null);
@@ -84,7 +78,7 @@ export function SubPagesPanel({
     if (!window.confirm(`Remove the sample "${v.name}"? Its code will be deleted.`)) return;
     actions.removeVersion(v.id);
   };
-  /** HTML importado: numa etapa inativa com seção vazia, preenche ela; senão, amostra nova (ou troca a escolhida). */
+  /** Imported HTML: on an inactive step with an empty section, fills it; otherwise, a new sample (or replaces the chosen one). */
   const applyImport = (html: string) => {
     if (!importing) return;
     const slot = slots.find((s) => s.kind === importing.kind);
@@ -106,7 +100,7 @@ export function SubPagesPanel({
         <ul className="mb-2 flex flex-col gap-1.5">
           {slots.map((s, i) => {
             const selectedHere = s.versions.some((v) => v.id === currentId);
-            // A última etapa que o visitante pode ver não sai: a página ficaria em branco.
+            // The last step the visitor can see cannot be removed: the page would be blank.
             const onlyVisible = s.kind !== "backredirect" && s.active && activeFlow <= 1;
             const shares = trafficShares(s.versions);
             const test = s.versions.filter((v) => v.active).length > 1;
@@ -125,7 +119,6 @@ export function SubPagesPanel({
                 {s.versions.length ? (
                   <ul className="mt-1.5 flex flex-col gap-1 pl-6">
                     {s.versions.map((v) => {
-                      const st = stats?.[v.id];
                       return (
                         <li key={v.id} className={`rounded-md border px-1.5 py-1 ${v.id === currentId ? "border-accent/50 bg-accent/10" : "border-border"}`}>
                           <div className="flex items-center gap-1.5">
@@ -161,11 +154,6 @@ export function SubPagesPanel({
                               </Menu>
                             ) : null}
                           </div>
-                          {stats && v.active ? (
-                            <p className="mt-0.5 pl-6 text-[10px] tabular-nums text-muted">
-                              {st ? `${st.views.toLocaleString("en-US")} views · ${st.clicks.toLocaleString("en-US")} clicks · ${st.views ? pct((st.clicks / st.views) * 100) : "—"}` : "no views in 30 days"}
-                            </p>
-                          ) : null}
                         </li>
                       );
                     })}
@@ -273,7 +261,7 @@ export function SubPagesPanel({
   );
 }
 
-/** Colar o HTML de uma página ou escolher um template, para virar amostra (ou o conteúdo de uma). */
+/** Paste a page's HTML or choose a template, to become a sample (or a sample's content). */
 function ImportDialog({
   importing,
   templates,
@@ -359,7 +347,7 @@ function Menu({ label, trigger = "⋯", children }: { label: string; trigger?: s
       </summary>
       <div
         className="absolute right-0 z-30 mt-1 flex w-48 flex-col rounded-lg border border-border bg-surface p-1 shadow-lg"
-        // Fecha o <details> depois de escolher.
+        // Closes the <details> after choosing.
         onClick={(e) => (e.currentTarget.parentElement as HTMLDetailsElement | null)?.removeAttribute("open")}
       >
         {children}

@@ -1,22 +1,22 @@
 -- ============================================================================
--- DayOne Pages — estado (US) e a decisão de roteamento em pages.hits
+-- DayOne Pages — state (US) and the routing decision in pages.hits
 --
---   region    header cf-region do Cloudflare (Managed Transform "Add visitor
---             location headers", ligado por zona). Só país US grava; qualquer
---             outro país fica NULL — regra aplicada aqui, num lugar só.
---   route_id  a rota que decidiu (NULL = nenhuma casou)
---   page_id   a página servida pela rota
---   slug      a slug servida
---   decision  "<ação> · <tipo da regra>", ex.: "SERVE · FALLBACK",
---             "BLOCK · BOTGATE", "REDIRECT · PREFIX"; "NONE" sem rota.
+--   region    Cloudflare's cf-region header (Managed Transform "Add visitor
+--             location headers", turned on per zone). Only country US stores it; any
+--             other country stays NULL — rule applied here, in one place only.
+--   route_id  the route that decided (NULL = none matched)
+--   page_id   the page served by the route
+--   slug      the slug served
+--   decision  "<action> · <rule type>", e.g. "SERVE · FALLBACK",
+--             "BLOCK · BOTGATE", "REDIRECT · PREFIX"; "NONE" with no route.
 --
--- route_id/page_id SEM FK de propósito: o servidor serve rotas do cache, e uma
--- rota apagada no painel ainda pode sair por um tempo; com FK o insert do hit
--- falharia e o hit se perderia.
+-- route_id/page_id WITHOUT FK on purpose: the server serves routes from the cache, and a
+-- route deleted in the panel may still go out for a while; with an FK the hit insert
+-- would fail and the hit would be lost.
 --
--- Parâmetros novos com DEFAULT NULL: o PHP anterior continua funcionando.
--- DROP + CREATE pela mesma razão de 20260922e (mudar a lista de parâmetros).
--- O corpo mantém filtro de páginas, hostname, ASN e cookies.
+-- New parameters with DEFAULT NULL: the previous PHP keeps working.
+-- DROP + CREATE for the same reason as 20260922e (changing the parameter list).
+-- The body keeps the page filter, hostname, ASN and cookies.
 -- ============================================================================
 
 ALTER TABLE pages.hits ADD COLUMN IF NOT EXISTS region   text;
@@ -25,11 +25,11 @@ ALTER TABLE pages.hits ADD COLUMN IF NOT EXISTS page_id  uuid;
 ALTER TABLE pages.hits ADD COLUMN IF NOT EXISTS slug     text;
 ALTER TABLE pages.hits ADD COLUMN IF NOT EXISTS decision text;
 
-COMMENT ON COLUMN pages.hits.region   IS 'Estado do visitante (cf-region do Cloudflare), só quando country = US.';
-COMMENT ON COLUMN pages.hits.route_id IS 'Rota que decidiu a resposta (sem FK: a rota pode ter sido apagada). NULL = nenhuma casou.';
-COMMENT ON COLUMN pages.hits.page_id  IS 'Página servida pela rota (sem FK).';
-COMMENT ON COLUMN pages.hits.slug     IS 'Slug servida pela rota.';
-COMMENT ON COLUMN pages.hits.decision IS '"<ação> · <tipo da regra>", ex.: SERVE · FALLBACK, BLOCK · BOTGATE. NONE = nenhuma rota casou.';
+COMMENT ON COLUMN pages.hits.region   IS 'The visitor''s state (Cloudflare''s cf-region), only when country = US.';
+COMMENT ON COLUMN pages.hits.route_id IS 'Route that decided the response (no FK: the route may have been deleted). NULL = none matched.';
+COMMENT ON COLUMN pages.hits.page_id  IS 'Page served by the route (no FK).';
+COMMENT ON COLUMN pages.hits.slug     IS 'Slug served by the route.';
+COMMENT ON COLUMN pages.hits.decision IS '"<action> · <rule type>", e.g. SERVE · FALLBACK, BLOCK · BOTGATE. NONE = no route matched.';
 
 DROP FUNCTION IF EXISTS pages.log_hit(text, uuid, text, text, text, int, text, text, boolean, text, text, text, text, int, text, text);
 

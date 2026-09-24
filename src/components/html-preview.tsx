@@ -4,15 +4,15 @@ import { useEffect, useState } from "react";
 import { injectBase } from "@/lib/pages/starter-template";
 
 /**
- * Preview do HTML num iframe isolado.
+ * HTML preview in an isolated iframe.
  *
- * `sandbox` sem `allow-same-origin`: o documento roda numa origem opaca e não
- * alcança cookies nem storage do dashboard, mesmo com scripts ligados. Nunca
- * junte `allow-scripts` com `allow-same-origin` — é a combinação que deixa o
- * conteúdo escapar do sandbox.
+ * `sandbox` without `allow-same-origin`: the document runs in an opaque origin and
+ * cannot reach the dashboard's cookies or storage, even with scripts enabled. Never
+ * combine `allow-scripts` with `allow-same-origin` — that is the combination that lets
+ * the content escape the sandbox.
  *
- * Debounce: o CodeMirror dispara a cada tecla; re-renderizar o iframe a cada
- * tecla trava a digitação em páginas grandes.
+ * Debounce: CodeMirror fires on every keystroke; re-rendering the iframe on every
+ * keystroke makes typing lag on large pages.
  */
 const DEBOUNCE_MS = 400;
 

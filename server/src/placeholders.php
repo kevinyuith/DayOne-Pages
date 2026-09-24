@@ -1,31 +1,32 @@
 <?php
 /**
- * Marcadores {{chave}} nas páginas, trocados pelos dados do domínio e da
- * visita na hora de servir.
+ * {{key}} placeholders in pages, replaced with the domain's and the visit's
+ * data at serve time.
  *
- * - `company.*` (llc = razão social, number, address, phone, email) vêm do
- *   resolve (coluna `placeholders` = pages.domains.placeholders + `domain`) e
- *   ficam no cache de rotas junto com a rota; `company.name` é a razão social
- *   sem o sufixo jurídico (company_name());
- * - automáticos, a cada visita: `url` (https://domínio + path, sem query),
- *   `slug` (path servido), `lang` e `language` (primeiro idioma do
- *   Accept-Language; sem ele, inglês), `date` (hoje em Nova York, por
- *   extenso nesse idioma) e `year`.
+ * - `company.*` (llc = legal name, number, address, phone, email) come from
+ *   resolve (column `placeholders` = pages.domains.placeholders + `domain`)
+ *   and stay in the routes cache along with the route; `company.name` is the
+ *   legal name without the legal suffix (company_name());
+ * - automatic, on every visit: `url` (https://domain + path, no query),
+ *   `slug` (served path), `lang` and `language` (first language of
+ *   Accept-Language; without it, English), `date` (today in New York,
+ *   spelled out in that language) and `year`.
  *
- * A lista de campos do painel e o preview do editor ficam em
- * src/lib/pages/placeholders.ts. As regras e as tabelas (idiomas, meses) são
- * as mesmas dos dois lados — mudou uma, mude a outra:
+ * The panel's field list and the editor preview live in
+ * src/lib/pages/placeholders.ts. The rules and the tables (languages, months)
+ * are the same on both sides — changed one, change the other:
  *
- * - só `{{chave}}` de chave conhecida (espaços dentro valem); `{{ outra }}`
- *   fica como está — página com Vue ou Alpine não é afetada;
- * - valor vazio vira texto vazio;
- * - HTML/XML: o valor entra escapado; text/plain: cru; outros tipos (css,
- *   js, json): nada muda.
+ * - only `{{key}}` with a known key (inner spaces are fine); `{{ other }}`
+ *   stays as is — a page with Vue or Alpine is not affected;
+ * - an empty value becomes empty text;
+ * - HTML/XML: the value goes in escaped; text/plain: raw; other types (css,
+ *   js, json): nothing changes.
  *
- * Rota sem `placeholders` (cache de antes, resolve antigo): nada é trocado e
- * o ETag fica igual. Com valores, o ETag ganha um sufixo com o hash deles: a
- * página muda por idioma e por dia, e mudou um dado do domínio, a cópia que o
- * navegador tem deixa de valer (a resposta já varia por Accept-Language).
+ * Route without `placeholders` (older cache, old resolve): nothing is
+ * replaced and the ETag stays the same. With values, the ETag gets a suffix
+ * with their hash: the page changes per language and per day, and when a
+ * domain field changes, the copy the browser has stops being valid (the
+ * response already varies by Accept-Language).
  */
 declare(strict_types=1);
 
@@ -34,7 +35,7 @@ defined('DAYONE_ENTRY') || (http_response_code(404) && exit);
 const PLACEHOLDER_RE = '/\{\{\s*([a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)*)\s*\}\}/';
 const PLACEHOLDER_TZ = 'America/New_York';
 
-/** Nome de cada idioma nele mesmo. Sem entrada: o próprio código. */
+/** Each language's name in that language. No entry: the code itself. */
 const PLACEHOLDER_LANGUAGE_NAMES = [
     'en' => 'English', 'pt' => 'Português', 'es' => 'Español', 'fr' => 'Français', 'de' => 'Deutsch', 'it' => 'Italiano', 'nl' => 'Nederlands',
     'pl' => 'Polski', 'ru' => 'Русский', 'uk' => 'Українська', 'tr' => 'Türkçe', 'sv' => 'Svenska', 'da' => 'Dansk', 'no' => 'Norsk', 'nb' => 'Norsk',
@@ -42,7 +43,7 @@ const PLACEHOLDER_LANGUAGE_NAMES = [
     'ja' => '日本語', 'zh' => '中文', 'ko' => '한국어', 'id' => 'Bahasa Indonesia', 'ms' => 'Bahasa Melayu', 'vi' => 'Tiếng Việt', 'th' => 'ไทย', 'tl' => 'Filipino',
 ];
 
-/** Meses e formato da data por extenso ({d}, {m}, {y}). Idioma sem entrada usa o inglês. */
+/** Months and the long date format ({d}, {m}, {y}). A language with no entry uses English. */
 const PLACEHOLDER_DATE_FORMATS = [
     'en' => [['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'], '{m} {d}, {y}'],
     'pt' => [['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'], '{d} de {m} de {y}'],
@@ -54,9 +55,9 @@ const PLACEHOLDER_DATE_FORMATS = [
 ];
 
 /**
- * Sufixos jurídicos que {{company.name}} tira do fim da razão social. A mesma
- * lista está em src/lib/pages/company-name.ts; os casos de teste dos dois
- * lados estão em server/tests/company-names.json.
+ * Legal suffixes that {{company.name}} strips from the end of the legal name.
+ * The same list is in src/lib/pages/company-name.ts; the test cases for both
+ * sides are in server/tests/company-names.json.
  */
 const COMPANY_SUFFIXES_ANY_CASE = [
     'UG (haftungsbeschränkt)', 'S.à r.l', 'S.a.r.l', 'Incorporated', 'Corporation', 'Company', 'Limited',
@@ -65,18 +66,18 @@ const COMPANY_SUFFIXES_ANY_CASE = [
     'OHG', 'e.V', 'S.A', 'S/A', 'S/S', 'SRL', 'S.L', 'SLU', 'N.V', 'B.V', 'A/S', 'Oyj', 'ApS', 'K.K', 'Sdn', 'Bhd',
     'Tbk', 'LDA', 'EPP', 'L.P', 'P.C',
 ];
-/** Só escritas assim (siglas que também são palavras: "Wang Mei", "Hotel Spa" ficam inteiros). */
+/** Only when written exactly like this (abbreviations that are also words: "Wang Mei", "Hotel Spa" stay whole). */
 const COMPANY_SUFFIXES_EXACT = ['Co', 'CO', 'AG', 'KG', 'UG', 'SE', 'SA', 'SAS', 'AB', 'AS', 'ASA', 'NV', 'BV', 'LP', 'PC', 'SL', 'SS', 'KK', 'ME', 'MEI', 'Oy', 'SpA'];
 
 function company_suffix_re(array $list, string $flags): string
 {
     usort($list, static fn (string $a, string $b): int => mb_strlen($b) <=> mb_strlen($a));
     $alternatives = implode('|', array_map(static fn (string $s): string => preg_quote($s, '/'), $list));
-    // O sufixo vem depois de espaço, vírgula ou traço, e pode ter ponto final.
+    // The suffix comes after a space, comma or dash, and may have a trailing period.
     return '/[\s,\-–—]+(?:' . $alternatives . ')\.?$/u' . $flags;
 }
 
-/** A razão social sem o sufixo jurídico do final ("Acme Health LLC" → "Acme Health"); nunca vazio. */
+/** The legal name without the trailing legal suffix ("Acme Health LLC" → "Acme Health"); never empty. */
 function company_name(string $legalName): string
 {
     static $anyCase = null, $exact = null;
@@ -110,8 +111,8 @@ function placeholder_long_date(DateTimeImmutable $day, string $lang): string
 }
 
 /**
- * Os valores desta visita: os do domínio (só texto) + os automáticos.
- * null = a rota não traz marcadores (não troca nada).
+ * The values for this visit: the domain's (text only) + the automatic ones.
+ * null = the route carries no placeholders (nothing is replaced).
  *
  * @return array<string,string>|null
  */
@@ -144,13 +145,13 @@ function placeholder_values(array $route, Request $req, ?DateTimeImmutable $now 
     return $values;
 }
 
-/** Sufixo do ETag para os valores ('' quando a rota não traz marcadores). */
+/** ETag suffix for the values ('' when the route carries no placeholders). */
 function placeholders_etag(?array $values): string
 {
     return $values === null ? '' : '-p' . substr(md5((string) json_encode($values)), 0, 8);
 }
 
-/** Troca os marcadores conhecidos no corpo, conforme o tipo do conteúdo. */
+/** Replaces the known placeholders in the body, according to the content type. */
 function placeholders_apply(string $body, ?array $values, string $contentType): string
 {
     if ($values === null || !str_contains($body, '{{')) {

@@ -8,8 +8,8 @@ import { useMemo, useSyncExternalStore } from "react";
 import { openPlaceholderAt, placeholderToken, suggestPlaceholders } from "@/lib/pages/placeholders";
 
 /**
- * CodeMirror 6 só no cliente: o componente toca o DOM ao montar, e o
- * carregamento dinâmico sem SSR evita o pacote no HTML inicial.
+ * CodeMirror 6 on the client only: the component touches the DOM on mount, and
+ * dynamic loading without SSR keeps the package out of the initial HTML.
  */
 const CodeMirror = dynamic(() => import("@uiw/react-codemirror"), {
   ssr: false,
@@ -33,9 +33,9 @@ function usePrefersDark(): boolean {
 }
 
 /**
- * Autocompletar dos marcadores: escrever "{{" (em texto, atributo, script ou
- * style) abre a lista. O "}}" que o fechamento automático de chaves põe
- * depois do cursor é absorvido ao escolher.
+ * Placeholder autocomplete: typing "{{" (in text, an attribute, script or
+ * style) opens the list. The "}}" that bracket auto-closing puts after the
+ * cursor is absorbed when an option is picked.
  */
 function placeholderCompletions(values: Record<string, string> | null) {
   return (ctx: CompletionContext): CompletionResult | null => {
@@ -75,12 +75,12 @@ export function CodeEditor({
 }: {
   value: string;
   onChange: (value: string) => void;
-  /** Valores dos marcadores (página de domínio), mostrados na lista do "{{". Template: null. */
+  /** Placeholder values (domain page), shown in the "{{" list. Template: null. */
   placeholderValues?: Record<string, string> | null;
 }) {
   const dark = usePrefersDark();
   const extensions = useMemo(() => {
-    // A MESMA função a cada chamada: o CodeMirror reconhece a fonte pela referência.
+    // The SAME function on every call: CodeMirror recognizes the source by reference.
     const placeholders = [{ autocomplete: placeholderCompletions(placeholderValues) }];
     return [html({ autoCloseTags: true, matchClosingTags: true }), EditorState.languageData.of(() => placeholders)];
   }, [placeholderValues]);

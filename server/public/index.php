@@ -1,6 +1,6 @@
 <?php
 /**
- * Único arquivo no webroot. Tudo (qualquer host, qualquer path) cai aqui.
+ * The only file in the webroot. Everything (any host, any path) lands here.
  */
 declare(strict_types=1);
 

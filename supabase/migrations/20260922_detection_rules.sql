@@ -1,15 +1,15 @@
 -- ============================================================================
--- DayOne Pages — regras de detecção de bots e usuários suspeitos
+-- DayOne Pages — detection rules for bots and suspicious users
 --
--- Tabela para armazenar regras que definem quem é bot ou suspeito.
--- Cada regra pode corresponder a padrões de User-Agent, IP, país, etc.
+-- Table to store the rules that define who is a bot or suspicious.
+-- Each rule can match User-Agent, IP, country, etc. patterns.
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS pages.detection_rules (
   id            uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
   type          text        NOT NULL,   -- user_agent|ip_pattern|country|rate_limit|keyword
-  name          text        NOT NULL,   -- nome descritivo da regra
-  pattern       text        NOT NULL,   -- padrão a corresponder (regex, IP CIDR, país ISO, etc)
+  name          text        NOT NULL,   -- descriptive name of the rule
+  pattern       text        NOT NULL,   -- pattern to match (regex, IP CIDR, ISO country, etc)
   classification text       NOT NULL,   -- bot|suspicious
   is_active     boolean     NOT NULL DEFAULT true,
   priority      int         NOT NULL DEFAULT 100,
@@ -20,11 +20,11 @@ CREATE TABLE IF NOT EXISTS pages.detection_rules (
   CONSTRAINT ck_detection_rules_classification CHECK (classification IN ('bot', 'suspicious'))
 );
 
-COMMENT ON TABLE pages.detection_rules IS 'Regras para detectar bots e usuários suspeitos baseado em padrões (UA, IP, país, etc).';
-COMMENT ON COLUMN pages.detection_rules.type IS 'Tipo de regra: user_agent (regex), ip_pattern (CIDR), country (ISO-2), rate_limit (requests/sec), keyword (em path/UA)';
-COMMENT ON COLUMN pages.detection_rules.pattern IS 'Padrão específico: regex para UA, CIDR para IP, ISO-2 para país, número para rate, string para keyword';
-COMMENT ON COLUMN pages.detection_rules.classification IS 'Classificação quando corresponde: bot ou suspicious';
-COMMENT ON COLUMN pages.detection_rules.priority IS 'Prioridade de avaliação (menor = avalia primeiro). Default 100.';
+COMMENT ON TABLE pages.detection_rules IS 'Rules to detect bots and suspicious users based on patterns (UA, IP, country, etc).';
+COMMENT ON COLUMN pages.detection_rules.type IS 'Rule type: user_agent (regex), ip_pattern (CIDR), country (ISO-2), rate_limit (requests/sec), keyword (in path/UA)';
+COMMENT ON COLUMN pages.detection_rules.pattern IS 'Specific pattern: regex for UA, CIDR for IP, ISO-2 for country, number for rate, string for keyword';
+COMMENT ON COLUMN pages.detection_rules.classification IS 'Classification when it matches: bot or suspicious';
+COMMENT ON COLUMN pages.detection_rules.priority IS 'Evaluation priority (lower = evaluated first). Default 100.';
 
 CREATE INDEX IF NOT EXISTS idx_detection_rules_active ON pages.detection_rules (is_active, priority);
 CREATE INDEX IF NOT EXISTS idx_detection_rules_type   ON pages.detection_rules (type);

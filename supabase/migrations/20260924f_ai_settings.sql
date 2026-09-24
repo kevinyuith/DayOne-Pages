@@ -3,7 +3,7 @@
 --
 -- The copy-angle rewrite (template variations) uses Kimi (Moonshot AI). Its
 -- API key is stored encrypted in Supabase Vault and its model in a small
--- settings table, both edited from the dashboard's Configurações screen.
+-- settings table, both edited from the dashboard's Settings screen.
 --
 -- - pages.app_settings: non-secret settings (key → jsonb), e.g. ai.model.
 -- - Vault secret 'dayone_pages.moonshot_api_key': the Kimi API key.

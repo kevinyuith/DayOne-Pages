@@ -1,25 +1,26 @@
 <?php
 /**
- * Avaliação de `conditions` de uma rota contra a request.
+ * Evaluation of a route's `conditions` against the request.
  *
- * O contrato (o mesmo de src/lib/pages/conditions.ts no dashboard):
+ * The contract (the same as src/lib/pages/conditions.ts in the dashboard):
  *
- *   countries       ["BR","US"]                 CF-IPCountry ∈ lista
- *   countries_mode  "block"                     inverte: casa quem NÃO está na lista
- *   devices         ["mobile","tablet","desktop"] dispositivo pelo User-Agent ∈ lista
- *   languages       ["en","es"]                 Accept-Language do navegador ∩ lista
- *   languages_mode  "block"                     inverte: casa quem NÃO tem os idiomas
+ *   countries       ["BR","US"]                 CF-IPCountry ∈ list
+ *   countries_mode  "block"                     inverts: matches whoever is NOT in the list
+ *   devices         ["mobile","tablet","desktop"] device from the User-Agent ∈ list
+ *   languages       ["en","es"]                 browser Accept-Language ∩ list
+ *   languages_mode  "block"                     inverts: matches whoever does NOT have the languages
  *   query           {"utm_source": "present" | "absent" | {"equals": "x"}}
- *   referrer        "texto"                     Referer contém (case-insensitive)
- *   bot             true                        User-Agent de crawler/scraper.
- *                                               Só vale em rotas BLOCK; respond.php
- *                                               ignora rotas que o usem noutra ação.
+ *   referrer        "text"                      Referer contains (case-insensitive)
+ *   bot             true                        crawler/scraper User-Agent.
+ *                                               Only valid on BLOCK routes; respond.php
+ *                                               ignores routes that use it with another action.
  *
- * `{}` = sempre casa. Chave desconhecida = NÃO casa (e vai para o log):
- * uma rota que o servidor não entende não pode decidir nada.
+ * `{}` = always matches. Unknown key = does NOT match (and goes to the log):
+ * a route the server doesn't understand can't decide anything.
  *
- * Modo "block" e país/idioma ausente: em allow, ausência NÃO casa (não dá para
- * confirmar que é permitido); em block, ausência CASA (não está no que se barra).
+ * "block" mode and missing country/language: in allow, missing does NOT match
+ * (it can't be confirmed as allowed); in block, missing MATCHES (it isn't in
+ * what is barred).
  */
 declare(strict_types=1);
 
@@ -31,7 +32,7 @@ function conditions_match(array $cond, Request $req): bool
 {
     foreach (array_keys($cond) as $key) {
         if (!in_array($key, KNOWN_CONDITIONS, true)) {
-            error_log("[dayone-pages] condição desconhecida ignorada (rota não casa): $key");
+            error_log("[dayone-pages] unknown condition ignored (route does not match): $key");
             return false;
         }
     }
@@ -99,9 +100,9 @@ function conditions_match(array $cond, Request $req): bool
 }
 
 /**
- * Subtags primárias do Accept-Language, minúsculas e sem duplicar.
- * "pt-BR,pt;q=0.9,en;q=0.8" → ["pt","en"]. `q` e região são descartados; o
- * casamento é por idioma (a lista do filtro guarda códigos ISO 639-1).
+ * Primary subtags of Accept-Language, lowercase and without duplicates.
+ * "pt-BR,pt;q=0.9,en;q=0.8" → ["pt","en"]. `q` and region are dropped;
+ * matching is by language (the filter list stores ISO 639-1 codes).
  */
 function languages_from_header(string $header): array
 {
@@ -122,7 +123,7 @@ function languages_from_header(string $header): array
     return array_keys($out);
 }
 
-/** mobile | tablet | desktop, pelo User-Agent. Heurística simples e suficiente. */
+/** mobile | tablet | desktop, from the User-Agent. A simple heuristic that is good enough. */
 function device_from_ua(string $ua): string
 {
     if ($ua === '') {
@@ -137,7 +138,7 @@ function device_from_ua(string $ua): string
     return 'desktop';
 }
 
-/** Crawler/scraper conhecido, ou cliente sem User-Agent. Usado só para BLOQUEAR. */
+/** Known crawler/scraper, or a client with no User-Agent. Used only to BLOCK. */
 function is_bot_ua(string $ua): bool
 {
     if (trim($ua) === '') {

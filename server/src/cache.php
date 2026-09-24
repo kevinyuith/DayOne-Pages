@@ -1,38 +1,42 @@
 <?php
 /**
- * Cache em disco.
+ * Disk cache.
  *
- * O que é cacheado, e por quê em dois níveis:
+ * What is cached, and why in two levels:
  *
  *   routes/<h2>/<sha1(host)>/<sha1(path)>.php
- *       o RESULTADO DO RESOLVEDOR para (host, path): a lista de rotas
- *       candidatas, sem o HTML. As `conditions` variam por visitante, então
- *       a resposta final não pode ser cacheada — a lista pode.
- *       Lista vazia = domínio desconhecido (cache negativo, NEGATIVE_TTL).
+ *       the RESOLVER RESULT for (host, path): the list of candidate routes,
+ *       without the HTML. The `conditions` vary per visitor, so the final
+ *       response can't be cached — the list can.
+ *       Empty list = unknown domain (negative cache, NEGATIVE_TTL).
  *
- *   content/<s2>/<slug_id>-<content_hash>.php
- *       o HTML de cada slug, endereçado pelo hash. Uma slug editada ganha
- *       hash novo, então o arquivo antigo simplesmente deixa de ser lido.
+ *   content/<h2>/<content_hash>.php
+ *       the HTML, addressed by its hash (the routes' `content_hash` = sha256
+ *       of the HTML). A hash never changes content: edited slug = new hash,
+ *       and the same HTML on several domains/paths is a single file. That's
+ *       why the file never needs to be invalidated: it only goes in the
+ *       cleanup (cache_gc_content), when no route has used it for days.
  *
- * Uma entrada de rotas só vale como HIT se TODO conteúdo que ela referencia
- * está em disco; senão vira MISS e a RPC traz tudo de novo.
+ * A routes entry only counts as a HIT if ALL the content it references is on
+ * disk; otherwise it becomes a MISS, and the refresh asks Supabase only for
+ * the missing HTML (pages.content_get).
  *
- * Escrita atômica (tempnam + rename): quem lê nunca vê arquivo pela metade.
- * flock por (host, path): um worker só vai ao Supabase; os outros esperam ou
- * servem a cópia expirada.
+ * Atomic writes (tempnam + rename): readers never see a half-written file.
+ * flock per (host, path): only one worker goes to Supabase; the others wait
+ * or serve the expired copy.
  */
 declare(strict_types=1);
 
 defined('DAYONE_ENTRY') || (http_response_code(404) && exit);
 
 /**
- * Todo arquivo de cache é um `.php` que começa com este prefixo.
+ * Every cache file is a `.php` that starts with this prefix.
  *
- * Quando a pasta de cache fica dentro do webroot, `routes/<sha1(host)>/...`
- * é adivinhável (o host é público) e entregaria as regras de rota a quem
- * pedisse. Com o prefixo, um pedido direto executa o PHP, recebe 404 e sai;
- * `__halt_compiler()` faz o PHP nem sequer analisar o que vem depois, então
- * o HTML guardado nunca roda como código. Quem lê pelo disco pula o prefixo.
+ * When the cache folder sits inside the webroot, `routes/<sha1(host)>/...`
+ * is guessable (the host is public) and would hand the route rules to anyone
+ * who asked. With the prefix, a direct request runs the PHP, gets a 404 and
+ * exits; `__halt_compiler()` stops PHP from even parsing what follows, so
+ * the stored HTML never runs as code. Reads from disk skip the prefix.
  */
 const CACHE_GUARD = "<?php http_response_code(404);exit;__halt_compiler();";
 
@@ -71,11 +75,10 @@ function routes_file(string $host, string $path): string
     return routes_dir_for_host($host) . '/' . sha1($path) . '.php';
 }
 
-function content_file(string $slugId, string $hash): string
+function content_file(string $id): string
 {
-    $safeId = preg_replace('/[^a-f0-9-]/', '', $slugId) ?? '';
-    $safeHash = preg_replace('/[^a-f0-9]/', '', $hash) ?? '';
-    return cache_dir() . '/content/' . substr($safeId, 0, 2) . '/' . $safeId . '-' . $safeHash . '.php';
+    $safe = preg_replace('/[^a-f0-9]/', '', strtolower($id)) ?? '';
+    return cache_dir() . '/content/' . substr($safe, 0, 2) . '/' . $safe . '.php';
 }
 
 function atomic_write(string $file, string $data): bool
@@ -128,7 +131,7 @@ function cache_get_routes(string $host, string $path): array
     return ['state' => 'NONE', 'entry' => null];
 }
 
-/** Remove o `content` de cada rota antes de guardar: o HTML mora no cache de conteúdo. */
+/** Removes each route's `content` before storing: the HTML lives in the content cache. */
 function strip_content(array $routes): array
 {
     foreach ($routes as &$route) {
@@ -153,51 +156,95 @@ function cache_put_routes(string $host, string $path, array $routes): bool
     return atomic_write(routes_file($host, $path), cache_wrap($json));
 }
 
-function cache_put_content(string $slugId, string $hash, string $content): bool
+function cache_put_content(string $id, string $content): bool
 {
-    $file = content_file($slugId, $hash);
+    $file = content_file($id);
     if (is_file($file)) {
         @touch($file);
         return true;
     }
-    if (!atomic_write($file, cache_wrap($content))) {
-        return false;
-    }
-    // Versões antigas da mesma slug: fora.
-    $prefix = dirname($file) . '/' . basename($file, '-' . preg_replace('/[^a-f0-9]/', '', $hash) . '.php');
-    foreach (glob($prefix . '-*.php') ?: [] as $sibling) {
-        if ($sibling !== $file) {
-            @unlink($sibling);
-        }
-    }
-    return true;
+    return atomic_write($file, cache_wrap($content));
 }
 
-function cache_read_content(string $slugId, string $hash): ?string
+function cache_read_content(string $id): ?string
 {
-    $data = @file_get_contents(content_file($slugId, $hash));
+    $data = @file_get_contents(content_file($id));
     return $data === false ? null : cache_unwrap($data);
 }
 
-function cache_has_all_content(array $routes): bool
+function cache_has_content(string $id): bool
 {
+    return $id !== '' && is_file(content_file($id));
+}
+
+/** Marks the content as in use (the cleanup looks at the file's mtime). */
+function cache_touch_content(string $id): void
+{
+    if ($id !== '') {
+        @touch(content_file($id));
+    }
+}
+
+/**
+ * The content ids the routes serve: the slug's of each SERVE and that of each
+ * page in the A/B test between pages (split).
+ *
+ * @return list<string>
+ */
+function route_content_ids(array $routes): array
+{
+    $ids = [];
     foreach ($routes as $route) {
         if (($route['action'] ?? '') !== 'SERVE' || empty($route['slug_id'])) {
             continue;
         }
-        if (!is_file(content_file((string) $route['slug_id'], (string) ($route['content_hash'] ?? '')))) {
-            return false;
-        }
+        $ids[] = (string) ($route['content_hash'] ?? '');
         foreach (is_array($route['split'] ?? null) ? $route['split'] : [] as $c) {
-            if (!empty($c['slug_id']) && !is_file(content_file((string) $c['slug_id'], (string) ($c['content_hash'] ?? '')))) {
-                return false;
+            if (is_array($c) && !empty($c['slug_id'])) {
+                $ids[] = (string) ($c['content_hash'] ?? '');
             }
+        }
+    }
+    return array_values(array_unique(array_filter($ids, static fn(string $id): bool => $id !== '')));
+}
+
+function cache_has_all_content(array $routes): bool
+{
+    foreach (route_content_ids($routes) as $id) {
+        if (!cache_has_content($id)) {
+            return false;
         }
     }
     return true;
 }
 
-/** Apaga as entradas de rotas do host. Devolve quantos arquivos saíram. */
+/**
+ * Cleanup: deletes the contents nobody has used for more than $maxAge seconds
+ * (each routes refresh marks the ones it uses). Returns how many were removed.
+ */
+function cache_gc_content(int $maxAge): int
+{
+    $dir = cache_dir() . '/content';
+    if (!is_dir($dir)) {
+        return 0;
+    }
+    $limit = time() - $maxAge;
+    $count = 0;
+    $items = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::CHILD_FIRST,
+    );
+    foreach ($items as $item) {
+        if ($item->isDir()) {
+            @rmdir($item->getPathname()); // only removed if it ended up empty
+        } elseif ($item->getMTime() < $limit && @unlink($item->getPathname())) {
+            $count++;
+        }
+    }
+    return $count;
+}
+
+/** Deletes the host's routes entries. Returns how many files were removed. */
 function purge_host(string $host): int
 {
     return remove_tree(routes_dir_for_host($host));
@@ -229,7 +276,7 @@ function remove_tree(string $dir): int
     return $count;
 }
 
-/** Host com paths demais no cache (varredura, scanner)? Aí não guardamos mais entradas dele. */
+/** Host with too many paths in the cache (crawl, scanner)? Then we stop storing entries for it. */
 function host_over_cap(string $host): bool
 {
     $dir = routes_dir_for_host($host);

@@ -23,28 +23,28 @@ import { syncRuntime } from "@/lib/pages/runtime";
 import { normalizePages, pageById, pageOf, setCurrent, startPage } from "@/lib/pages/subpages";
 
 /**
- * Marcadores de link no canvas (como os "markers" do builder de referência):
- * um chip por link visível, desenhado pelo pai por cima do iframe. Clicar no
- * chip seleciona o elemento. Recalculados a cada mudança/rolagem, via rAF.
+ * Link markers on the canvas (like the reference builder's "markers"):
+ * one chip per visible link, drawn by the parent over the iframe. Clicking the
+ * chip selects the element. Recomputed on every change/scroll, via rAF.
  */
 type Marker = { uid: string; kind: "a" | "form" | "bound"; top: number; left: number };
 const MARKER_SELECTOR = `a[href], area[href], form[action], [${HREF_ATTR}]`;
 
 /**
- * A canvas de edição visual. Um iframe MESMA-ORIGEM (sandbox="allow-same-origin",
- * sem allow-scripts): o pai lê e mexe no DOM do usuário, e os scripts da página
- * ficam inertes durante a edição. A seleção (contorno + toolbar) é desenhada
- * AQUI no pai, por cima do iframe, para não sujar o documento do usuário — o
- * que é salvo sai limpo por `serialize`.
+ * The visual editing canvas. A SAME-ORIGIN iframe (sandbox="allow-same-origin",
+ * without allow-scripts): the parent reads and changes the user's DOM, and the page's scripts
+ * stay inert during editing. The selection (outline + toolbar) is drawn
+ * HERE in the parent, over the iframe, so the user's document stays clean — what
+ * gets saved comes out clean through `serialize`.
  *
- * O iframe só é recarregado quando o HTML muda POR FORA (código, troca de slug):
- * as edições visuais atualizam o `html` do pai por `onChange`, e essa volta é
- * ignorada (comparada com o último serialize) para não perder cursor/seleção.
+ * The iframe is only reloaded when the HTML changes FROM OUTSIDE (code, slug switch):
+ * visual edits update the parent's `html` through `onChange`, and that round trip is
+ * ignored (compared with the last serialize) so the caret/selection is not lost.
  */
 
 export type CanvasHandle = {
   setText(text: string): void;
-  /** Define o link do elemento selecionado (nativo ou atrelado). `href` vazio remove. */
+  /** Sets the selected element's link (native or bound). An empty `href` removes it. */
   setLink(href: string, target?: string): void;
   clearLink(): void;
   setHidden(hidden: boolean): void;
@@ -53,20 +53,20 @@ export type CanvasHandle = {
   remove(): void;
   move(dir: "up" | "down"): void;
   clearSelection(): void;
-  /** Seleciona pelo uid (painéis Links/Camadas) e rola até o elemento. */
+  /** Selects by uid (Links/Layers panels) and scrolls to the element. */
   selectByUid(uid: string): void;
   /**
-   * Roda `fn` no documento AO VIVO (sem recarregar o iframe), reindexa se a
-   * estrutura mudou e grava. É a porta dos painéis para trocas em massa.
+   * Runs `fn` on the LIVE document (without reloading the iframe), reindexes if the
+   * structure changed and saves. This is the panels' entry point for bulk changes.
    */
   mutate(fn: (doc: Document) => void, opts?: { reindex?: boolean }): void;
-  /** Insere HTML depois do elemento selecionado (ou no fim do body) e o seleciona. */
+  /** Inserts HTML after the selected element (or at the end of the body) and selects it. */
   insertHtml(markup: string): void;
 };
 
 type Rect = { uid: string; top: number; left: number; width: number; height: number };
 
-/** Lista de marcadores aberta por "{{" no texto em edição: onde o "{{" está e onde a lista aparece. */
+/** Placeholder list opened by "{{" in the text being edited: where the "{{" is and where the list shows up. */
 type Suggest = { el: HTMLElement; node: Text; from: number; caret: number; items: PlaceholderOption[]; index: number; top: number; left: number };
 const SUGGEST_W = 288;
 const SUGGEST_H = 232;
@@ -87,21 +87,21 @@ export const VisualCanvas = forwardRef<
     onChange: (html: string) => void;
     onSelect: (info: SelectionInfo | null) => void;
     onHiddenCount?: (n: number) => void;
-    /** Mostra um chip sobre cada link (a / form / atrelado). */
+    /** Shows a chip over each link (a / form / bound). */
     showMarkers?: boolean;
-    /** Sub-página que a canvas mostra (null numa slug de página única). */
+    /** Sub-page the canvas shows (null on a single-page slug). */
     currentPageId?: string | null;
-    /** A canvas trocou de sub-página por conta própria (seleção em outra página, página removida…). */
+    /** The canvas switched sub-page on its own (selection on another page, page removed…). */
     onPageChange?: (id: string | null) => void;
-    /** Valores dos marcadores (página de domínio), mostrados na lista do "{{". Template: null. */
+    /** Placeholder values (domain page), shown in the "{{" list. Template: null. */
     placeholderValues?: Record<string, string> | null;
   }
 >(function VisualCanvas({ html, baseHref, onChange, onSelect, onHiddenCount, showMarkers = false, currentPageId = null, onPageChange, placeholderValues = null }, ref) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const selectedRef = useRef<HTMLElement | null>(null);
   const selectedUidRef = useRef<string | null>(null);
-  // Iniciam no html de entrada: o srcDoc do JSX é estável (não recarrega a cada
-  // edição); recargas por mudança externa passam pelo efeito abaixo.
+  // Start at the incoming html: the JSX srcDoc is stable (it does not reload on every
+  // edit); reloads from external changes go through the effect below.
   const lastSerializedRef = useRef<string>(html);
   const [rect, setRect] = useState<Rect | null>(null);
   const [markers, setMarkers] = useState<Marker[]>([]);
@@ -112,10 +112,10 @@ export const VisualCanvas = forwardRef<
 
   const doc = () => iframeRef.current?.contentDocument ?? null;
 
-  // ── Sub-página atual ───────────────────────────────────────────────────────
-  // A canvas mostra UMA sub-página por vez (atributo data-dop-current, só do
-  // editor). O pai manda a desejada; se ela não existe mais, cai na inicial e
-  // avisa. `ensureCurrent` roda após hidratar e após cada mutação estrutural.
+  // ── Current sub-page ───────────────────────────────────────────────────────
+  // The canvas shows ONE sub-page at a time (data-dop-current attribute, editor
+  // only). The parent sends the desired one; if it no longer exists, it falls back to the
+  // start page and reports it. `ensureCurrent` runs after hydrating and after each structural mutation.
   const currentPageIdRef = useRef<string | null>(currentPageId);
   const onPageChangeRef = useRef(onPageChange);
   useEffect(() => {
@@ -194,7 +194,7 @@ export const VisualCanvas = forwardRef<
     refreshMarkers();
   }, [onChange, onHiddenCount, refreshMarkers]);
 
-  // ── "{{" no texto em edição: lista de marcadores no cursor ─────────────────
+  // ── "{{" in the text being edited: placeholder list at the caret ───────────
   const suggestRef = useRef<Suggest | null>(null);
   const [suggest, setSuggestState] = useState<Suggest | null>(null);
   const setSuggest = useCallback((s: Suggest | null) => {
@@ -202,7 +202,7 @@ export const VisualCanvas = forwardRef<
     setSuggestState(s);
   }, []);
 
-  /** Relê o texto antes do cursor do elemento em edição e abre/fecha/atualiza a lista. */
+  /** Rereads the text before the caret of the element being edited and opens/closes/updates the list. */
   const refreshSuggest = useCallback(
     (el: HTMLElement) => {
       const d = el.ownerDocument;
@@ -235,7 +235,7 @@ export const VisualCanvas = forwardRef<
     [emitSelect],
   );
 
-  /** Troca o "{{…" digitado pelo marcador escolhido; o cursor fica depois dele. */
+  /** Replaces the typed "{{…" with the chosen placeholder; the caret ends up after it. */
   const pickSuggest = useCallback(
     (key: string) => {
       const s = suggestRef.current;
@@ -252,13 +252,13 @@ export const VisualCanvas = forwardRef<
         sel?.removeAllRanges();
         sel?.addRange(range);
       } else {
-        commit(); // a edição já tinha terminado (blur): grava agora
+        commit(); // editing had already ended (blur): save now
       }
     },
     [commit, setSuggest],
   );
 
-  // ── Carregar/rehidratar o documento no iframe ──────────────────────────────
+  // ── Load/rehydrate the document in the iframe ──────────────────────────────
   const hydrate = useCallback(() => {
     const d = doc();
     if (!d || !d.body) return;
@@ -269,7 +269,7 @@ export const VisualCanvas = forwardRef<
 
     const onClick = (e: Event) => {
       const target = e.target as HTMLElement | null;
-      if (target?.closest('[contenteditable="true"]')) return; // deixa posicionar o cursor
+      if (target?.closest('[contenteditable="true"]')) return; // let the caret be positioned
       e.preventDefault();
       e.stopPropagation();
       const el = target?.closest<HTMLElement>(`[${UID_ATTR}]`) ?? null;
@@ -296,7 +296,7 @@ export const VisualCanvas = forwardRef<
         if (selectedRef.current === el) emitSelect();
       };
       const onKey = (ev: KeyboardEvent) => {
-        // Lista de marcadores aberta: setas, Enter/Tab e Esc são dela.
+        // Placeholder list open: arrows, Enter/Tab and Esc belong to it.
         const s = suggestRef.current;
         const k = s ? suggestKey(ev.key, s.index, s.items.length) : null;
         if (s && k !== null) {
@@ -325,13 +325,13 @@ export const VisualCanvas = forwardRef<
     d.addEventListener("submit", block, true);
     d.defaultView?.addEventListener("scroll", refreshRect, true);
 
-    // Reencontra a seleção anterior (após recarga externa).
+    // Finds the previous selection again (after an external reload).
     if (selectedUidRef.current) select(elementByUid(d, selectedUidRef.current));
     else refreshRect();
   }, [baseHref, commit, emitSelect, ensureCurrent, onHiddenCount, pickSuggest, refreshRect, refreshSuggest, select, setSuggest]);
 
-  // Escreve o markup no iframe e hidrata na hora. document.open/write/close é
-  // síncrono e não depende do evento load (que, com srcDoc, não é confiável).
+  // Writes the markup into the iframe and hydrates right away. document.open/write/close is
+  // synchronous and does not depend on the load event (which is unreliable with srcDoc).
   const hydrateRef = useRef(hydrate);
   useEffect(() => {
     hydrateRef.current = hydrate;
@@ -345,14 +345,14 @@ export const VisualCanvas = forwardRef<
     hydrateRef.current();
   }, []);
 
-  // Carrega o documento inicial uma vez.
+  // Loads the initial document once.
   useEffect(() => {
     lastSerializedRef.current = html;
     writeDoc(html);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Recarrega só quando o html vem de fora (≠ do nosso último serialize).
+  // Reloads only when the html comes from outside (≠ our last serialize).
   useEffect(() => {
     if (html === lastSerializedRef.current) return;
     lastSerializedRef.current = html;
@@ -368,7 +368,7 @@ export const VisualCanvas = forwardRef<
     return () => window.removeEventListener("resize", onResize);
   }, [refreshRect]);
 
-  // O pai trocou a sub-página: aplica na canvas e solta a seleção se ela ficou fora.
+  // The parent switched the sub-page: apply it to the canvas and drop the selection if it ended up outside.
   useEffect(() => {
     currentPageIdRef.current = currentPageId;
     const d = doc();
@@ -379,7 +379,7 @@ export const VisualCanvas = forwardRef<
     else refreshRect();
   }, [currentPageId, ensureCurrent, refreshRect, select]);
 
-  // ── Comandos (usados pelo inspetor via handle e pela toolbar) ──────────────
+  // ── Commands (used by the inspector via the handle and by the toolbar) ─────
   const withSelected = useCallback(
     (fn: (el: HTMLElement) => void, opts: { reindex?: boolean } = {}) => {
       const el = selectedRef.current;
@@ -448,8 +448,8 @@ export const VisualCanvas = forwardRef<
       select(el);
       if (el) {
         el.scrollIntoView({ block: "center", inline: "nearest" });
-        // `scrollIntoView` dispara scroll no iframe (que já atualiza o rect),
-        // mas não quando o elemento já está visível — garante o contorno.
+        // `scrollIntoView` fires scroll in the iframe (which already updates the rect),
+        // but not when the element is already visible — this ensures the outline.
         refreshRect();
       }
     },
@@ -487,7 +487,7 @@ export const VisualCanvas = forwardRef<
       } else if (page) {
         page.append(...nodes);
       } else {
-        // Antes do script de runtime, se existir — ele fica por último.
+        // Before the runtime script, if there is one — it stays last.
         const runtime = d.body.querySelector(`:scope > script[${RUNTIME_ATTR}]`);
         if (runtime) runtime.before(...nodes);
         else d.body.append(...nodes);
@@ -544,7 +544,7 @@ export const VisualCanvas = forwardRef<
         sandbox="allow-same-origin allow-forms"
         className="block h-full w-full border-0 bg-white"
       />
-      {/* Camada de seleção do pai — não intercepta cliques, só a toolbar e os marcadores. */}
+      {/* The parent's selection layer — does not intercept clicks, only the toolbar and markers do. */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         {markers.map((m) =>
           m.uid === rect?.uid ? null : (

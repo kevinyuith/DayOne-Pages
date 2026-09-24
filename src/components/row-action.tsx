@@ -6,8 +6,8 @@ import { Button } from "@/components/ui/button";
 import type { ActionResult } from "@/lib/action-result";
 
 /**
- * Um botão que chama uma server action já "amarrada" (`action.bind(null, id)`)
- * e mostra pendência e erro no lugar. Confirmação opcional antes de chamar.
+ * A button that calls an already "bound" server action (`action.bind(null, id)`)
+ * and shows pending state and errors in place. Optional confirmation before calling.
  */
 export function RowAction({
   action,
@@ -26,7 +26,7 @@ export function RowAction({
   variant?: "primary" | "secondary" | "danger" | "ghost";
   size?: "sm" | "md";
   onDone?: (result: ActionResult<object>) => void;
-  /** Para onde ir depois de um sucesso (ex.: remover o registro da própria tela de detalhe). */
+  /** Where to go after a success (e.g. removing the record from its own detail screen). */
   redirectTo?: string;
 }) {
   const router = useRouter();
@@ -48,7 +48,7 @@ export function RowAction({
             onDone?.(result);
             if (result.ok && redirectTo) {
               router.push(redirectTo);
-              // O destino pode ter sido prefetched antes da mutação; refresh garante dado novo.
+              // The destination may have been prefetched before the mutation; refresh ensures fresh data.
               router.refresh();
             }
           });

@@ -4,14 +4,14 @@ import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent, type
 import { insertPlaceholder, openPlaceholderAt, placeholderToken, suggestPlaceholders, type PlaceholderOption } from "@/lib/pages/placeholders";
 
 /**
- * Autocompletar de marcadores no editor: ao escrever "{{", a lista dos
- * marcadores aparece logo abaixo; setas escolhem, Enter/Tab inserem, Esc fecha.
- * `PlaceholderList` é só a lista (a canvas a posiciona no cursor);
- * `PlaceholderField` é um input/textarea com a lista embaixo (inspetor).
- * O modo código usa o autocompletar do próprio CodeMirror (code-editor.tsx).
+ * Placeholder autocomplete in the editor: typing "{{" shows the placeholder
+ * list right below; arrows choose, Enter/Tab insert, Esc closes.
+ * `PlaceholderList` is just the list (the canvas positions it at the caret);
+ * `PlaceholderField` is an input/textarea with the list below it (inspector).
+ * Code mode uses CodeMirror's own autocomplete (code-editor.tsx).
  */
 
-/** Tecla com a lista aberta: novo índice, "pick", "close" ou null (a tecla segue normal). */
+/** Key pressed with the list open: new index, "pick", "close" or null (the key proceeds normally). */
 export function suggestKey(key: string, index: number, count: number): number | "pick" | "close" | null {
   if (key === "ArrowDown") return (index + 1) % count;
   if (key === "ArrowUp") return (index - 1 + count) % count;
@@ -30,7 +30,7 @@ export function PlaceholderList({
 }: {
   items: PlaceholderOption[];
   index: number;
-  /** Página de domínio: mostra o valor que entra no lugar. Template: null, mostra o nome. */
+  /** Domain page: shows the value that goes in its place. Template: null, shows the name. */
   values: Record<string, string> | null;
   onPick: (key: string) => void;
   onHover: (index: number) => void;
@@ -47,7 +47,7 @@ export function PlaceholderList({
           key={o.key}
           role="option"
           aria-selected={i === index}
-          // mousedown, não click: não tira o foco de quem está sendo editado.
+          // mousedown, not click: does not take focus away from what is being edited.
           onMouseDown={(e) => {
             e.preventDefault();
             onPick(o.key);
@@ -68,7 +68,7 @@ export function PlaceholderList({
 type Open = { from: number; caret: number; items: PlaceholderOption[]; index: number };
 type FieldEl = HTMLInputElement | HTMLTextAreaElement;
 
-/** Input (ou textarea) com a lista de marcadores ao escrever "{{". */
+/** Input (or textarea) with the placeholder list when typing "{{". */
 export function PlaceholderField({
   as = "input",
   value,

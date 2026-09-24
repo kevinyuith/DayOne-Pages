@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { INPUT_BASE } from "@/components/ui/field";
 import type { PageSlugSummary } from "@/lib/pages/types";
 
-/** Painel "Pages": as slugs da página, criar nova e ações sobre a atual. */
+/** "Pages" panel: the page's slugs, creating a new one and actions on the current one. */
 export function PagesPanel({
   slugHref,
   slugs,
@@ -17,7 +17,7 @@ export function PagesPanel({
   onToggle,
   onRemove,
 }: {
-  /** URL de cada slug (template e página de domínio moram em rotas diferentes). */
+  /** URL of each slug (templates and domain pages live under different routes). */
   slugHref: (slugId: string) => string;
   slugs: PageSlugSummary[];
   currentSlugId: string;

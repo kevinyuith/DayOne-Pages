@@ -1,15 +1,15 @@
 import { supabaseService } from "@/lib/supabase/service";
 
 /**
- * Configuração da IA que reescreve a copy nas variações de template (Kimi,
- * da Moonshot AI) — no sistema, não em arquivo .env:
+ * Settings for the AI that rewrites the copy in template variations (Kimi,
+ * from Moonshot AI) — stored in the system, not in a .env file:
  *
- * - a chave fica criptografada no Supabase Vault (pages.ai_secret_*); o
- *   painel só a lê no servidor, na hora de chamar a API, e a tela recebe
- *   no máximo os 4 últimos caracteres;
- * - o modelo fica em pages.app_settings (`ai.model`).
+ * - the key is encrypted in Supabase Vault (pages.ai_secret_*); the
+ *   dashboard only reads it on the server, when calling the API, and the
+ *   screen gets at most the last 4 characters;
+ * - the model lives in pages.app_settings (`ai.model`).
  *
- * Editado em Configurações. Só no servidor.
+ * Edited in Settings. Server-only.
  */
 
 const KIMI_SECRET = "dayone_pages.moonshot_api_key";
@@ -50,7 +50,7 @@ export async function getAiStatus(): Promise<AiStatus> {
   return { keySet: !!row, hint: row?.hint ?? null, updatedAt: row?.updated_at ?? null, model };
 }
 
-/** Os modelos que a chave libera (GET /models da Moonshot), do mais novo para o mais antigo. */
+/** The models the key unlocks (Moonshot's GET /models), newest to oldest. */
 export async function listKimiModels(key: string): Promise<{ ok: true; models: string[] } | { ok: false; reason: string }> {
   let res: Response;
   try {

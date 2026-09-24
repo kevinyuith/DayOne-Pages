@@ -1,6 +1,6 @@
 export type ConnectionType = "Mobile" | "Fixed (WiFi/cable)" | "Datacenter/VPN";
 
-// Nuvem, hospedagem, CDN/relay e redes de VPN. Conferidos na Team Cymru em 22/09/2026.
+// Cloud, hosting, CDN/relay and VPN networks. Checked against Team Cymru on 2026-09-22.
 const DATACENTER = new Set([
   16509, 14618, 8987, // Amazon
   396982, 15169, 19527, // Google
@@ -34,9 +34,9 @@ const DATACENTER = new Set([
   22612, // Namecheap
 ]);
 
-// Operadoras móveis. Vivo (26599) e TIM (26615) também têm rede fixa no mesmo ASN.
+// Mobile carriers. Vivo (26599) and TIM (26615) also run fixed-line networks on the same ASN.
 const MOBILE = new Set([
-  22085, // Claro S/A (móvel)
+  22085, // Claro S/A (mobile)
   26615, // TIM
   26599, // Vivo
   21928, // T-Mobile US
@@ -45,20 +45,20 @@ const MOBILE = new Set([
   10507, // Sprint
 ]);
 
-// Fixas conhecidas, para o nome não enganar as regras abaixo (ex.: Google Fiber).
+// Known fixed-line networks, so the name doesn't fool the rules below (e.g. Google Fiber).
 const FIXED = new Set([
   28573, // Claro NXT (NET/Virtua)
   4230, // Claro/Embratel
-  18881, 27699, // Vivo fixa
+  18881, 27699, // Vivo fixed-line
   7738, 8167, // V.tal (Oi)
   16591, // Google Fiber
   7018, // AT&T Internet
 ]);
 
 /**
- * Tipo de conexão ESTIMADO pelo ASN. O servidor não enxerga WiFi x cabo: "Fixa"
- * é rede de casa/empresa. VPN residencial e ASN que mistura fixa e móvel
- * escapam. Sem ASN → null.
+ * Connection type ESTIMATED from the ASN. The server can't tell WiFi from cable: "Fixed"
+ * means a home/office network. Residential VPNs and ASNs that mix fixed and mobile
+ * slip through. No ASN → null.
  */
 export function connectionType(asn: number | null, asName: string | null): ConnectionType | null {
   if (!asn) return null;

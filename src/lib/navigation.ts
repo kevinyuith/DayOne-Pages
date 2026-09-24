@@ -6,7 +6,7 @@ export type NavItem = {
   label: string;
   description?: string;
   icon: ComponentType<SVGProps<SVGSVGElement>>;
-  /** Item apenas visual: rota ainda não existe. Não vira link, ganha selo "Soon". */
+  /** Visual-only item: the route doesn't exist yet. Not a link; gets a "Soon" badge. */
   soon?: boolean;
 };
 
@@ -15,22 +15,22 @@ export type NavGroup = {
   items: NavItem[];
 };
 
-/** O menu do painel. Só as seções que existem de verdade. */
+/** The dashboard menu. Only the sections that actually exist. */
 export const navGroups: NavGroup[] = [
   {
     items: [
       { href: "/", label: "Dashboard", description: "Overview of your workspace.", icon: DashboardIcon },
-      { href: "/paginas", label: "Page templates", description: "Build page templates; each domain gets its own copy.", icon: PagesIcon },
-      { href: "/dominios", label: "Domains", description: "Point domains and route each path.", icon: GlobeIcon },
-      { href: "/funil", label: "Funnel", description: "Your funnel.", icon: FunnelIcon },
+      { href: "/templates", label: "Page templates", description: "Build page templates; each domain gets its own copy.", icon: PagesIcon },
+      { href: "/domains", label: "Domains", description: "Point domains and route each path.", icon: GlobeIcon },
+      { href: "/funnels", label: "Funnel", description: "Your funnel.", icon: FunnelIcon },
       { href: "/logs", label: "Logs", description: "Every request, one row each.", icon: LogsIcon },
-      { href: "/configuracoes", label: "Settings", description: "AI and DNS settings.", icon: GearIcon },
+      { href: "/settings", label: "Settings", description: "AI and DNS settings.", icon: GearIcon },
     ],
   },
 ];
 
-/** Cookie com o estado do menu lateral: "expanded" ou "collapsed" (padrão). */
+/** Cookie with the sidebar state: "expanded" or "collapsed" (default). */
 export const SIDEBAR_COOKIE = "sidebar";
 
-/** As seções reais (com rota), para atalhos na tela inicial. */
+/** The real sections (with a route), for shortcuts on the home screen. */
 export const liveSections: NavItem[] = navGroups[0].items.filter((i) => !i.soon && i.href !== "/");

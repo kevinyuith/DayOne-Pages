@@ -4,8 +4,8 @@ import type { ReactNode } from "react";
 import { GridIcon, LayersIcon, LinkIcon, PagesIcon, RouteIcon } from "@/components/icons";
 
 /**
- * A barra de ícones à esquerda do editor (como no builder de referência):
- * cada ícone abre um painel ao lado; clicar no ativo recolhe o painel.
+ * The icon bar on the left of the editor (as in the reference builder):
+ * each icon opens a panel beside it; clicking the active one collapses the panel.
  */
 export type RailPanel = "pages" | "funnel" | "widgets" | "layers" | "links";
 
@@ -24,7 +24,7 @@ export function Rail({
 }: {
   active: RailPanel | null;
   onSelect: (p: RailPanel) => void;
-  /** Contadores por painel (ex.: quantos links a página tem). */
+  /** Per-panel counters (e.g. how many links the page has). */
   badges?: Partial<Record<RailPanel, number>>;
 }) {
   return (

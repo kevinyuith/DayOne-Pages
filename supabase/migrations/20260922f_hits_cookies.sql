@@ -1,17 +1,17 @@
 -- ============================================================================
--- DayOne Pages — header Cookie do visitante em pages.hits
+-- DayOne Pages — the visitor's Cookie header in pages.hits
 --
--- O header cru, como chegou (até 4096 caracteres). É PII como IP e UA: pode ter
--- IDs de rastreio (_fbp, _ga) e de sessão. p_cookies tem DEFAULT NULL: o PHP
--- anterior continua funcionando. Aplicar ANTES de subir o PHP novo.
+-- The raw header, as it arrived (up to 4096 characters). It is PII like IP and UA: it can hold
+-- tracking IDs (_fbp, _ga) and session IDs. p_cookies has DEFAULT NULL: the previous
+-- PHP keeps working. Apply BEFORE deploying the new PHP.
 --
--- DROP + CREATE pela mesma razão de 20260922e (mudar a lista de parâmetros).
--- O corpo mantém o filtro de páginas, hostname e ASN.
+-- DROP + CREATE for the same reason as 20260922e (changing the parameter list).
+-- The body keeps the page filter, hostname and ASN.
 -- ============================================================================
 
 ALTER TABLE pages.hits ADD COLUMN IF NOT EXISTS cookies text;
 
-COMMENT ON COLUMN pages.hits.cookies IS 'Header Cookie cru da request (até 4096 chars). PII.';
+COMMENT ON COLUMN pages.hits.cookies IS 'Raw Cookie header of the request (up to 4096 chars). PII.';
 
 DROP FUNCTION IF EXISTS pages.log_hit(text, uuid, text, text, text, int, text, text, boolean, text, text, text, text, int, text);
 

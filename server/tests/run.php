@@ -1,10 +1,10 @@
 <?php
 /**
- * Testes do servidor, em PHP puro. `php server/tests/run.php`
+ * Server tests, in plain PHP. `php server/tests/run.php`
  *
- * Cada arquivo *.test.php recebe as funções abaixo e registra casos. Sem
- * framework: o que se testa é normalização, condições e cache — as três
- * coisas que precisam bater com o banco e com o dashboard.
+ * Each *.test.php file gets the functions below and registers cases. No
+ * framework: what gets tested is normalization, conditions and cache — the
+ * three things that must match the database and the dashboard.
  */
 declare(strict_types=1);
 
@@ -37,7 +37,7 @@ function check(string $name, bool $ok, string $detail = ''): void
 
 function same(string $name, mixed $expected, mixed $actual): void
 {
-    check($name, $expected === $actual, 'esperado ' . var_export($expected, true) . ', veio ' . var_export($actual, true));
+    check($name, $expected === $actual, 'expected ' . var_export($expected, true) . ', got ' . var_export($actual, true));
 }
 
 function make_request(array $over = []): Request
@@ -65,5 +65,5 @@ foreach (glob(__DIR__ . '/*.test.php') ?: [] as $file) {
 
 remove_tree($tmp);
 
-echo "\n$passed ok, $failed falhas\n";
+echo "\n$passed ok, $failed failed\n";
 exit($failed === 0 ? 0 : 1);

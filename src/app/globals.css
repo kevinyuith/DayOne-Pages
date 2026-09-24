@@ -41,9 +41,9 @@ body {
 }
 
 /*
- * "Hide values": o botão no topo do dashboard liga data-hide-values no <html>,
- * e todo número marcado com .sensitive some sob um blur. É só de exibição —
- * não esconde nada de verdade; serve para tirar prints sem expor métricas.
+ * "Hide values": the button at the top of the dashboard sets data-hide-values on <html>,
+ * and every number marked with .sensitive disappears under a blur. Display only —
+ * it doesn't really hide anything; it's for taking screenshots without exposing metrics.
  */
 :root[data-hide-values] .sensitive {
   filter: blur(8px);
@@ -55,9 +55,9 @@ body {
 }
 
 /*
- * Troca de período/filtro no dashboard: enquanto a navegação corre, os
- * números, o gráfico e a tabela ficam esmaecidos no lugar (sem esqueleto nem
- * salto de layout). O atributo é ligado pela barra de controles.
+ * Period/filter change on the dashboard: while navigation runs, the
+ * numbers, chart and table are dimmed in place (no skeleton and no
+ * layout shift). The attribute is set by the controls bar.
  */
 [data-dash-content] {
   transition: opacity 0.15s ease;

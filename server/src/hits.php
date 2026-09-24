@@ -1,18 +1,18 @@
 <?php
 /**
- * Registro de tráfego: monta o payload de um hit e o envia ao Supabase.
+ * Traffic log: builds a hit's payload and sends it to Supabase.
  *
- * Chamada por app.php DEPOIS de a resposta ter ido embora
- * (fastcgi_finish_request), então o visitante nunca espera por isto. É
- * fire-and-forget: qualquer erro vai só para o log.
+ * Called by app.php AFTER the response has gone out
+ * (fastcgi_finish_request), so the visitor never waits for this. It's
+ * fire-and-forget: any error only goes to the log.
  *
- * O que grava (uma linha por request a página: .html, .php ou sem extensão):
- * host, path e query crua, outcome, status, país (CF-IPCountry), estado se US (cf-region),
- * dispositivo e bot (pelo User-Agent), host do referrer, IP, hostname (reverse
- * DNS do IP), ASN, User-Agent e header Cookie crus, a rota que decidiu
- * (rota, página, slug, decisão), se foi redirect a URL final (Location) e, se
- * foi página HTML, o id da visita do aviso de carregamento (beacon.php).
- * Ligado/desligado por LOG_HITS (config).
+ * What it stores (one row per page request: .html, .php or no extension):
+ * host, path and raw query, outcome, status, country (CF-IPCountry), state if US (cf-region),
+ * device and bot (from the User-Agent), referrer host, IP, hostname (reverse
+ * DNS of the IP), ASN, raw User-Agent and Cookie header, the route that decided
+ * (route, page, slug, decision), the final URL (Location) if it was a redirect
+ * and, if it was an HTML page, the visit id of the load notice (beacon.php).
+ * Turned on/off by LOG_HITS (config).
  */
 declare(strict_types=1);
 
@@ -46,9 +46,9 @@ function log_hit(Request $req, int $status, string $outcome, ?string $domainId, 
         'p_hostname'      => reverse_dns($req->ip),
         'p_asn'           => $asn['asn'] ?? null,
         'p_as_name'       => $asn['name'] ?? null,
-        // Direto do $_SERVER: o Request não guarda estes headers.
+        // Straight from $_SERVER: the Request doesn't keep these headers.
         'p_cookies'       => (string) ($_SERVER['HTTP_COOKIE'] ?? ''),
-        // Managed Transform "Add visitor location headers" do Cloudflare; o banco só grava se país = US.
+        // Cloudflare's "Add visitor location headers" Managed Transform; the database only stores it if country = US.
         'p_region'        => (string) ($_SERVER['HTTP_CF_REGION'] ?? ''),
         'p_user_agent'    => $req->userAgent,
         'p_route_id'      => $route['route_id'] ?? null,
@@ -60,7 +60,7 @@ function log_hit(Request $req, int $status, string $outcome, ?string $domainId, 
     ]);
 }
 
-/** "SERVE · FALLBACK", "BLOCK · BOTGATE", "REDIRECT · PREFIX"…; "NONE" quando nenhuma rota casou. */
+/** "SERVE · FALLBACK", "BLOCK · BOTGATE", "REDIRECT · PREFIX"…; "NONE" when no route matched. */
 function hit_decision(?array $route): string
 {
     if ($route === null) {
@@ -71,8 +71,8 @@ function hit_decision(?array $route): string
 }
 
 /**
- * Host como o visitante acessou ("www.x.com" continua com www), sem porta nem
- * ponto final. $req->host é o normalizado (sem www), que serve para achar o domínio.
+ * Host as the visitor accessed it ("www.x.com" keeps the www), without port or
+ * trailing dot. $req->host is the normalized one (no www), used to find the domain.
  */
 function visited_host(Request $req): string
 {
@@ -80,16 +80,16 @@ function visited_host(Request $req): string
     return $host !== '' ? $host : $req->host;
 }
 
-/** Só páginas: .html, .php ou último segmento sem ponto ("/", "/oferta"). Arquivos e sondas (.js, .env, .json…) ficam de fora. */
+/** Pages only: .html, .php or a last segment without a dot ("/", "/offer"). Files and probes (.js, .env, .json…) are left out. */
 function is_logged_path(string $path): bool
 {
     return preg_match('~(\.(html|php)|/[^/.]*)$~i', $path) === 1;
 }
 
 /**
- * PTR do IP, ou null. gethostbyaddr não aceita timeout: um PTR que não
- * responde prende o worker do FPM por alguns segundos (o visitante não espera,
- * a resposta já foi).
+ * PTR of the IP, or null. gethostbyaddr takes no timeout: a PTR that doesn't
+ * answer holds the FPM worker for a few seconds (the visitor doesn't wait, the
+ * response is already gone).
  */
 function reverse_dns(string $ip): ?string
 {
@@ -101,8 +101,8 @@ function reverse_dns(string $ip): ?string
 }
 
 /**
- * ASN do IP pela Team Cymru, por DNS TXT (sem chave, sem dependência):
- * origin(6).asn.cymru.com dá o número, AS<n>.asn.cymru.com dá o nome.
+ * ASN of the IP from Team Cymru, over DNS TXT (no key, no dependency):
+ * origin(6).asn.cymru.com gives the number, AS<n>.asn.cymru.com gives the name.
  *
  * @return array{asn:int, name:?string}|null
  */
@@ -116,7 +116,7 @@ function asn_lookup(string $ip): ?array
     return ['asn' => $asn, 'name' => parse_cymru_as_name(dns_txt("AS$asn.asn.cymru.com"))];
 }
 
-/** 8.8.8.8 → 8.8.8.8.origin.asn.cymru.com (octetos invertidos); IPv6 → nibbles invertidos em origin6. IP privado/reservado → null. */
+/** 8.8.8.8 → 8.8.8.8.origin.asn.cymru.com (reversed octets); IPv6 → reversed nibbles in origin6. Private/reserved IP → null. */
 function cymru_origin_name(string $ip): ?string
 {
     if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false) {
@@ -134,7 +134,7 @@ function dns_txt(string $name): ?string
     return is_array($records) && isset($records[0]['txt']) ? (string) $records[0]['txt'] : null;
 }
 
-/** "15169 | 8.8.8.0/24 | US | arin | 2023-12-28" → 15169. Prefixo com mais de um ASN ("15169 36040") → o primeiro. */
+/** "15169 | 8.8.8.0/24 | US | arin | 2023-12-28" → 15169. Prefix with more than one ASN ("15169 36040") → the first. */
 function parse_cymru_origin(?string $txt): ?int
 {
     if ($txt === null || preg_match('/^\s*(\d+)/', $txt, $m) !== 1) {

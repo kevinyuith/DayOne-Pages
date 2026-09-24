@@ -1,10 +1,10 @@
 /**
- * O HTML de uma página nova, e os ajudantes que o editor usa sobre HTML.
+ * The HTML of a new page, and the HTML helpers the editor uses.
  *
- * O servidor serve o conteúdo da slug EXATAMENTE como está gravado. Por isso
- * uma página deve ser um documento completo (doctype, head, body). Quem cola
- * um fragmento (`<div ...>` com CSS e JS dentro) usa "Envolver fragmento",
- * que o embrulha num documento mínimo.
+ * The server serves the slug's content EXACTLY as saved. That's why a page
+ * must be a complete document (doctype, head, body). Whoever pastes a
+ * fragment (`<div ...>` with CSS and JS inside) uses "Wrap fragment", which
+ * wraps it in a minimal document.
  */
 
 export const STARTER_HTML = `<!doctype html>
@@ -34,7 +34,7 @@ export const STARTER_HTML = `<!doctype html>
 </html>
 `;
 
-/** É um documento completo (começa com doctype ou <html>)? */
+/** Is it a complete document (starts with doctype or <html>)? */
 export function isFullDocument(html: string): boolean {
   return /^\s*(<!doctype|<html)/i.test(html);
 }
@@ -43,7 +43,7 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-/** Embrulha um fragmento num documento mínimo. */
+/** Wraps a fragment in a minimal document. */
 export function wrapFragment(fragment: string, opts: { title?: string; lang?: string } = {}): string {
   const title = escapeHtml(opts.title ?? "Page");
   const lang = escapeHtml(opts.lang ?? "en");
@@ -63,10 +63,10 @@ ${fragment}
 }
 
 /**
- * Injeta `<base href>` para o preview: um documento em `srcDoc` tem como base
- * a origem do dashboard, então `/img/x.png` bateria no dashboard. Com a base
- * apontando para o domínio, os caminhos relativos resolvem no lugar certo.
- * `target="_blank"` tira os cliques de dentro do iframe.
+ * Injects `<base href>` for the preview: a document in `srcDoc` uses the
+ * dashboard's origin as its base, so `/img/x.png` would hit the dashboard. With
+ * the base pointing at the domain, relative paths resolve in the right place.
+ * `target="_blank"` takes clicks out of the iframe.
  */
 export function injectBase(html: string, href: string): string {
   const tag = `<base href="${escapeHtml(href)}" target="_blank">`;
