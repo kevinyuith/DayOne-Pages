@@ -7,7 +7,7 @@ import { RowAction } from "@/components/row-action";
 import { Badge, DOMAIN_STATUS_TONE } from "@/components/ui/badge";
 import { Table, Td, Th, Tr } from "@/components/ui/table";
 import { listDomains, listTemplates, unregisteredHosts } from "@/lib/pages/queries";
-import { DOMAIN_STATUS_LABELS, PAGE_KIND_LABELS } from "@/lib/pages/types";
+import { DOMAIN_STATUS_LABELS } from "@/lib/pages/types";
 import { APP_TZ } from "@/lib/time-zone";
 import { registerSeenDomain, removeDomain, setDomainStatus, verifyDomain } from "./actions";
 import { DnsInstructions } from "./dns-instructions";
@@ -76,8 +76,6 @@ export default async function DominiosPage() {
             <tr>
               <Th>Domínio</Th>
               <Th>Status</Th>
-              <Th>Página padrão</Th>
-              <Th className="text-right">Rotas</Th>
               <Th>Verificação</Th>
               <Th className="text-right">Ações</Th>
             </tr>
@@ -93,20 +91,6 @@ export default async function DominiosPage() {
                 <Td>
                   <Badge tone={DOMAIN_STATUS_TONE[d.status]}>{DOMAIN_STATUS_LABELS[d.status]}</Badge>
                 </Td>
-                <Td>
-                  {d.default_page ? (
-                    <span className="inline-flex flex-wrap items-center gap-1.5">
-                      <Link href={`/paginas/${d.default_page.id}`} className="hover:text-accent">
-                        {d.default_page.name}
-                      </Link>
-                      <span className="text-xs text-muted">{PAGE_KIND_LABELS[d.default_page.kind]}</span>
-                      {d.default_page.status !== "PUBLISHED" ? <Badge tone="warning">não publicada</Badge> : null}
-                    </span>
-                  ) : (
-                    <span className="text-muted">—</span>
-                  )}
-                </Td>
-                <Td className="text-right tabular-nums">{d.routes_count}</Td>
                 <Td>
                   {d.last_checked_at ? (
                     <span className="inline-flex flex-col">

@@ -61,23 +61,10 @@ async function sitePages(domainIds: string[] | null): Promise<SiteRow[]> {
 
 const pageRef = (r: SiteRow): PageRef => ({ id: r.page_id, name: r.name, kind: r.kind, status: r.status });
 
-export type DomainListItem = Domain & {
-  default_page: PageRef | null;
-  routes_count: number;
-};
-
-export async function listDomains(): Promise<DomainListItem[]> {
-  const [domains, pages] = await Promise.all([
-    supabaseService().from("domains").select(`${DOMAIN_COLUMNS}, domain_routes(count)`).order("domain"),
-    sitePages(null),
-  ]);
-  throwIf(domains.error, "listDomains");
-  const byKey = new Map(pages.map((p) => [`${p.domain_id}:${p.page_id}`, p]));
-  return (domains.data ?? []).map((row) => {
-    const { domain_routes, ...rest } = row as unknown as Domain & { domain_routes: CountRow };
-    const def = rest.default_page_id ? byKey.get(`${rest.id}:${rest.default_page_id}`) : undefined;
-    return { ...rest, default_page: def ? pageRef(def) : null, routes_count: countOf(domain_routes) };
-  });
+export async function listDomains(): Promise<Domain[]> {
+  const { data, error } = await supabaseService().from("domains").select(DOMAIN_COLUMNS).order("domain");
+  throwIf(error, "listDomains");
+  return (data ?? []) as unknown as Domain[];
 }
 
 export type DomainRouteWithPage = DomainRoute & { page: PageRef | null };
