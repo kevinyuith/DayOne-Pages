@@ -123,7 +123,7 @@ function serve_slug(array $route, Request $req): array
     $body = cache_read_content($slugId, $hash);
     if ($body === null) {
         error_log("[dayone-pages] conteúdo ausente no cache para slug $slugId ($hash)");
-        return [503, ['Content-Type' => 'text/html; charset=utf-8', 'Cache-Control' => 'no-store', 'Retry-After' => '10'], plain_page('Um instante', 'Atualizando a página. Tente de novo em alguns segundos.')];
+        return [503, ['Content-Type' => 'text/html; charset=utf-8', 'Cache-Control' => 'no-store', 'Retry-After' => '10'], plain_page('One moment', 'Updating the page. Please try again in a few seconds.')];
     }
 
     // Funil em modo servidor: a etapa entra no ETag (cada etapa é um corpo
@@ -179,9 +179,9 @@ function block(array $route): array
         return not_found();
     }
     $title = match ($status) {
-        403 => 'Acesso negado',
-        410 => 'Página removida',
-        451 => 'Indisponível',
+        403 => 'Access denied',
+        410 => 'Page removed',
+        451 => 'Unavailable',
     };
     return [$status, ['Content-Type' => 'text/html; charset=utf-8', 'Cache-Control' => PRIVATE_NO_CACHE], plain_page($title, '')];
 }
@@ -193,5 +193,5 @@ function not_found(): array
 
 function service_unavailable(): array
 {
-    return [503, ['Content-Type' => 'text/html; charset=utf-8', 'Cache-Control' => 'no-store', 'Retry-After' => '30'], plain_page('Um instante', 'O site está sendo carregado. Tente de novo em alguns segundos.')];
+    return [503, ['Content-Type' => 'text/html; charset=utf-8', 'Cache-Control' => 'no-store', 'Retry-After' => '30'], plain_page('One moment', 'The site is loading. Please try again in a few seconds.')];
 }

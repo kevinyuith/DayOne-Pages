@@ -45,7 +45,7 @@ function handle_purge(Request $req): array
     $raw = (string) file_get_contents('php://input');
     $input = json_decode($raw === '' ? '{}' : $raw, true);
     if (!is_array($input)) {
-        return [400, ['Content-Type' => 'application/json', 'Cache-Control' => 'no-store'], '{"error":"body inválido"}'];
+        return [400, ['Content-Type' => 'application/json', 'Cache-Control' => 'no-store'], '{"error":"invalid body"}'];
     }
 
     if (!empty($input['all'])) {
@@ -55,7 +55,7 @@ function handle_purge(Request $req): array
 
     $host = normalize_host((string) ($input['host'] ?? ''));
     if (!is_valid_host($host)) {
-        return [400, ['Content-Type' => 'application/json', 'Cache-Control' => 'no-store'], '{"error":"host inválido"}'];
+        return [400, ['Content-Type' => 'application/json', 'Cache-Control' => 'no-store'], '{"error":"invalid host"}'];
     }
     $n = purge_host($host);
     return [200, ['Content-Type' => 'application/json', 'Cache-Control' => 'no-store'], json_encode(['purged' => $n, 'host' => $host])];

@@ -128,7 +128,7 @@ function plain_page(string $title, string $text): string
 {
     $t = htmlspecialchars($title, ENT_QUOTES, 'UTF-8');
     $x = htmlspecialchars($text, ENT_QUOTES, 'UTF-8');
-    return "<!doctype html><html lang=\"pt-BR\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>$t</title>"
+    return "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>$t</title>"
         . "<style>body{margin:0;font-family:system-ui,sans-serif;display:grid;place-items:center;min-height:100dvh;color:#333;background:#fafafa}main{text-align:center;padding:24px}h1{font-size:1.4rem;margin:0 0 8px}p{margin:0;color:#666}</style>"
         . "</head><body><main><h1>$t</h1><p>$x</p></main></body></html>";
 }
