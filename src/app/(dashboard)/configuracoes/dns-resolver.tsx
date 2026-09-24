@@ -56,18 +56,18 @@ export function DnsResolver() {
   return (
     <section className="rounded-xl border border-border bg-surface p-5">
       <h2 className="text-base font-semibold mb-4">Reverse DNS Lookup</h2>
-      <p className="text-sm text-muted mb-4">Descubra o hostname de um IP para identificar servidores de bot</p>
+      <p className="text-sm text-muted mb-4">Find the hostname of an IP to identify bot servers</p>
 
       <div className="flex gap-2 mb-4">
         <Input
-          placeholder="Ex: 1.2.3.4"
+          placeholder="E.g. 1.2.3.4"
           value={ip}
           onChange={(e) => setIp(e.target.value)}
           onKeyPress={handleKeyPress}
           disabled={loading}
         />
         <Button onClick={handleResolve} disabled={loading || !ip.trim()}>
-          {loading ? "Resolvendo..." : "Resolver"}
+          {loading ? "Resolving..." : "Resolve"}
         </Button>
       </div>
 
@@ -77,11 +77,11 @@ export function DnsResolver() {
             <div key={i} className="flex items-center justify-between rounded-lg border border-border/60 p-3 text-sm">
               <span className="font-mono">{result.ip}</span>
               {result.loading ? (
-                <span className="text-muted">Resolvendo...</span>
+                <span className="text-muted">Resolving...</span>
               ) : result.hostname ? (
                 <span className="font-mono text-accent">{result.hostname}</span>
               ) : (
-                <span className="text-muted italic">Sem hostname</span>
+                <span className="text-muted italic">No hostname</span>
               )}
             </div>
           ))}

@@ -56,10 +56,10 @@ export async function listKimiModels(key: string): Promise<{ ok: true; models: s
   try {
     res = await fetch(`${KIMI_BASE_URL}/models`, { headers: { Authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(15_000) });
   } catch {
-    return { ok: false, reason: "Não consegui falar com a API do Kimi." };
+    return { ok: false, reason: "Couldn't reach the Kimi API." };
   }
-  if (res.status === 401) return { ok: false, reason: "A chave foi recusada pela Moonshot." };
-  if (!res.ok) return { ok: false, reason: `A API do Kimi respondeu HTTP ${res.status}.` };
+  if (res.status === 401) return { ok: false, reason: "Moonshot rejected the key." };
+  if (!res.ok) return { ok: false, reason: `The Kimi API returned HTTP ${res.status}.` };
   const body = (await res.json().catch(() => null)) as { data?: { id?: string; created?: number }[] } | null;
   const models = (body?.data ?? [])
     .filter((m): m is { id: string; created?: number } => typeof m.id === "string")

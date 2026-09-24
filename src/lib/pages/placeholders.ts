@@ -23,25 +23,25 @@ import { companyName } from "./company-name";
  */
 
 export const PLACEHOLDER_FIELDS = [
-  { key: "company.llc", label: "Razão social", example: "Acme Health LLC", max: 150 },
-  { key: "company.number", label: "Número de registro (EIN, CNPJ…), só o número", example: "12-3456789", max: 60 },
-  { key: "company.address", label: "Endereço", example: "123 Main St, Austin, TX 78701", max: 250 },
-  { key: "company.phone", label: "Telefone", example: "(555) 123-4567", max: 40 },
-  { key: "company.email", label: "E-mail", example: "contact@example.com", max: 150 },
+  { key: "company.llc", label: "Legal name", example: "Acme Health LLC", max: 150 },
+  { key: "company.number", label: "Registration number (EIN, CNPJ…), number only", example: "12-3456789", max: 60 },
+  { key: "company.address", label: "Address", example: "123 Main St, Austin, TX 78701", max: 250 },
+  { key: "company.phone", label: "Phone", example: "(555) 123-4567", max: 40 },
+  { key: "company.email", label: "Email", example: "contact@example.com", max: 150 },
 ] as const;
 
 export type PlaceholderKey = (typeof PLACEHOLDER_FIELDS)[number]["key"];
 
 /** Preenchidos sozinhos: o nome da empresa (da razão social) e os da visita. */
 export const AUTO_PLACEHOLDERS = [
-  { key: "company.name", label: "Nome da empresa", note: "a razão social sem LLC, LTDA, Inc…" },
-  { key: "url", label: "Endereço da página", note: "https://dominio.com/caminho, sem parâmetros" },
-  { key: "domain", label: "Domínio", note: "sem www." },
-  { key: "slug", label: "Caminho da página", note: "ex.: / ou /pressel" },
-  { key: "date", label: "Data de hoje", note: "por extenso, no idioma do visitante" },
-  { key: "year", label: "Ano atual", note: "ex.: © {{year}}" },
-  { key: "lang", label: "Idioma do visitante", note: "código: en, pt, es…" },
-  { key: "language", label: "Nome do idioma", note: "English, Português, Español…" },
+  { key: "company.name", label: "Company name", note: "the legal name without LLC, LTDA, Inc…" },
+  { key: "url", label: "Page URL", note: "https://domain.com/path, no query parameters" },
+  { key: "domain", label: "Domain", note: "without www." },
+  { key: "slug", label: "Page path", note: "e.g. / or /presell" },
+  { key: "date", label: "Today's date", note: "written out, in the visitor's language" },
+  { key: "year", label: "Current year", note: "e.g. © {{year}}" },
+  { key: "lang", label: "Visitor's language", note: "code: en, pt, es…" },
+  { key: "language", label: "Language name", note: "English, Português, Español…" },
 ] as const;
 
 /** Nome de cada idioma nele mesmo. Sem entrada: o próprio código. */

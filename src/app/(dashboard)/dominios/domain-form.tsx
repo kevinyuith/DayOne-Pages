@@ -16,12 +16,12 @@ export function DomainForm({ templates }: { templates: TemplateOption[] }) {
     <form action={action} key={state.success ? state.attempt : "form"} className="mt-3 flex flex-col gap-2">
       {/* A dica fica FORA da linha: com ela dentro do campo, `items-end` alinhava o select e o botão pela dica, não pelo input. */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-        <Field label="Domínio" className="min-w-0 sm:flex-1">
-          <input name="domain" required placeholder="exemplo.com" disabled={pending} className={INPUT_CLASS} autoCapitalize="off" spellCheck={false} />
+        <Field label="Domain" className="min-w-0 sm:flex-1">
+          <input name="domain" required placeholder="example.com" disabled={pending} className={INPUT_CLASS} autoCapitalize="off" spellCheck={false} />
         </Field>
-        <Field label="Template (vira a página do domínio)" className="sm:w-64">
+        <Field label="Template (becomes the domain page)" className="sm:w-64">
           <select name="template_id" defaultValue="" disabled={pending} className={SELECT_CLASS}>
-            <option value="">— escolher depois —</option>
+            <option value="">— choose later —</option>
             {templates.map((t) => (
               <option key={t.id} value={t.id}>
                 {t.name} · {PAGE_KIND_LABELS[t.kind]}
@@ -30,10 +30,10 @@ export function DomainForm({ templates }: { templates: TemplateOption[] }) {
           </select>
         </Field>
         <Button type="submit" disabled={pending} className="sm:shrink-0">
-          {pending ? "Adicionando…" : "Adicionar"}
+          {pending ? "Adding…" : "Add"}
         </Button>
       </div>
-      <p className="text-xs text-muted">Sem http:// e sem www. Ex.: minhaoferta.com</p>
+      <p className="text-xs text-muted">No http:// and no www. E.g. myoffer.com</p>
       {state.error ? (
         <p role="alert" className="text-sm text-red-600 dark:text-red-400">
           {state.error}

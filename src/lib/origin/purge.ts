@@ -29,12 +29,12 @@ export async function purgeHost(host: string): Promise<PurgeResult> {
     });
     if (!res.ok) {
       // 404 aqui quase sempre é token diferente do server/.env (o servidor não confirma a rota).
-      return { ok: false, skipped: false, error: res.status === 404 ? "token recusado ou ORIGIN_URL errado" : `HTTP ${res.status}` };
+      return { ok: false, skipped: false, error: res.status === 404 ? "token rejected or wrong ORIGIN_URL" : `HTTP ${res.status}` };
     }
     const data = (await res.json()) as { purged?: number };
     return { ok: true, purged: data.purged ?? 0 };
   } catch (cause) {
-    const msg = cause instanceof Error ? (cause.name === "TimeoutError" ? "tempo esgotado" : cause.message) : "falha";
+    const msg = cause instanceof Error ? (cause.name === "TimeoutError" ? "timed out" : cause.message) : "failed";
     return { ok: false, skipped: false, error: msg };
   }
 }

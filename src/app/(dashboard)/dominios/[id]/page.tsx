@@ -19,10 +19,10 @@ type Params = Promise<{ id: string }>;
 export async function generateMetadata({ params }: { params: Params }): Promise<Metadata> {
   const { id } = await params;
   const domain = await getDomainDetail(id);
-  return { title: domain ? domain.domain : "Domínio" };
+  return { title: domain ? domain.domain : "Domain" };
 }
 
-const dateFmt = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short", timeZone: APP_TZ });
+const dateFmt = new Intl.DateTimeFormat("en-US", { dateStyle: "short", timeStyle: "short", timeZone: APP_TZ });
 
 export default async function DominioDetailPage({ params }: { params: Params }) {
   const { id } = await params;
@@ -33,10 +33,10 @@ export default async function DominioDetailPage({ params }: { params: Params }) 
     <>
       <div className="mb-2">
         <Link href="/dominios" className="text-sm text-muted hover:text-foreground">
-          ← Domínios
+          ← Domains
         </Link>
       </div>
-      <PageHeader title={domain.domain} description="As páginas deste domínio são cópias exclusivas de templates. Rotas decidem o que cada path responde; sem rota que case, vale a página padrão." />
+      <PageHeader title={domain.domain} description="This domain's pages are its own copies of templates. Routes decide what each path returns; when no route matches, the default page is served." />
 
       <section className="mb-6 grid gap-4 lg:grid-cols-2">
         <div className="rounded-xl border border-border bg-surface p-5">
@@ -44,31 +44,31 @@ export default async function DominioDetailPage({ params }: { params: Params }) 
             <Badge tone={DOMAIN_STATUS_TONE[domain.status]}>{DOMAIN_STATUS_LABELS[domain.status]}</Badge>
             {domain.last_checked_at ? (
               <>
-                <Badge tone={domain.last_check_ok ? "success" : "danger"}>{domain.last_check_ok ? "Servidor encontrado" : "Verificação falhou"}</Badge>
+                <Badge tone={domain.last_check_ok ? "success" : "danger"}>{domain.last_check_ok ? "Server found" : "Verification failed"}</Badge>
                 <span className="text-xs text-muted">{dateFmt.format(new Date(domain.last_checked_at))}</span>
               </>
             ) : (
-              <span className="text-xs text-muted">Nunca verificado</span>
+              <span className="text-xs text-muted">Never verified</span>
             )}
           </div>
           {domain.last_check_error && !domain.last_check_ok ? (
             <p className="mt-2 text-xs text-red-600 dark:text-red-400">{domain.last_check_error}</p>
           ) : null}
           <div className="mt-4 flex flex-wrap gap-2">
-            <RowAction action={verifyDomain.bind(null, domain.id)} label="Verificar DNS" pendingLabel="Verificando…" />
+            <RowAction action={verifyDomain.bind(null, domain.id)} label="Verify DNS" pendingLabel="Verifying…" />
             {domain.status === "ACTIVE" ? (
-              <RowAction action={setDomainStatus.bind(null, domain.id, "PAUSED")} label="Pausar" variant="ghost" />
+              <RowAction action={setDomainStatus.bind(null, domain.id, "PAUSED")} label="Pause" variant="ghost" />
             ) : (
-              <RowAction action={setDomainStatus.bind(null, domain.id, "ACTIVE")} label="Ativar" variant="ghost" />
+              <RowAction action={setDomainStatus.bind(null, domain.id, "ACTIVE")} label="Activate" variant="ghost" />
             )}
-            <RowAction action={removeDomain.bind(null, domain.id)} label="Remover domínio" variant="danger" confirm={`Remover ${domain.domain} e todas as rotas?`} redirectTo="/dominios" />
+            <RowAction action={removeDomain.bind(null, domain.id)} label="Remove domain" variant="danger" confirm={`Remove ${domain.domain} and all its routes?`} redirectTo="/dominios" />
           </div>
         </div>
 
         <div className="rounded-xl border border-border bg-surface p-5">
-          <h2 className="text-sm font-semibold">Segurança</h2>
+          <h2 className="text-sm font-semibold">Security</h2>
           <p className="mt-1 text-xs text-muted">
-            Bloqueia crawlers e conexões automatizadas (responde 403) antes de qualquer rota. Recomendado para tráfego de Google, Taboola, Outbrain e afins. Não troca a página — só barra.
+            Blocks crawlers and automated connections (responds 403) before any route. Recommended for traffic from Google, Taboola, Outbrain and the like. It doesn&apos;t change the page — it only blocks.
           </p>
           <div className="mt-3">
             <BotBlockToggle domainId={domain.id} value={domain.block_bots} />

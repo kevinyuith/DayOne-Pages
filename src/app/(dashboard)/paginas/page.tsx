@@ -4,7 +4,7 @@ import { listFolders, listPages } from "@/lib/pages/queries";
 import { PagesBrowser } from "./pages-browser";
 
 export const metadata: Metadata = {
-  title: "Templates de página",
+  title: "Page templates",
 };
 
 /**
@@ -18,8 +18,8 @@ export default async function PaginasPage({ searchParams }: { searchParams: Prom
   return (
     <>
       <PageHeader
-        title="Templates de página"
-        description="Cada template tem um nome, um tipo e uma ou mais slugs com HTML. Um domínio recebe uma CÓPIA do template: editar o template não muda as cópias, e editar a cópia (na tela do domínio) não muda o template."
+        title="Page templates"
+        description="Each template has a name, a type and one or more slugs with HTML. A domain gets a COPY of the template: editing the template doesn't change the copies, and editing the copy (on the domain screen) doesn't change the template."
       />
       <PagesBrowser folders={folders} pages={pages} currentFolderId={currentFolderId} />
     </>

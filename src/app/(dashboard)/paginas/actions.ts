@@ -60,11 +60,11 @@ export async function createPage(prev: CreatePageState, fd: FormData): Promise<C
   const source = String(fd.get("source") ?? "blank") as CreateSource;
 
   if (name.length < NAME_MIN || name.length > NAME_MAX) {
-    return { error: `Dê um nome com ${NAME_MIN} a ${NAME_MAX} caracteres.`, attempt };
+    return { error: `Enter a name of ${NAME_MIN} to ${NAME_MAX} characters.`, attempt };
   }
-  if (!isPageKind(kind)) return { error: "Tipo inválido.", attempt };
-  if (folderId === undefined) return { error: "Pasta inválida.", attempt };
-  if (!(SOURCES as readonly string[]).includes(source)) return { error: "Origem inválida.", attempt };
+  if (!isPageKind(kind)) return { error: "Invalid type.", attempt };
+  if (folderId === undefined) return { error: "Invalid folder.", attempt };
+  if (!(SOURCES as readonly string[]).includes(source)) return { error: "Invalid source.", attempt };
 
   const db = supabaseService();
 
@@ -73,23 +73,23 @@ export async function createPage(prev: CreatePageState, fd: FormData): Promise<C
   let notes: string | null = null;
   if (source === "template") {
     const templateId = optionalId(fd.get("template_id"));
-    if (!templateId) return { error: "Escolha o template a copiar.", attempt };
+    if (!templateId) return { error: "Choose the template to copy.", attempt };
     const src = await db.from("page_slugs").select("slug, title, content, content_type, is_active").eq("page_id", templateId);
     if (src.error) return { error: src.error.message, attempt };
-    if (!src.data || src.data.length === 0) return { error: "Template não encontrado.", attempt };
+    if (!src.data || src.data.length === 0) return { error: "Template not found.", attempt };
     slugs = (src.data as { slug: string; title: string | null; content: string; content_type: string; is_active: boolean }[]).map((s) => ({
       ...s,
       content: refreshPageIds(s.content ?? ""),
     }));
   } else if (source === "html") {
     const content = String(fd.get("content") ?? "");
-    if (!content.trim()) return { error: "Cole o HTML (ou busque a página pelo link) antes de criar.", attempt };
+    if (!content.trim()) return { error: "Paste the HTML (or fetch the page by its link) before creating.", attempt };
     if (Buffer.byteLength(content, "utf8") > MAX_CONTENT_BYTES) {
-      return { error: "O HTML passa de 5 MB. Hospede imagens e vídeos fora e referencie por URL.", attempt };
+      return { error: "The HTML is over 5 MB. Host images and videos elsewhere and reference them by URL.", attempt };
     }
     slugs = [{ slug: "/", title: name, content }];
     const sourceUrl = String(fd.get("source_url") ?? "").trim();
-    if (/^https?:\/\//i.test(sourceUrl)) notes = `Copiado de ${sourceUrl.slice(0, 500)}`;
+    if (/^https?:\/\//i.test(sourceUrl)) notes = `Copied from ${sourceUrl.slice(0, 500)}`;
   } else {
     slugs = [{ slug: "/", title: name, content: STARTER_HTML }];
   }
@@ -144,11 +144,11 @@ export type SaveEditorResult = ActionResult<{
 export async function saveEditor(input: SaveEditorInput): Promise<SaveEditorResult> {
   const { page, slug } = input;
   const name = (page.name ?? "").trim();
-  if (name.length < NAME_MIN || name.length > NAME_MAX) return fail(`Dê um nome com ${NAME_MIN} a ${NAME_MAX} caracteres.`);
-  if (!isPageKind(page.kind)) return fail("Tipo inválido.");
-  if (!isPageStatus(page.status)) return fail("Status inválido.");
+  if (name.length < NAME_MIN || name.length > NAME_MAX) return fail(`Enter a name of ${NAME_MIN} to ${NAME_MAX} characters.`);
+  if (!isPageKind(page.kind)) return fail("Invalid type.");
+  if (!isPageStatus(page.status)) return fail("Invalid status.");
   if (slug && Buffer.byteLength(slug.content, "utf8") > MAX_CONTENT_BYTES) {
-    return fail("O HTML passa de 5 MB. Hospede imagens e vídeos fora e referencie por URL.");
+    return fail("The HTML is over 5 MB. Host images and videos elsewhere and reference them by URL.");
   }
 
   const db = supabaseService();
@@ -193,7 +193,7 @@ export async function saveEditor(input: SaveEditorInput): Promise<SaveEditorResu
 
 export async function createSlug(pageId: string, rawSlug: string, title: string | null): Promise<ActionResult<{ slugId: string }>> {
   const slug = normalizePath(rawSlug);
-  if (!isValidSlug(slug)) return fail("Path inválido. Use letras minúsculas, números, `-`, `_`, `.` e `/` (ex.: /obrigado).");
+  if (!isValidSlug(slug)) return fail("Invalid path. Use lowercase letters, numbers, `-`, `_`, `.` and `/` (e.g. /thank-you).");
 
   try {
     const { data, error } = await supabaseService()
@@ -202,7 +202,7 @@ export async function createSlug(pageId: string, rawSlug: string, title: string 
       .select("id")
       .single();
     if (error) {
-      if (error.code === "23505") return fail("Esta página já tem uma slug com esse path.");
+      if (error.code === "23505") return fail("This page already has a slug with that path.");
       throw new Error(error.message);
     }
     revalidatePath("/paginas", "layout");
@@ -214,21 +214,21 @@ export async function createSlug(pageId: string, rawSlug: string, title: string 
 
 export async function renameSlug(slugId: string, rawSlug: string): Promise<ActionResult> {
   const slug = normalizePath(rawSlug);
-  if (!isValidSlug(slug)) return fail("Path inválido.");
+  if (!isValidSlug(slug)) return fail("Invalid path.");
 
   const db = supabaseService();
   try {
     const current = await db.from("page_slugs").select("page_id, slug").eq("id", slugId).maybeSingle();
     if (current.error) throw new Error(current.error.message);
-    if (!current.data) return fail("Slug não encontrada.");
+    if (!current.data) return fail("Slug not found.");
     const { page_id, slug: oldSlug } = current.data as { page_id: string; slug: string };
 
     const used = await db.from("domain_routes").select("id", { count: "exact", head: true }).eq("page_id", page_id).eq("slug", oldSlug);
-    if ((used.count ?? 0) > 0) return fail("Há rotas de domínio apontando para esta slug. Ajuste as rotas antes de renomear.");
+    if ((used.count ?? 0) > 0) return fail("Domain routes point to this slug. Update the routes before renaming.");
 
     const { error } = await db.from("page_slugs").update({ slug }).eq("id", slugId);
     if (error) {
-      if (error.code === "23505") return fail("Esta página já tem uma slug com esse path.");
+      if (error.code === "23505") return fail("This page already has a slug with that path.");
       throw new Error(error.message);
     }
     revalidatePath("/paginas", "layout");
@@ -254,14 +254,14 @@ export async function deleteSlug(slugId: string): Promise<ActionResult> {
   try {
     const current = await db.from("page_slugs").select("page_id, slug").eq("id", slugId).maybeSingle();
     if (current.error) throw new Error(current.error.message);
-    if (!current.data) return fail("Slug não encontrada.");
+    if (!current.data) return fail("Slug not found.");
     const { page_id, slug } = current.data as { page_id: string; slug: string };
 
     const siblings = await db.from("page_slugs").select("id", { count: "exact", head: true }).eq("page_id", page_id);
-    if ((siblings.count ?? 0) <= 1) return fail("A página precisa de pelo menos uma slug.");
+    if ((siblings.count ?? 0) <= 1) return fail("The page needs at least one slug.");
 
     const used = await db.from("domain_routes").select("id", { count: "exact", head: true }).eq("page_id", page_id).eq("slug", slug);
-    if ((used.count ?? 0) > 0) return fail("Há rotas de domínio apontando para esta slug. Remova as rotas antes.");
+    if ((used.count ?? 0) > 0) return fail("Domain routes point to this slug. Remove the routes first.");
 
     const { error } = await db.from("page_slugs").delete().eq("id", slugId);
     if (error) throw new Error(error.message);
@@ -294,7 +294,7 @@ export async function deletePage(pageId: string): Promise<ActionResult> {
 
 export async function renamePage(pageId: string, rawName: string): Promise<ActionResult> {
   const name = rawName.trim();
-  if (name.length < NAME_MIN || name.length > NAME_MAX) return fail(`Dê um nome com ${NAME_MIN} a ${NAME_MAX} caracteres.`);
+  if (name.length < NAME_MIN || name.length > NAME_MAX) return fail(`Enter a name of ${NAME_MIN} to ${NAME_MAX} characters.`);
   try {
     const { error } = await supabaseService().from("pages").update({ name }).eq("id", pageId);
     if (error) throw new Error(error.message);
@@ -308,7 +308,7 @@ export async function renamePage(pageId: string, rawName: string): Promise<Actio
 /** Move a página para uma pasta (`null` = raiz). */
 export async function movePage(pageId: string, folderId: string | null): Promise<ActionResult> {
   const target = optionalId(folderId);
-  if (target === undefined) return fail("Pasta inválida.");
+  if (target === undefined) return fail("Invalid folder.");
   try {
     const { error } = await supabaseService().from("pages").update({ folder_id: target }).eq("id", pageId);
     if (error) throw new Error(error.message);
@@ -330,13 +330,13 @@ export async function duplicatePage(pageId: string): Promise<ActionResult<{ page
   try {
     const src = await db.from("pages").select("name, kind, notes, folder_id").eq("id", pageId).maybeSingle();
     if (src.error) throw new Error(src.error.message);
-    if (!src.data) return fail("Página não encontrada.");
+    if (!src.data) return fail("Page not found.");
     const page = src.data as Pick<Page, "name" | "kind" | "notes" | "folder_id">;
 
     const slugs = await db.from("page_slugs").select("slug, title, content, content_type, is_active").eq("page_id", pageId);
     if (slugs.error) throw new Error(slugs.error.message);
 
-    const name = `${page.name} (cópia)`.slice(0, NAME_MAX);
+    const name = `${page.name} (copy)`.slice(0, NAME_MAX);
     const created = await db
       .from("pages")
       .insert({ name, kind: page.kind, status: "DRAFT", notes: page.notes, folder_id: page.folder_id })
@@ -374,9 +374,9 @@ function folderName(raw: string): string | null {
 
 export async function createFolder(parentId: string | null, rawName: string): Promise<ActionResult<{ folderId: string }>> {
   const name = folderName(rawName);
-  if (!name) return fail(`Dê um nome com 1 a ${FOLDER_NAME_MAX} caracteres.`);
+  if (!name) return fail(`Enter a name of 1 to ${FOLDER_NAME_MAX} characters.`);
   const parent = optionalId(parentId);
-  if (parent === undefined) return fail("Pasta inválida.");
+  if (parent === undefined) return fail("Invalid folder.");
   try {
     const { data, error } = await supabaseService().from("folders").insert({ name, parent_id: parent }).select("id").single();
     if (error) throw new Error(error.message);
@@ -389,7 +389,7 @@ export async function createFolder(parentId: string | null, rawName: string): Pr
 
 export async function renameFolder(folderId: string, rawName: string): Promise<ActionResult> {
   const name = folderName(rawName);
-  if (!name) return fail(`Dê um nome com 1 a ${FOLDER_NAME_MAX} caracteres.`);
+  if (!name) return fail(`Enter a name of 1 to ${FOLDER_NAME_MAX} characters.`);
   try {
     const { error } = await supabaseService().from("folders").update({ name }).eq("id", folderId);
     if (error) throw new Error(error.message);
@@ -401,7 +401,7 @@ export async function renameFolder(folderId: string, rawName: string): Promise<A
 }
 
 export async function setFolderColor(folderId: string, color: string | null): Promise<ActionResult> {
-  if (color !== null && !isFolderColor(color)) return fail("Cor inválida.");
+  if (color !== null && !isFolderColor(color)) return fail("Invalid color.");
   try {
     const { error } = await supabaseService().from("folders").update({ color }).eq("id", folderId);
     if (error) throw new Error(error.message);
@@ -415,12 +415,12 @@ export async function setFolderColor(folderId: string, color: string | null): Pr
 /** Move a pasta para dentro de outra (`null` = raiz). O banco recusa ciclos. */
 export async function moveFolder(folderId: string, parentId: string | null): Promise<ActionResult> {
   const parent = optionalId(parentId);
-  if (parent === undefined) return fail("Pasta inválida.");
-  if (parent === folderId) return fail("Uma pasta não pode ficar dentro dela mesma.");
+  if (parent === undefined) return fail("Invalid folder.");
+  if (parent === folderId) return fail("A folder can't be inside itself.");
   try {
     const { error } = await supabaseService().from("folders").update({ parent_id: parent }).eq("id", folderId);
     if (error) {
-      if (error.code === "23514") return fail("Uma pasta não pode ficar dentro de uma subpasta dela.");
+      if (error.code === "23514") return fail("A folder can't be inside one of its subfolders.");
       throw new Error(error.message);
     }
     revalidatePath("/paginas");
@@ -439,7 +439,7 @@ export async function deleteFolder(folderId: string): Promise<ActionResult> {
   try {
     const cur = await db.from("folders").select("parent_id").eq("id", folderId).maybeSingle();
     if (cur.error) throw new Error(cur.error.message);
-    if (!cur.data) return fail("Pasta não encontrada.");
+    if (!cur.data) return fail("Folder not found.");
     const parent = (cur.data as { parent_id: string | null }).parent_id;
 
     const up1 = await db.from("pages").update({ folder_id: parent }).eq("folder_id", folderId);

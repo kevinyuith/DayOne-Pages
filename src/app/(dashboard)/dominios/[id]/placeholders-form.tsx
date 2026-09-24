@@ -23,10 +23,10 @@ export function PlaceholdersForm({ domainId, domain, values }: { domainId: strin
 
   return (
     <section className="rounded-xl border border-border bg-surface p-5">
-      <h2 className="text-sm font-semibold">Dados do domínio</h2>
+      <h2 className="text-sm font-semibold">Domain details</h2>
       <p className="mt-1 text-xs text-muted">
-        Nas páginas, escreva o marcador (ex.: <code className="font-mono">{"{{company.name}}"}</code>) e o domínio troca pelo valor daqui ao servir.
-        Campo vazio vira texto vazio. O nome da empresa é a razão social sem LLC, LTDA, Inc e afins.
+        In pages, write the placeholder (e.g. <code className="font-mono">{"{{company.name}}"}</code>) and the domain swaps in the value from here when serving.
+        An empty field becomes empty text. The company name is the legal name without LLC, LTDA, Inc and the like.
       </p>
 
       <form action={action} className="mt-4 flex flex-col gap-4">
@@ -55,7 +55,7 @@ export function PlaceholdersForm({ domainId, domain, values }: { domainId: strin
           ))}
         </div>
         <div className="text-xs text-muted">
-          <p className="mb-1 font-medium">Automáticos:</p>
+          <p className="mb-1 font-medium">Automatic:</p>
           <ul className="grid gap-x-6 gap-y-0.5 sm:grid-cols-2">
             {AUTO_PLACEHOLDERS.map((a) => (
               <li key={a.key}>
@@ -67,7 +67,7 @@ export function PlaceholdersForm({ domainId, domain, values }: { domainId: strin
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <Button type="submit" size="sm" disabled={pending}>
-            {pending ? "Salvando…" : "Salvar dados"}
+            {pending ? "Saving…" : "Save details"}
           </Button>
           {state.error ? (
             <span role="alert" className="text-xs text-red-600 dark:text-red-400">

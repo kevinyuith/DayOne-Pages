@@ -26,7 +26,7 @@ export function HtmlPreview({ html, baseHref, className = "" }: { html: string; 
 
   return (
     <iframe
-      title="Preview da página"
+      title="Page preview"
       sandbox="allow-scripts allow-forms allow-popups allow-modals"
       srcDoc={doc}
       className={`block rounded-lg border border-border ${className}`}

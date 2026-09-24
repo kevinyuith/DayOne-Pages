@@ -50,7 +50,7 @@ export type BackTrigger = "back" | "exit";
 
 export const FUNNEL_MODES = ["browser", "server"] as const;
 export type FunnelMode = (typeof FUNNEL_MODES)[number];
-export const FUNNEL_MODE_LABELS: Record<FunnelMode, string> = { browser: "No navegador", server: "No servidor" };
+export const FUNNEL_MODE_LABELS: Record<FunnelMode, string> = { browser: "In the browser", server: "On the server" };
 
 export function getFunnelMode(doc: Document): FunnelMode {
   return doc.body?.getAttribute(FUNNEL_MODE_ATTR) === "server" ? "server" : "browser";
@@ -214,9 +214,9 @@ export function wrapAsFirstPage(doc: Document): string {
 }
 
 const STARTER: Record<SubPageKind, () => string> = {
-  presell: () => block("Pre Lander", "Este é o pre lander. Aqueça o visitante e mande para o lander.", "Continuar", NEXT_STEP),
-  main: () => block("Lander", "Este é o lander (a oferta). Coloque aqui a VSL ou a carta de vendas.", "Quero a oferta", "#"),
-  backredirect: () => block("Backredirect", "Esta página aparece quando o visitante aperta voltar (ou tenta sair). Segure-o com uma última oferta.", "Ver a oferta", NEXT_STEP),
+  presell: () => block("Pre Lander", "This is the pre lander. Warm up the visitor and send them to the lander.", "Continue", NEXT_STEP),
+  main: () => block("Lander", "This is the lander (the offer). Put the VSL or the sales letter here.", "Get the offer", "#"),
+  backredirect: () => block("Backredirect", "This page shows up when the visitor hits back (or tries to leave). Hold on to them with one last offer.", "See the offer", NEXT_STEP),
 };
 
 function esc(s: string): string {

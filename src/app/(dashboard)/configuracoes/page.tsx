@@ -7,7 +7,7 @@ import { RulesList } from "./rules-list";
 import { DnsResolver } from "./dns-resolver";
 
 export const metadata: Metadata = {
-  title: "Configurações",
+  title: "Settings",
 };
 
 export default async function ConfiguracoesPage() {
@@ -16,8 +16,8 @@ export default async function ConfiguracoesPage() {
   return (
     <>
       <PageHeader
-        title="Configurações"
-        description="A IA das variações de template e as regras que definem quem é bot ou suspeito (regex, CIDR, países…)."
+        title="Settings"
+        description="The AI for template variations and the rules that decide who is a bot or suspicious (regex, CIDR, countries…)."
       />
 
       <div className="space-y-6">

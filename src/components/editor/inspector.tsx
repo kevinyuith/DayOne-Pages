@@ -126,10 +126,10 @@ function ElementSettings({
 }
 
 const LINK_HINT: Record<LinkSource, (tag: string) => string> = {
-  anchor: (tag) => (tag === "form" ? "Destino do formulário (action)." : "Link nativo deste elemento (href)."),
-  inherited: () => "Herdado do <a> que envolve este elemento — editar mexe nele.",
-  attached: (tag) => `Atrelado a este <${tag}> (data-href). O clique navega; a slug da página não muda.`,
-  none: (tag) => `Sem link. Cole um destino para atrelar um link a este <${tag}> — sem mexer na estrutura nem na slug.`,
+  anchor: (tag) => (tag === "form" ? "Form destination (action)." : "This element's native link (href)."),
+  inherited: () => "Inherited from the <a> that wraps this element — editing changes it.",
+  attached: (tag) => `Bound to this <${tag}> (data-href). Clicking navigates; the page slug doesn't change.`,
+  none: (tag) => `No link. Paste a destination to bind a link to this <${tag}> — without touching the structure or the slug.`,
 };
 
 /**
@@ -182,16 +182,16 @@ function LinkSettings({
             type="button"
             onClick={callbacks.clearLink}
             className="inline-flex items-center gap-1 text-xs text-muted hover:text-red-600 dark:hover:text-red-400"
-            title="Remover link"
+            title="Remove link"
           >
-            <UnlinkIcon className="size-3.5" /> Remover
+            <UnlinkIcon className="size-3.5" /> Remove
           </button>
         ) : null}
       </div>
       {destinations.length ? (
-        <select value={kind} onChange={(e) => onKind(e.target.value)} aria-label="Destino" className={`${SELECT_BASE} h-8 w-full text-xs`}>
-          <option value="">URL externa / personalizada</option>
-          <option value="#">Âncora nesta página (#id)</option>
+        <select value={kind} onChange={(e) => onKind(e.target.value)} aria-label="Destination" className={`${SELECT_BASE} h-8 w-full text-xs`}>
+          <option value="">External / custom URL</option>
+          <option value="#">Anchor on this page (#id)</option>
           {Array.from(new Set(destinations.map((d) => d.group))).map((g) => (
             <optgroup key={g} label={g}>
               {destinations
@@ -211,7 +211,7 @@ function LinkSettings({
         onBlur={commit}
         onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
         values={placeholderValues}
-        placeholder="https://… ou #secao"
+        placeholder="https://… or #section"
         className={`${INPUT_BASE} w-full font-mono text-xs`}
       />
       <label className={`flex items-center gap-2 text-xs ${selection.isLink ? "" : "opacity-50"}`}>
@@ -222,11 +222,11 @@ function LinkSettings({
           disabled={!selection.isLink}
           onChange={(e) => callbacks.setLink(selection.href, e.target.checked ? "_blank" : "")}
         />
-        Abrir em nova aba
+        Open in new tab
       </label>
       <p className="text-[11px] leading-snug text-muted">
         {selection.href === "#next-step" || selection.href.startsWith("#page:")
-          ? "Troca a etapa do funil (Pre Lander → Lander) — a URL não muda."
+          ? "Switches the funnel step (Pre Lander → Lander) — the URL doesn't change."
           : LINK_HINT[selection.linkSource](selection.tag)}
       </p>
     </div>

@@ -46,7 +46,7 @@ export function Dialog({
             <h2 className="text-base font-semibold">{title}</h2>
             {description ? <p className="mt-0.5 text-xs text-muted">{description}</p> : null}
           </div>
-          <button type="button" data-close onClick={onClose} aria-label="Fechar" className="rounded p-1 text-muted hover:bg-foreground/5 hover:text-foreground">
+          <button type="button" data-close onClick={onClose} aria-label="Close" className="rounded p-1 text-muted hover:bg-foreground/5 hover:text-foreground">
             <CloseIcon className="size-4" />
           </button>
         </div>

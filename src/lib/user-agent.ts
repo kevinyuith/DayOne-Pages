@@ -40,7 +40,7 @@ export function browserFromUA(ua: string | null): string | null {
     const tool = ua.match(/^([\w.-]+)(?:\/(\d+(?:\.\d+)?))?/);
     if (tool) return tool[2] ? `${tool[1]} ${tool[2]}` : tool[1];
   }
-  return "Outro";
+  return "Other";
 }
 
 const WINDOWS_NT: Record<string, string> = { "10.0": "10/11", "6.3": "8.1", "6.2": "8", "6.1": "7" };

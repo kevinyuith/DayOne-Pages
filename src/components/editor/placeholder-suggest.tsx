@@ -41,7 +41,7 @@ export function PlaceholderList({
     listRef.current?.children[index]?.scrollIntoView({ block: "nearest" });
   }, [index]);
   return (
-    <ul ref={listRef} role="listbox" aria-label="Marcadores" className={`max-h-56 overflow-auto rounded-lg border border-border bg-surface p-1 text-xs text-foreground shadow-lg ${className}`}>
+    <ul ref={listRef} role="listbox" aria-label="Placeholders" className={`max-h-56 overflow-auto rounded-lg border border-border bg-surface p-1 text-xs text-foreground shadow-lg ${className}`}>
       {items.map((o, i) => (
         <li
           key={o.key}
@@ -57,7 +57,7 @@ export function PlaceholderList({
         >
           <span className="shrink-0 font-mono text-accent">{placeholderToken(o.key)}</span>
           <span className="min-w-0 flex-1 truncate text-right text-muted" title={values ? values[o.key] : o.hint}>
-            {values ? values[o.key] || "(vazio)" : o.label}
+            {values ? values[o.key] || "(empty)" : o.label}
           </span>
         </li>
       ))}

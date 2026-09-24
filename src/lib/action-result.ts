@@ -13,6 +13,6 @@ export function fail(reason: string): { ok: false; reason: string } {
   return { ok: false, reason };
 }
 
-export function errorReason(cause: unknown, fallback = "Erro inesperado."): string {
+export function errorReason(cause: unknown, fallback = "Unexpected error."): string {
   return cause instanceof Error && cause.message ? cause.message : fallback;
 }

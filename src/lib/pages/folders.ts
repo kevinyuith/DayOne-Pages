@@ -40,7 +40,7 @@ export function isInside(map: FolderMap, id: string | null, ancestorId: string):
 }
 
 /** "Funis / F1 / F1-a" — para mostrar onde um resultado de busca está. */
-export function folderPathLabel(map: FolderMap, id: string | null, root = "Páginas"): string {
+export function folderPathLabel(map: FolderMap, id: string | null, root = "Templates"): string {
   const path = folderPath(map, id);
   return path.length ? path.map((f) => f.name).join(" / ") : root;
 }
@@ -52,7 +52,7 @@ export type FolderOption = { id: string | null; label: string; depth: number };
  * ordem de árvore, com profundidade. `exclude` tira uma pasta e a subárvore
  * dela (a pasta que está sendo movida).
  */
-export function folderOptions(folders: Folder[], exclude: string | null = null, root = "Páginas"): FolderOption[] {
+export function folderOptions(folders: Folder[], exclude: string | null = null, root = "Templates"): FolderOption[] {
   const out: FolderOption[] = [{ id: null, label: root, depth: 0 }];
   const seen = new Set<string>();
   const walk = (parentId: string | null, depth: number) => {

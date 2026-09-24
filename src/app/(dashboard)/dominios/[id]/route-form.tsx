@@ -62,25 +62,25 @@ export function RouteForm({
       <input type="hidden" name="domain_id" value={domainId} />
       {route ? <input type="hidden" name="route_id" value={route.id} /> : null}
 
-      <h3 className="text-sm font-semibold">{route ? "Editar rota" : "Nova rota"}</h3>
+      <h3 className="text-sm font-semibold">{route ? "Edit route" : "New route"}</h3>
 
       <div className="mt-4 grid gap-4 md:grid-cols-4">
-        <Field label="Nome (opcional)" className="md:col-span-2">
-          <input name="name" defaultValue={route?.name ?? ""} placeholder="Ex.: promo de setembro" className={INPUT_CLASS} disabled={pending} />
+        <Field label="Name (optional)" className="md:col-span-2">
+          <input name="name" defaultValue={route?.name ?? ""} placeholder="E.g. September promo" className={INPUT_CLASS} disabled={pending} />
         </Field>
-        <Field label="Prioridade" hint="Menor = avaliada antes">
+        <Field label="Priority" hint="Lower = evaluated first">
           <input name="priority" type="number" min={0} max={100000} defaultValue={nextPriority} required className={INPUT_CLASS} disabled={pending} />
         </Field>
         <label className="flex items-center gap-2 self-end pb-2 text-sm">
           <input type="checkbox" name="is_active" defaultChecked={route?.is_active ?? true} className={CHECKBOX_CLASS} disabled={pending} />
-          Ativa
+          Active
         </label>
       </div>
 
       <fieldset className="mt-5">
         <legend className="text-xs font-semibold uppercase tracking-wide text-muted">Path</legend>
         <div className="mt-2 grid gap-4 md:grid-cols-4">
-          <Field label="Casamento">
+          <Field label="Match">
             <select name="match_type" value={matchType} onChange={(e) => setMatchType(e.target.value as MatchType)} className={SELECT_CLASS} disabled={pending}>
               {MATCH_TYPES.map((m) => (
                 <option key={m} value={m}>
@@ -91,14 +91,14 @@ export function RouteForm({
           </Field>
           {matchType !== "ANY" ? (
             <Field
-              label={matchType === "REGEX" ? "Expressão (POSIX, contra o path canônico)" : "Path"}
-              hint={matchType === "PREFIX" ? "Casa o path e tudo abaixo dele (/br casa /br e /br/x)" : undefined}
+              label={matchType === "REGEX" ? "Expression (POSIX, against the canonical path)" : "Path"}
+              hint={matchType === "PREFIX" ? "Matches the path and everything below it (/br matches /br and /br/x)" : undefined}
               className="md:col-span-3"
             >
               <input
                 name="path_pattern"
                 defaultValue={route?.path_pattern ?? ""}
-                placeholder={matchType === "REGEX" ? "^/(promo|oferta)(/|$)" : "/promo"}
+                placeholder={matchType === "REGEX" ? "^/(promo|offer)(/|$)" : "/promo"}
                 className={`${INPUT_CLASS} font-mono`}
                 disabled={pending}
               />
@@ -108,9 +108,9 @@ export function RouteForm({
       </fieldset>
 
       <fieldset className="mt-5">
-        <legend className="text-xs font-semibold uppercase tracking-wide text-muted">Ação</legend>
+        <legend className="text-xs font-semibold uppercase tracking-wide text-muted">Action</legend>
         <div className="mt-2 grid gap-4 md:grid-cols-4">
-          <Field label="O que fazer">
+          <Field label="What to do">
             <select name="action" value={routeAction} onChange={(e) => setRouteAction(e.target.value as RouteAction)} className={SELECT_CLASS} disabled={pending}>
               {ROUTE_ACTIONS.map((a) => (
                 <option key={a} value={a}>
@@ -122,9 +122,9 @@ export function RouteForm({
 
           {routeAction === "SERVE" ? (
             <>
-              <Field label="Página" className="md:col-span-2">
+              <Field label="Page" className="md:col-span-2">
                 <select name="page_id" value={pageId} onChange={(e) => setPageId(e.target.value)} className={SELECT_CLASS} disabled={pending}>
-                  {pages.length === 0 ? <option value="">— copie um template para o domínio antes —</option> : null}
+                  {pages.length === 0 ? <option value="">— copy a template to the domain first —</option> : null}
                   {pages.map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.name} · {PAGE_KIND_LABELS[p.kind]}
@@ -133,13 +133,13 @@ export function RouteForm({
                   ))}
                 </select>
               </Field>
-              <Field label="Slug da página" hint="Vazio = usa o path da request como slug">
+              <Field label="Page slug" hint="Empty = uses the request path as the slug">
                 <select name="slug" defaultValue={route?.slug ?? ""} className={`${SELECT_CLASS} font-mono`} disabled={pending}>
-                  <option value="">(path da request)</option>
+                  <option value="">(request path)</option>
                   {(selectedPage?.slugs ?? []).map((s) => (
                     <option key={s.id} value={s.slug}>
                       {s.slug}
-                      {s.is_active ? "" : " (inativa)"}
+                      {s.is_active ? "" : " (inactive)"}
                     </option>
                   ))}
                 </select>
@@ -149,10 +149,10 @@ export function RouteForm({
 
           {routeAction === "REDIRECT" ? (
             <>
-              <Field label="URL de destino" className="md:col-span-2">
-                <input name="redirect_url" defaultValue={route?.redirect_url ?? ""} placeholder="https://destino.com/x" className={INPUT_CLASS} disabled={pending} />
+              <Field label="Destination URL" className="md:col-span-2">
+                <input name="redirect_url" defaultValue={route?.redirect_url ?? ""} placeholder="https://destination.com/x" className={INPUT_CLASS} disabled={pending} />
               </Field>
-              <Field label="Código">
+              <Field label="Code">
                 <select name="status_code" defaultValue={route?.status_code ?? 302} className={SELECT_CLASS} disabled={pending}>
                   {REDIRECT_CODES.map((c) => (
                     <option key={c} value={c}>
@@ -163,13 +163,13 @@ export function RouteForm({
               </Field>
               <label className="flex items-center gap-2 text-sm md:col-span-4">
                 <input type="checkbox" name="preserve_query" defaultChecked={route?.preserve_query ?? true} className={CHECKBOX_CLASS} disabled={pending} />
-                Manter a query string original (utm, gclid…)
+                Keep the original query string (utm, gclid…)
               </label>
             </>
           ) : null}
 
           {routeAction === "BLOCK" ? (
-            <Field label="Código">
+            <Field label="Code">
               <select name="status_code" defaultValue={route?.status_code ?? 404} className={SELECT_CLASS} disabled={pending}>
                 {BLOCK_CODES.map((c) => (
                   <option key={c} value={c}>
@@ -183,13 +183,13 @@ export function RouteForm({
       </fieldset>
 
       <fieldset className="mt-5">
-        <legend className="text-xs font-semibold uppercase tracking-wide text-muted">Condições (todas precisam casar; vazio = sempre)</legend>
+        <legend className="text-xs font-semibold uppercase tracking-wide text-muted">Conditions (all must match; empty = always)</legend>
         <div className="mt-2 grid gap-4 md:grid-cols-2">
-          <Field label="Países (ISO-2, separados por vírgula)" hint="Vem do header CF-IPCountry do Cloudflare">
+          <Field label="Countries (ISO-2, comma-separated)" hint="From Cloudflare's CF-IPCountry header">
             <input name="countries" defaultValue={initialConditions.countries} placeholder="BR, PT, US" className={`${INPUT_CLASS} uppercase`} disabled={pending} />
           </Field>
           <div className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-muted">Dispositivos</span>
+            <span className="text-xs font-medium text-muted">Devices</span>
             <div className="flex h-10 items-center gap-4">
               {DEVICES.map((d) => (
                 <label key={d} className="flex items-center gap-1.5 text-sm">
@@ -199,18 +199,18 @@ export function RouteForm({
               ))}
             </div>
           </div>
-          <Field label="Referrer contém" className="md:col-span-2">
+          <Field label="Referrer contains" className="md:col-span-2">
             <input name="referrer" defaultValue={initialConditions.referrer} placeholder="facebook.com" className={INPUT_CLASS} disabled={pending} />
           </Field>
 
           <div className="md:col-span-2">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-muted">Parâmetros de URL</span>
+              <span className="text-xs font-medium text-muted">URL parameters</span>
               <Button size="sm" variant="ghost" onClick={() => setQueryRows([...queryRows, { key: "", mode: "present", value: "" }])} disabled={pending}>
-                + parâmetro
+                + parameter
               </Button>
             </div>
-            {queryRows.length === 0 ? <p className="mt-1 text-xs text-muted">Nenhum. Ex.: utm_source igual a tiktok, ou gclid presente.</p> : null}
+            {queryRows.length === 0 ? <p className="mt-1 text-xs text-muted">None. E.g. utm_source equals tiktok, or gclid present.</p> : null}
             <div className="mt-1 flex flex-col gap-2">
               {queryRows.map((row, i) => (
                 <div key={i} className="grid grid-cols-[1fr_8rem_1fr_auto] gap-2">
@@ -239,7 +239,7 @@ export function RouteForm({
                     name="query_value"
                     value={row.value}
                     onChange={(e) => setQueryRows(queryRows.map((r, j) => (j === i ? { ...r, value: e.target.value } : r)))}
-                    placeholder={row.mode === "equals" ? "valor" : "—"}
+                    placeholder={row.mode === "equals" ? "value" : "—"}
                     className={`${INPUT_CLASS} h-9`}
                     disabled={pending || row.mode !== "equals"}
                   />
@@ -254,7 +254,7 @@ export function RouteForm({
           {routeAction === "BLOCK" ? (
             <label className="flex items-center gap-2 text-sm md:col-span-2">
               <input type="checkbox" name="bot" defaultChecked={initialConditions.bot} className={CHECKBOX_CLASS} disabled={pending} />
-              Só bots e crawlers (pelo User-Agent). Serve para barrar scrapers; não altera o conteúdo servido.
+              Bots and crawlers only (by User-Agent). Use it to stop scrapers; it doesn&apos;t change the content served.
             </label>
           ) : null}
         </div>
@@ -268,10 +268,10 @@ export function RouteForm({
 
       <div className="mt-5 flex gap-2">
         <Button type="submit" disabled={pending}>
-          {pending ? "Salvando…" : route ? "Salvar rota" : "Criar rota"}
+          {pending ? "Saving…" : route ? "Save route" : "Create route"}
         </Button>
         <Button variant="ghost" onClick={onDone} disabled={pending}>
-          Cancelar
+          Cancel
         </Button>
       </div>
     </form>

@@ -12,7 +12,7 @@ type SearchParams = Promise<{ slug?: string }>;
 export async function generateMetadata({ params }: { params: Params }): Promise<Metadata> {
   const { id, pageId } = await params;
   const data = await getDomainPageForEditor(id, pageId, null);
-  return { title: data ? `Editar: ${data.page.name} · ${data.domain.domain}` : "Página" };
+  return { title: data ? `Edit: ${data.page.name} · ${data.domain.domain}` : "Page" };
 }
 
 /**
@@ -46,7 +46,7 @@ export default async function DomainPageEditorPage({ params, searchParams }: { p
       }}
       nav={{
         backHref: `/dominios/${id}`,
-        backTitle: `Voltar para ${data.domain.domain}`,
+        backTitle: `Back to ${data.domain.domain}`,
         slugHref: `/dominios/${id}/paginas/${pageId}?slug={slug}`,
         afterDeleteHref: `/dominios/${id}`,
       }}

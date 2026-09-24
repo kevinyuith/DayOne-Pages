@@ -12,7 +12,13 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 ## Banco de dados (Supabase, schema `pages`)
 
-- **Tudo em inglês**: tabelas, colunas, funções, parâmetros, índices, constraints, valores de CHECK/enum, `COMMENT ON`, mensagens de `RAISE` e os comentários (`--`) dos arquivos de migration e dos corpos de função. Português fica na UI e nos comentários do código TS/PHP. Quando um erro do banco chega na tela, a action traduz pelo código do erro (ex.: `23514`) em vez de mostrar a mensagem crua.
+- **Tudo em inglês**: tabelas, colunas, funções, parâmetros, índices, constraints, valores de CHECK/enum, `COMMENT ON`, mensagens de `RAISE` e os comentários (`--`) dos arquivos de migration e dos corpos de função. Português fica só nos comentários do código TS/PHP. Quando um erro do banco chega na tela, a action traduz pelo código do erro (ex.: `23514`) em vez de mostrar a mensagem crua.
+
+## Idioma da interface
+
+- **A UI é toda em inglês**: painel (menu, títulos, botões, confirmações, mensagens de erro das actions e da `lib`, rótulos), `<html lang="en">`, datas e números em `en-US`, e as páginas que o servidor PHP devolve ao visitante (403/410/451/503). Texto novo na tela nasce em inglês; não misturar português.
+- O painel tem `translate="no"` no `<html>` para o navegador não traduzir a tela sozinho.
+- Ficam em outros idiomas só os dados por idioma do visitante: as tabelas de meses/nomes de idioma de `{{date}}`/`{{language}}` (`placeholders.ts` = `placeholders.php`). Rotas (`/paginas`, `/dominios`…) e comentários continuam como estão.
 - **Horário em UTC**: toda data é `timestamptz` (nunca `timestamp` sem fuso) e o banco roda em UTC. As funções recebem e devolvem instantes e não convertem fuso: nada de `AT TIME ZONE` nem fuso fixo no SQL. Agrupar por dia local é trabalho do frontend.
 
 ## Páginas: templates e páginas do domínio

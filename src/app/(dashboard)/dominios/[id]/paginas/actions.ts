@@ -52,11 +52,11 @@ async function routesUsingSlug(domainId: string, pageId: string, slug: string): 
 export async function saveDomainPage(domainId: string, input: SaveEditorInput): Promise<SaveEditorResult> {
   const { page, slug } = input;
   const name = (page.name ?? "").trim();
-  if (name.length < NAME_MIN || name.length > NAME_MAX) return fail(`Dê um nome com ${NAME_MIN} a ${NAME_MAX} caracteres.`);
-  if (!isPageKind(page.kind)) return fail("Tipo inválido.");
-  if (!isPageStatus(page.status)) return fail("Status inválido.");
+  if (name.length < NAME_MIN || name.length > NAME_MAX) return fail(`Enter a name of ${NAME_MIN} to ${NAME_MAX} characters.`);
+  if (!isPageKind(page.kind)) return fail("Invalid type.");
+  if (!isPageStatus(page.status)) return fail("Invalid status.");
   if (slug && Buffer.byteLength(slug.content, "utf8") > MAX_CONTENT_BYTES) {
-    return fail("O HTML passa de 5 MB. Hospede imagens e vídeos fora e referencie por URL.");
+    return fail("The HTML exceeds 5 MB. Host images and videos elsewhere and reference them by URL.");
   }
 
   try {
@@ -83,7 +83,7 @@ export async function saveDomainPage(domainId: string, input: SaveEditorInput): 
 
 export async function createDomainSlug(domainId: string, pageId: string, rawSlug: string, title: string | null): Promise<ActionResult<{ slugId: string }>> {
   const slug = normalizePath(rawSlug);
-  if (!isValidSlug(slug)) return fail("Path inválido. Use letras minúsculas, números, `-`, `_`, `.` e `/` (ex.: /obrigado).");
+  if (!isValidSlug(slug)) return fail("Invalid path. Use lowercase letters, numbers, `-`, `_`, `.` and `/` (e.g. /thank-you).");
   try {
     const { data, error } = await supabaseService().rpc("domain_slug_create", {
       p_domain: domainId,
@@ -93,7 +93,7 @@ export async function createDomainSlug(domainId: string, pageId: string, rawSlug
       p_content: STARTER_HTML,
     });
     if (error) {
-      if (error.code === "23505") return fail("Esta página já tem uma slug com esse path.");
+      if (error.code === "23505") return fail("This page already has a slug with that path.");
       throw new Error(error.message);
     }
     revalidateDomainPages(domainId);
@@ -106,15 +106,15 @@ export async function createDomainSlug(domainId: string, pageId: string, rawSlug
 
 export async function renameDomainSlug(domainId: string, pageId: string, oldSlug: string, rawSlug: string): Promise<ActionResult<{ slugId: string }>> {
   const slug = normalizePath(rawSlug);
-  if (!isValidSlug(slug)) return fail("Path inválido.");
+  if (!isValidSlug(slug)) return fail("Invalid path.");
   try {
     if ((await routesUsingSlug(domainId, pageId, oldSlug)) > 0) {
-      return fail("Há rotas do domínio apontando para esta slug. Ajuste as rotas antes de renomear.");
+      return fail("Domain routes point to this slug. Adjust the routes before renaming.");
     }
     const { data, error } = await supabaseService().rpc("domain_slug_rename", { p_domain: domainId, p_page: pageId, p_old: oldSlug, p_new: slug });
     if (error) {
-      if (error.code === "23505") return fail("Esta página já tem uma slug com esse path.");
-      if (error.code === "P0002") return fail("Slug não encontrada.");
+      if (error.code === "23505") return fail("This page already has a slug with that path.");
+      if (error.code === "P0002") return fail("Slug not found.");
       throw new Error(error.message);
     }
     revalidateDomainPages(domainId);
@@ -143,9 +143,9 @@ export async function deleteDomainSlug(domainId: string, pageId: string, slug: s
     const summary = await db.rpc("domain_pages_summary", { p_domain_ids: [domainId] });
     if (summary.error) throw new Error(summary.error.message);
     const page = (summary.data as { page_id: string; slugs: { slug: string }[] }[] | null)?.find((p) => p.page_id === pageId);
-    if (!page || !page.slugs.some((s) => s.slug === slug)) return fail("Slug não encontrada.");
-    if (page.slugs.length <= 1) return fail("A página precisa de pelo menos uma slug.");
-    if ((await routesUsingSlug(domainId, pageId, slug)) > 0) return fail("Há rotas do domínio apontando para esta slug. Remova as rotas antes.");
+    if (!page || !page.slugs.some((s) => s.slug === slug)) return fail("Slug not found.");
+    if (page.slugs.length <= 1) return fail("The page needs at least one slug.");
+    if ((await routesUsingSlug(domainId, pageId, slug)) > 0) return fail("Domain routes point to this slug. Remove the routes first.");
 
     const { error } = await db.rpc("domain_slug_delete", { p_domain: domainId, p_page: pageId, p_slug: slug });
     if (error) throw new Error(error.message);

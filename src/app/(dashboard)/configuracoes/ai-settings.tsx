@@ -10,7 +10,7 @@ import { APP_TZ } from "@/lib/time-zone";
 import { loadKimiModels, removeKimiKey, saveAiModel, saveKimiKey, type AiKeyState } from "./ai-actions";
 
 const INITIAL: AiKeyState = { attempt: 0 };
-const dateFmt = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short", timeZone: APP_TZ });
+const dateFmt = new Intl.DateTimeFormat("en-US", { dateStyle: "short", timeStyle: "short", timeZone: APP_TZ });
 
 /**
  * A IA que reescreve a copy nas variações de template (Kimi, da Moonshot AI).
@@ -44,28 +44,28 @@ export function AiSettings({ status }: { status: AiStatus }) {
 
   return (
     <section className="rounded-xl border border-border bg-surface p-5">
-      <h2 className="text-sm font-semibold">IA para variações de template</h2>
+      <h2 className="text-sm font-semibold">AI for template variations</h2>
       <p className="mt-1 text-xs text-muted">
-        Reescreve a copy quando você gera uma variação com &ldquo;ângulo da copy&rdquo; (Domínios → Copiar template → Variação visual). Usa o Kimi, da
-        Moonshot AI. A chave fica guardada criptografada no sistema e não aparece de novo aqui.
+        Rewrites the copy when you generate a variation with a &ldquo;copy angle&rdquo; (Domains → Copy template → Visual variation). Uses Kimi, by
+        Moonshot AI. The key is stored encrypted in the system and is not shown here again.
       </p>
 
       <div className="mt-4 flex flex-wrap items-center gap-2 text-sm">
-        <span className="font-medium">Chave do Kimi:</span>
+        <span className="font-medium">Kimi key:</span>
         {status.keySet ? (
           <>
-            <Badge tone="success">configurada</Badge>
-            <span className="font-mono text-xs text-muted">termina em …{status.hint}</span>
-            {status.updatedAt ? <span className="text-xs text-muted">· atualizada em {dateFmt.format(new Date(status.updatedAt))}</span> : null}
+            <Badge tone="success">configured</Badge>
+            <span className="font-mono text-xs text-muted">ends in …{status.hint}</span>
+            {status.updatedAt ? <span className="text-xs text-muted">· updated {dateFmt.format(new Date(status.updatedAt))}</span> : null}
             {!replacing ? (
               <Button size="sm" variant="ghost" onClick={() => setReplacing(true)}>
-                Trocar chave
+                Replace key
               </Button>
             ) : null}
-            <RowAction action={removeKimiKey} label="Remover" variant="danger" confirm="Remover a chave do Kimi? A reescrita da copy para de funcionar até cadastrar outra." />
+            <RowAction action={removeKimiKey} label="Remove" variant="danger" confirm="Remove the Kimi key? Copy rewriting stops working until you add another one." />
           </>
         ) : (
-          <Badge tone="warning">não configurada</Badge>
+          <Badge tone="warning">not configured</Badge>
         )}
       </div>
 
@@ -81,11 +81,11 @@ export function AiSettings({ status }: { status: AiStatus }) {
             className={`${INPUT_CLASS} font-mono sm:max-w-md`}
           />
           <Button type="submit" size="sm" disabled={pending}>
-            {pending ? "Conferindo…" : "Salvar chave"}
+            {pending ? "Checking…" : "Save key"}
           </Button>
           {replacing ? (
             <Button type="button" size="sm" variant="ghost" onClick={() => setReplacing(false)} disabled={pending}>
-              Cancelar
+              Cancel
             </Button>
           ) : null}
         </form>
@@ -95,7 +95,7 @@ export function AiSettings({ status }: { status: AiStatus }) {
 
       {status.keySet ? (
         <div className="mt-4 flex flex-wrap items-center gap-2 text-sm">
-          <span className="font-medium">Modelo:</span>
+          <span className="font-medium">Model:</span>
           <select
             value={model}
             onChange={(e) => {
@@ -104,7 +104,7 @@ export function AiSettings({ status }: { status: AiStatus }) {
               setModelMsg(null);
               startSaving(async () => {
                 const r = await saveAiModel(next);
-                setModelMsg(r.ok ? "Salvo." : r.reason);
+                setModelMsg(r.ok ? "Saved." : r.reason);
               });
             }}
             disabled={saving || !models}
@@ -116,7 +116,7 @@ export function AiSettings({ status }: { status: AiStatus }) {
               </option>
             ))}
           </select>
-          {!models && !modelsError ? <span className="text-xs text-muted">buscando os modelos da chave…</span> : null}
+          {!models && !modelsError ? <span className="text-xs text-muted">loading the models for this key…</span> : null}
           {modelsError ? <span className="text-xs text-red-600 dark:text-red-400">{modelsError}</span> : null}
           {modelMsg ? <span className="text-xs text-muted">{modelMsg}</span> : null}
         </div>

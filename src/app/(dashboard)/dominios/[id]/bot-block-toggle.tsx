@@ -36,7 +36,7 @@ export function BotBlockToggle({ domainId, value }: { domainId: string; value: b
             });
           }}
         />
-        Bloquear bots e conexões suspeitas
+        Block bots and suspicious connections
       </label>
       {error ? <span className="text-xs text-red-600 dark:text-red-400">{error}</span> : null}
     </div>

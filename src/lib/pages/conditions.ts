@@ -21,33 +21,33 @@ import { z } from "zod";
 
 export const DEVICES = ["mobile", "tablet", "desktop"] as const;
 export type Device = (typeof DEVICES)[number];
-export const DEVICE_LABELS: Record<Device, string> = { mobile: "Celular", tablet: "Tablet", desktop: "Desktop" };
+export const DEVICE_LABELS: Record<Device, string> = { mobile: "Mobile", tablet: "Tablet", desktop: "Desktop" };
 
 /** Sentido de uma lista (país/idioma): permitir só os listados, ou bloquear os listados. */
 export const LIST_MODES = ["allow", "block"] as const;
 export type ListMode = (typeof LIST_MODES)[number];
-export const LIST_MODE_LABELS: Record<ListMode, string> = { allow: "Permitir só", block: "Bloquear" };
+export const LIST_MODE_LABELS: Record<ListMode, string> = { allow: "Allow only", block: "Block" };
 
 export const QUERY_MODES = ["present", "absent", "equals"] as const;
 export type QueryMode = (typeof QUERY_MODES)[number];
-export const QUERY_MODE_LABELS: Record<QueryMode, string> = { present: "presente", absent: "ausente", equals: "igual a" };
+export const QUERY_MODE_LABELS: Record<QueryMode, string> = { present: "present", absent: "absent", equals: "equals" };
 
 const queryRule = z.union([z.literal("present"), z.literal("absent"), z.strictObject({ equals: z.string().min(1).max(200) })]);
 
 export const conditionsSchema = z
   .strictObject({
-    countries: z.array(z.string().regex(/^[A-Z]{2}$/, "país deve ser um código de duas letras")).min(1).max(50).optional(),
+    countries: z.array(z.string().regex(/^[A-Z]{2}$/, "country must be a two-letter code")).min(1).max(50).optional(),
     countries_mode: z.literal("block").optional(),
     devices: z.array(z.enum(DEVICES)).min(1).optional(),
-    languages: z.array(z.string().regex(/^[a-z]{2}$/, "idioma deve ser um código de duas letras (ISO 639-1)")).min(1).max(50).optional(),
+    languages: z.array(z.string().regex(/^[a-z]{2}$/, "language must be a two-letter code (ISO 639-1)")).min(1).max(50).optional(),
     languages_mode: z.literal("block").optional(),
-    query: z.record(z.string().regex(/^[A-Za-z0-9_.\-\[\]]{1,100}$/, "nome de parâmetro inválido"), queryRule).optional(),
+    query: z.record(z.string().regex(/^[A-Za-z0-9_.\-\[\]]{1,100}$/, "invalid parameter name"), queryRule).optional(),
     referrer: z.string().min(1).max(200).optional(),
     bot: z.literal(true).optional(),
   })
   // Um modo sem a lista dele não decide nada: recusa aqui para não gravar lixo.
-  .refine((c) => !c.countries_mode || (c.countries?.length ?? 0) > 0, { message: "countries_mode exige countries", path: ["countries_mode"] })
-  .refine((c) => !c.languages_mode || (c.languages?.length ?? 0) > 0, { message: "languages_mode exige languages", path: ["languages_mode"] });
+  .refine((c) => !c.countries_mode || (c.countries?.length ?? 0) > 0, { message: "countries_mode requires countries", path: ["countries_mode"] })
+  .refine((c) => !c.languages_mode || (c.languages?.length ?? 0) > 0, { message: "languages_mode requires languages", path: ["languages_mode"] });
 
 export type RouteConditions = z.infer<typeof conditionsSchema>;
 
@@ -103,7 +103,7 @@ export function parseConditionsForm(fd: FormData): { ok: true; value: RouteCondi
   const parsed = conditionsSchema.safeParse(raw);
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
-    return { ok: false, reason: `Condições inválidas: ${issue.path.join(".") || "?"}: ${issue.message}` };
+    return { ok: false, reason: `Invalid conditions: ${issue.path.join(".") || "?"}: ${issue.message}` };
   }
   return { ok: true, value: parsed.data };
 }
@@ -136,15 +136,15 @@ export function conditionsToForm(c: RouteConditions | null | undefined): {
 
 /** Resumo curto para a tabela de rotas. */
 export function summarizeConditions(c: RouteConditions | null | undefined): string {
-  if (!c) return "Sempre";
+  if (!c) return "Always";
   const parts: string[] = [];
-  if (c.countries?.length) parts.push(`País${c.countries_mode === "block" ? " (bloquear)" : ""}: ${c.countries.join(", ")}`);
-  if (c.devices?.length) parts.push(`Dispositivo: ${c.devices.map((d) => DEVICE_LABELS[d]).join(", ")}`);
-  if (c.languages?.length) parts.push(`Idioma${c.languages_mode === "block" ? " (bloquear)" : ""}: ${c.languages.join(", ")}`);
+  if (c.countries?.length) parts.push(`Country${c.countries_mode === "block" ? " (block)" : ""}: ${c.countries.join(", ")}`);
+  if (c.devices?.length) parts.push(`Device: ${c.devices.map((d) => DEVICE_LABELS[d]).join(", ")}`);
+  if (c.languages?.length) parts.push(`Language${c.languages_mode === "block" ? " (block)" : ""}: ${c.languages.join(", ")}`);
   for (const [key, rule] of Object.entries(c.query ?? {})) {
     parts.push(typeof rule === "string" ? `?${key} ${QUERY_MODE_LABELS[rule]}` : `?${key} = ${rule.equals}`);
   }
-  if (c.referrer) parts.push(`Referrer contém "${c.referrer}"`);
-  if (c.bot) parts.push("Só bots/crawlers");
-  return parts.length ? parts.join(" · ") : "Sempre";
+  if (c.referrer) parts.push(`Referrer contains "${c.referrer}"`);
+  if (c.bot) parts.push("Bots/crawlers only");
+  return parts.length ? parts.join(" · ") : "Always";
 }

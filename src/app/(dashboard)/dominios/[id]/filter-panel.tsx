@@ -37,23 +37,23 @@ export function FilterPanel({ domain, pages }: { domain: DomainDetail; pages: Pa
     return (
       <section className="rounded-xl border border-border bg-surface p-5">
         <div className="flex items-center justify-between">
-          <h2 className="text-base font-semibold">Filtro do domínio</h2>
+          <h2 className="text-base font-semibold">Domain filter</h2>
           <div className="flex gap-2">
             <Button size="sm" variant="secondary" onClick={() => setEditing(true)}>
-              Editar
+              Edit
             </Button>
-            <RowAction action={clearFilter.bind(null, domain.id)} label="Remover filtro" variant="danger" confirm="Remover o filtro deste domínio?" />
+            <RowAction action={clearFilter.bind(null, domain.id)} label="Remove filter" variant="danger" confirm="Remove this domain's filter?" />
           </div>
         </div>
         <div className="mt-3 grid gap-3 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center">
-          <span className="text-xs font-medium text-muted">Condição</span>
+          <span className="text-xs font-medium text-muted">Condition</span>
           <span className="text-sm">{summarizeConditions(domain.filter)}</span>
-          <span className="text-xs font-medium text-muted">Passou →</span>
+          <span className="text-xs font-medium text-muted">Passes →</span>
           <PageLine page={domain.filter_pass_page} />
-          <span className="text-xs font-medium text-muted">Não passou →</span>
+          <span className="text-xs font-medium text-muted">Fails →</span>
           <PageLine page={domain.filter_fail_page} />
         </div>
-        <p className="mt-3 text-xs text-muted">As rotas abaixo, se houver, são avaliadas antes do filtro.</p>
+        <p className="mt-3 text-xs text-muted">The routes below, if any, are evaluated before the filter.</p>
       </section>
     );
   }
@@ -62,12 +62,12 @@ export function FilterPanel({ domain, pages }: { domain: DomainDetail; pages: Pa
 }
 
 function PageLine({ page }: { page: DomainDetail["filter_pass_page"] }) {
-  if (!page) return <span className="text-sm text-muted">página removida</span>;
+  if (!page) return <span className="text-sm text-muted">page removed</span>;
   return (
     <span className="inline-flex flex-wrap items-center gap-1.5 text-sm">
       {page.name}
       <span className="text-xs text-muted">{PAGE_KIND_LABELS[page.kind]}</span>
-      {page.status !== "PUBLISHED" ? <Badge tone="warning">não publicada</Badge> : null}
+      {page.status !== "PUBLISHED" ? <Badge tone="warning">not published</Badge> : null}
     </span>
   );
 }
@@ -97,37 +97,37 @@ function FilterForm({
   return (
     <form action={action} className="rounded-xl border border-accent/30 bg-surface p-5">
       <input type="hidden" name="domain_id" value={domain.id} />
-      <h2 className="text-base font-semibold">Filtro do domínio</h2>
+      <h2 className="text-base font-semibold">Domain filter</h2>
       <p className="mt-1 text-xs text-muted">
-        Quem passar em TODAS as condições vê uma página; quem não passar vê a outra. Sem condição, todo mundo passa.
+        Visitors who pass ALL conditions see one page; those who don&apos;t see the other. With no condition, everyone passes.
       </p>
 
       <fieldset className="mt-4">
-        <legend className="text-xs font-semibold uppercase tracking-wide text-muted">Condições</legend>
+        <legend className="text-xs font-semibold uppercase tracking-wide text-muted">Conditions</legend>
         <div className="mt-2 grid gap-4 md:grid-cols-2">
           <ListModeField
-            label="Países (ISO-2, separados por vírgula)"
+            label="Countries (ISO-2, comma-separated)"
             name="countries"
             modeName="countries_mode"
             defaultMode={initial.countriesMode}
             defaultValue={initial.countries}
             placeholder="BR, PT"
-            hint="Vem do header CF-IPCountry do Cloudflare"
+            hint="From Cloudflare's CF-IPCountry header"
             upper
             disabled={pending}
           />
           <ListModeField
-            label="Idiomas (ISO 639-1, separados por vírgula)"
+            label="Languages (ISO 639-1, comma-separated)"
             name="languages"
             modeName="languages_mode"
             defaultMode={initial.languagesMode}
             defaultValue={initial.languages}
             placeholder="en, es"
-            hint="Vem do header Accept-Language do navegador"
+            hint="From the browser's Accept-Language header"
             disabled={pending}
           />
           <div className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-muted">Dispositivos</span>
+            <span className="text-xs font-medium text-muted">Devices</span>
             <div className="flex h-10 items-center gap-4">
               {DEVICES.map((d) => (
                 <label key={d} className="flex items-center gap-1.5 text-sm">
@@ -137,17 +137,17 @@ function FilterForm({
               ))}
             </div>
           </div>
-          <Field label="Referrer contém" className="md:col-span-2">
+          <Field label="Referrer contains" className="md:col-span-2">
             <input name="referrer" defaultValue={initial.referrer} placeholder="facebook.com" className={INPUT_CLASS} disabled={pending} />
           </Field>
           <div className="md:col-span-2">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-muted">Parâmetros de URL</span>
+              <span className="text-xs font-medium text-muted">URL parameters</span>
               <Button size="sm" variant="ghost" onClick={() => setQueryRows([...queryRows, { key: "", mode: "present", value: "" }])} disabled={pending}>
-                + parâmetro
+                + parameter
               </Button>
             </div>
-            {queryRows.length === 0 ? <p className="mt-1 text-xs text-muted">Ex.: gclid presente, ou utm_source igual a facebook.</p> : null}
+            {queryRows.length === 0 ? <p className="mt-1 text-xs text-muted">E.g. gclid present, or utm_source equals facebook.</p> : null}
             <div className="mt-1 flex flex-col gap-2">
               {queryRows.map((row, i) => (
                 <div key={i} className="grid grid-cols-[1fr_8rem_1fr_auto] gap-2">
@@ -176,7 +176,7 @@ function FilterForm({
                     name="query_value"
                     value={row.value}
                     onChange={(e) => setQueryRows(queryRows.map((r, j) => (j === i ? { ...r, value: e.target.value } : r)))}
-                    placeholder={row.mode === "equals" ? "valor" : "—"}
+                    placeholder={row.mode === "equals" ? "value" : "—"}
                     className={`${INPUT_CLASS} h-9`}
                     disabled={pending || row.mode !== "equals"}
                   />
@@ -191,13 +191,13 @@ function FilterForm({
       </fieldset>
 
       <fieldset className="mt-5">
-        <legend className="text-xs font-semibold uppercase tracking-wide text-muted">Páginas</legend>
-        <p className="mt-1 text-xs text-muted">Só páginas deste domínio. Para usar outro template, copie-o antes em Páginas do domínio.</p>
+        <legend className="text-xs font-semibold uppercase tracking-wide text-muted">Pages</legend>
+        <p className="mt-1 text-xs text-muted">Only this domain&apos;s pages. To use another template, copy it first under Domain pages.</p>
         <div className="mt-2 grid gap-4 md:grid-cols-2">
-          <Field label="Quem PASSA no filtro vê">
+          <Field label="Visitors who PASS the filter see">
             <PageSelect name="filter_pass_page_id" pages={pages} value={domain.filter_pass_page_id} disabled={pending} />
           </Field>
-          <Field label="Quem NÃO passa vê">
+          <Field label="Visitors who DON'T pass see">
             <PageSelect name="filter_fail_page_id" pages={pages} value={domain.filter_fail_page_id} disabled={pending} />
           </Field>
         </div>
@@ -212,11 +212,11 @@ function FilterForm({
 
       <div className="mt-5 flex gap-2">
         <Button type="submit" disabled={pending}>
-          {pending ? "Salvando…" : "Salvar filtro"}
+          {pending ? "Saving…" : "Save filter"}
         </Button>
         {showCancel ? (
           <Button variant="ghost" onClick={onDone} disabled={pending}>
-            Cancelar
+            Cancel
           </Button>
         ) : null}
       </div>
@@ -250,7 +250,7 @@ function ListModeField({
     <div className="flex flex-col gap-1">
       <span className="text-xs font-medium text-muted">{label}</span>
       <div className="flex gap-2">
-        <select name={modeName} defaultValue={defaultMode} className={`${SELECT_BASE} w-28 shrink-0`} disabled={disabled}>
+        <select name={modeName} defaultValue={defaultMode} className={`${SELECT_BASE} w-32 shrink-0`} disabled={disabled}>
           {LIST_MODES.map((m) => (
             <option key={m} value={m}>
               {LIST_MODE_LABELS[m]}
@@ -267,7 +267,7 @@ function ListModeField({
 function PageSelect({ name, pages, value, disabled }: { name: string; pages: PageOption[]; value: string | null; disabled: boolean }) {
   return (
     <select name={name} defaultValue={value ?? ""} className={SELECT_CLASS} disabled={disabled}>
-      <option value="">— escolher —</option>
+      <option value="">— choose —</option>
       {pages.map((p) => (
         <option key={p.id} value={p.id}>
           {p.name} · {PAGE_KIND_LABELS[p.kind]}

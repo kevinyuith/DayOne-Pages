@@ -23,25 +23,25 @@ import { copyTemplateToDomain, copyTemplateVariation, previewTemplateVariation, 
 export function DomainPagesPanel({ domain, templates }: { domain: DomainDetail; templates: TemplateOption[] }) {
   const usage = (p: DomainPage): string[] => {
     const uses: string[] = [];
-    if (domain.default_page_id === p.id) uses.push("Padrão");
-    if (domain.filter && domain.filter_pass_page_id === p.id) uses.push("Filtro: aprovado");
-    if (domain.filter && domain.filter_fail_page_id === p.id) uses.push("Filtro: reprovado");
+    if (domain.default_page_id === p.id) uses.push("Default");
+    if (domain.filter && domain.filter_pass_page_id === p.id) uses.push("Filter: pass");
+    if (domain.filter && domain.filter_fail_page_id === p.id) uses.push("Filter: fail");
     for (const r of domain.routes) {
-      if (r.page_id === p.id) uses.push(`Rota: ${r.name || r.path_pattern || "qualquer path"}`);
+      if (r.page_id === p.id) uses.push(`Route: ${r.name || r.path_pattern || "any path"}`);
     }
     return uses;
   };
 
   return (
     <section className="rounded-xl border border-border bg-surface p-5">
-      <h2 className="text-sm font-semibold">Páginas do domínio</h2>
+      <h2 className="text-sm font-semibold">Domain pages</h2>
       <p className="mt-1 text-xs text-muted">
-        Cópias de templates que só este domínio serve. Editar aqui não muda o template, e mudar o template não muda estas páginas.
+        Template copies that only this domain serves. Editing here doesn&apos;t change the template, and changing the template doesn&apos;t change these pages.
       </p>
 
       {domain.pages.length === 0 ? (
         <p className="mt-4 rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted">
-          Este domínio ainda não tem página. Copie um template abaixo: a primeira cópia vira a página padrão.
+          This domain has no pages yet. Copy a template below: the first copy becomes the default page.
         </p>
       ) : (
         <ul className="mt-4 divide-y divide-border/60">
@@ -52,13 +52,13 @@ export function DomainPagesPanel({ domain, templates }: { domain: DomainDetail; 
       )}
 
       {!domain.default_page_id && domain.pages.length > 0 ? (
-        <p className="mt-3 text-xs text-amber-700 dark:text-amber-400">Sem página padrão: paths sem rota respondem 404.</p>
+        <p className="mt-3 text-xs text-amber-700 dark:text-amber-400">No default page: paths without a route respond 404.</p>
       ) : null}
       {domain.default_page && domain.default_page.status !== "PUBLISHED" ? (
-        <p className="mt-3 text-xs text-amber-700 dark:text-amber-400">A página padrão não está publicada e não será servida.</p>
+        <p className="mt-3 text-xs text-amber-700 dark:text-amber-400">The default page isn&apos;t published and won&apos;t be served.</p>
       ) : null}
       {domain.filter && domain.filter_fail_page_id ? (
-        <p className="mt-3 text-xs text-muted">Há um filtro ativo: quem não passa vê a página de reprovação, não a padrão.</p>
+        <p className="mt-3 text-xs text-muted">A filter is active: visitors who fail it see the fail page, not the default.</p>
       ) : null}
 
       <CopyTemplateForm domainId={domain.id} templates={templates} />
@@ -98,24 +98,24 @@ function PageRow({
             ))}
           </div>
           <p className="mt-1 text-xs text-muted">
-            {PAGE_KIND_LABELS[page.kind]} · {page.slugs.length} {page.slugs.length === 1 ? "slug" : "slugs"} · copiada do template{" "}
-            {page.template_name ? `"${page.template_name}"` : "(removido)"}
+            {PAGE_KIND_LABELS[page.kind]} · {page.slugs.length} {page.slugs.length === 1 ? "slug" : "slugs"} · copied from template{" "}
+            {page.template_name ? `"${page.template_name}"` : "(removed)"}
           </p>
         </div>
         <div className="flex flex-wrap items-start gap-2">
           <Link href={editHref} className={buttonClass("primary", "sm")}>
-            Editar
+            Edit
           </Link>
-          {!isDefault ? <RowAction action={setDefaultPage.bind(null, domainId, page.id)} label="Tornar padrão" pendingLabel="Salvando…" /> : null}
+          {!isDefault ? <RowAction action={setDefaultPage.bind(null, domainId, page.id)} label="Make default" pendingLabel="Saving…" /> : null}
           <Button size="sm" variant="ghost" onClick={() => setReplacing((v) => !v)}>
-            Trocar template
+            Change template
           </Button>
           {uses.length === 0 ? (
             <RowAction
               action={removeDomainPage.bind(null, domainId, page.id)}
-              label="Remover"
+              label="Remove"
               variant="danger"
-              confirm={`Remover "${page.name}" deste domínio? O HTML dela será perdido.`}
+              confirm={`Remove "${page.name}" from this domain? Its HTML will be lost.`}
             />
           ) : null}
         </div>
@@ -135,7 +135,7 @@ function ReplaceForm({ domainId, page, templates, onDone }: { domainId: string; 
   const submit = () => {
     const t = templates.find((x) => x.id === templateId);
     if (!t) return;
-    if (!window.confirm(`Substituir "${page.name}" por uma cópia nova do template "${t.name}"? As edições feitas nesta página serão perdidas.`)) return;
+    if (!window.confirm(`Replace "${page.name}" with a fresh copy of the template "${t.name}"? The edits made to this page will be lost.`)) return;
     start(async () => {
       const r = await replaceDomainPage(domainId, page.id, templateId);
       if (!r.ok) return setError(r.reason);
@@ -147,7 +147,7 @@ function ReplaceForm({ domainId, page, templates, onDone }: { domainId: string; 
 
   return (
     <div className="mt-3 flex flex-col gap-2 rounded-lg border border-border bg-foreground/[0.02] p-3 sm:flex-row sm:items-center">
-      <span className="text-xs text-muted sm:shrink-0">Novo template:</span>
+      <span className="text-xs text-muted sm:shrink-0">New template:</span>
       <select value={templateId} onChange={(e) => setTemplateId(e.target.value)} disabled={pending} className={`${SELECT_CLASS} sm:max-w-xs`}>
         {templates.map((t) => (
           <option key={t.id} value={t.id}>
@@ -156,10 +156,10 @@ function ReplaceForm({ domainId, page, templates, onDone }: { domainId: string; 
         ))}
       </select>
       <Button size="sm" variant="danger" onClick={submit} disabled={pending || !templateId}>
-        {pending ? "Substituindo…" : "Substituir"}
+        {pending ? "Replacing…" : "Replace"}
       </Button>
       <Button size="sm" variant="ghost" onClick={onDone} disabled={pending}>
-        Cancelar
+        Cancel
       </Button>
       {error ? <span className="text-xs text-red-600 dark:text-red-400">{error}</span> : null}
     </div>
@@ -169,10 +169,10 @@ function ReplaceForm({ domainId, page, templates, onDone }: { domainId: string; 
 type CopyMode = "original" | "variation";
 
 const VARIATION_OPTIONS: { key: keyof VariationOptions; label: string }[] = [
-  { key: "colors", label: "Cores" },
-  { key: "fonts", label: "Fontes" },
-  { key: "shape", label: "Cantos e sombras" },
-  { key: "spacing", label: "Espaçamentos" },
+  { key: "colors", label: "Colors" },
+  { key: "fonts", label: "Fonts" },
+  { key: "shape", label: "Corners and shadows" },
+  { key: "spacing", label: "Spacing" },
 ];
 
 /**
@@ -194,9 +194,9 @@ function CopyTemplateForm({ domainId, templates }: { domainId: string; templates
   if (templates.length === 0) {
     return (
       <p className="mt-4 text-xs text-muted">
-        Não há templates. Crie um em{" "}
+        There are no templates. Create one in{" "}
         <Link href="/paginas" className="underline">
-          Templates de página
+          Page templates
         </Link>
         .
       </p>
@@ -212,7 +212,7 @@ function CopyTemplateForm({ domainId, templates }: { domainId: string; templates
   const copyOriginal = () =>
     start(async () => {
       const r = await copyTemplateToDomain(domainId, templateId);
-      if (r.ok) done("Copiado. Clique em Editar para personalizar a página deste domínio.");
+      if (r.ok) done("Copied. Click Edit to customize this domain's page.");
       else setMessage({ ok: false, text: r.reason });
     });
 
@@ -230,7 +230,7 @@ function CopyTemplateForm({ domainId, templates }: { domainId: string; templates
     if (!preview) return;
     start(async () => {
       const r = await copyTemplateVariation(domainId, templateId, preview.name, preview.contents);
-      if (r.ok) done(`"${preview.name}" copiada para o domínio.`);
+      if (r.ok) done(`"${preview.name}" copied to the domain.`);
       else setMessage({ ok: false, text: r.reason });
     });
   };
@@ -240,7 +240,7 @@ function CopyTemplateForm({ domainId, templates }: { domainId: string; templates
   return (
     <div className="mt-4 flex flex-col gap-3 border-t border-border pt-4">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-        <span className="text-xs font-medium sm:shrink-0">Copiar template para o domínio:</span>
+        <span className="text-xs font-medium sm:shrink-0">Copy template to the domain:</span>
         <select
           value={templateId}
           onChange={(e) => {
@@ -269,13 +269,13 @@ function CopyTemplateForm({ domainId, templates }: { domainId: string; templates
               aria-pressed={mode === m}
               className={`rounded-md px-3 py-1.5 ${mode === m ? "bg-accent/15 text-accent" : "text-muted hover:text-foreground"}`}
             >
-              {m === "original" ? "Original" : "Variação visual"}
+              {m === "original" ? "Original" : "Visual variation"}
             </button>
           ))}
         </div>
         {mode === "original" ? (
           <Button size="sm" onClick={copyOriginal} disabled={pending || !templateId}>
-            {pending ? "Copiando…" : "Copiar"}
+            {pending ? "Copying…" : "Copy"}
           </Button>
         ) : null}
       </div>
@@ -297,31 +297,31 @@ function CopyTemplateForm({ domainId, templates }: { domainId: string; templates
             ))}
           </div>
           <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-muted">Ângulo da copy (opcional)</span>
+            <span className="text-xs font-medium text-muted">Copy angle (optional)</span>
             <textarea
               value={angle}
               onChange={(e) => setAngle(e.target.value)}
               rows={3}
               maxLength={2000}
               disabled={pending}
-              placeholder="Mande informações para reescrever os textos com outro ângulo. Ex.: público de mães que trabalham fora; foco em praticidade e economia de tempo; tom próximo e acolhedor."
+              placeholder="Give details to rewrite the text from another angle. E.g. audience of working mothers; focus on convenience and saving time; warm, friendly tone."
               className={TEXTAREA_CLASS}
             />
             <span className="text-[11px] text-muted">
-              Em branco, só o visual muda. Com texto, a copy é reescrita por IA (Kimi) mantendo marcas, preços, números, {"{{marcadores}}"} e textos legais —
-              sem inventar fatos ou promessas.
+              Left blank, only the visuals change. With text, the copy is rewritten by AI (Kimi), keeping brands, prices, numbers, {"{{placeholders}}"} and legal text —
+              without inventing facts or promises.
             </span>
           </label>
           <div className="flex flex-wrap items-center gap-2">
             <Button size="sm" onClick={generate} disabled={pending || !templateId || nothingToVary}>
-              {pending && !preview ? (angle.trim() ? "Gerando e reescrevendo a copy…" : "Gerando…") : preview ? "Gerar outra" : "Gerar variação"}
+              {pending && !preview ? (angle.trim() ? "Generating and rewriting the copy…" : "Generating…") : preview ? "Generate another" : "Generate variation"}
             </Button>
             {preview ? (
               <Button size="sm" variant="secondary" onClick={copyVariation} disabled={pending}>
-                {pending ? "Aguarde…" : "Copiar esta variação"}
+                {pending ? "Please wait…" : "Copy this variation"}
               </Button>
             ) : null}
-            {pending && angle.trim() ? <span className="text-xs text-muted">Reescrever a copy pode levar até um minuto.</span> : null}
+            {pending && angle.trim() ? <span className="text-xs text-muted">Rewriting the copy can take up to a minute.</span> : null}
           </div>
 
           {preview ? (
@@ -346,7 +346,7 @@ function CopyTemplateForm({ domainId, templates }: { domainId: string; templates
                 </div>
               ) : null}
               <HtmlPreview html={preview.contents[previewSlug] ?? ""} className="h-96 w-full bg-white" />
-              <p className="text-[11px] text-muted">Nada foi gravado ainda. Estilos de arquivos CSS externos não mudam (só a fonte do corpo).</p>
+              <p className="text-[11px] text-muted">Nothing has been saved yet. Styles from external CSS files don&apos;t change (only the body font).</p>
             </div>
           ) : null}
         </div>

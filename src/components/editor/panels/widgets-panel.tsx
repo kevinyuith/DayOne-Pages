@@ -36,7 +36,7 @@ export function WidgetsPanel({ canInsert, onInsert }: { canInsert: boolean; onIn
       <div className="border-b border-border px-3 py-2">
         <div className="text-xs font-semibold uppercase tracking-wide text-muted">Widgets</div>
         <p className="mt-0.5 text-[11px] text-muted">
-          {canInsert ? "Clique para inserir depois do elemento selecionado." : "Volte ao modo Visual (documento completo) para inserir."}
+          {canInsert ? "Click to insert after the selected element." : "Switch back to Visual mode (full document) to insert."}
         </p>
       </div>
       <div className="min-h-0 flex-1 overflow-auto p-2">
@@ -59,7 +59,7 @@ export function WidgetsPanel({ canInsert, onInsert }: { canInsert: boolean; onIn
             </button>
           ))}
         </div>
-        <p className="mt-3 px-1 text-[11px] text-muted">Sections (Header, Comments, Guarantee…) entram numa próxima rodada.</p>
+        <p className="mt-3 px-1 text-[11px] text-muted">Sections (Header, Comments, Guarantee…) are coming in a later update.</p>
       </div>
     </div>
   );
