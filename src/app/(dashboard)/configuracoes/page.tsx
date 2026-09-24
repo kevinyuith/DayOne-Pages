@@ -1,9 +1,7 @@
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/page-header";
 import { getAiStatus } from "@/lib/ai-settings";
-import { listDetectionRules } from "@/lib/pages/queries";
 import { AiSettings } from "./ai-settings";
-import { RulesList } from "./rules-list";
 import { DnsResolver } from "./dns-resolver";
 
 export const metadata: Metadata = {
@@ -11,7 +9,7 @@ export const metadata: Metadata = {
 };
 
 export default async function ConfiguracoesPage() {
-  const [rules, ai] = await Promise.all([listDetectionRules(), getAiStatus()]);
+  const ai = await getAiStatus();
 
   return (
     <>
@@ -19,7 +17,6 @@ export default async function ConfiguracoesPage() {
 
       <div className="space-y-6">
         <AiSettings status={ai} />
-        <RulesList rules={rules} />
         <DnsResolver />
       </div>
     </>

@@ -24,7 +24,7 @@ export const navGroups: NavGroup[] = [
       { href: "/dominios", label: "Domains", description: "Point domains and route each path.", icon: GlobeIcon },
       { href: "/funil", label: "Funnel", description: "Your funnel.", icon: FunnelIcon },
       { href: "/logs", label: "Logs", description: "Every request, one row each.", icon: LogsIcon },
-      { href: "/configuracoes", label: "Settings", description: "Bot detection rules and settings.", icon: GearIcon },
+      { href: "/configuracoes", label: "Settings", description: "AI and DNS settings.", icon: GearIcon },
     ],
   },
 ];

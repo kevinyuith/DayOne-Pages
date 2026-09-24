@@ -1,6 +1,6 @@
 import { supabaseService } from "@/lib/supabase/service";
 import { scanFunnel, type ScannedVersion } from "./funnel-scan";
-import type { DetectionRule, Domain, DomainRoute, Folder, FolderScope, Page, PageKind, PageRef, PageSlug, PageSlugSummary, PageStatus } from "./types";
+import type { Domain, DomainRoute, Folder, FolderScope, Page, PageKind, PageRef, PageSlug, PageSlugSummary, PageStatus } from "./types";
 
 /**
  * Leituras do schema `pages`, para Server Components.
@@ -627,13 +627,3 @@ export async function countOverview(): Promise<Overview> {
 
 // ── Regras de Detecção (bots e suspeitos) ────────────────────────────────────
 
-/** Lista todas as regras de detecção ordenadas por prioridade. */
-export async function listDetectionRules(): Promise<DetectionRule[]> {
-  const { data, error } = await supabaseService()
-    .from("detection_rules")
-    .select("*")
-    .order("priority", { ascending: true })
-    .order("created_at", { ascending: false });
-  throwIf(error, "listDetectionRules");
-  return (data as DetectionRule[] | null) ?? [];
-}

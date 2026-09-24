@@ -178,39 +178,3 @@ export function isRouteAction(v: unknown): v is RouteAction {
   return typeof v === "string" && (ROUTE_ACTIONS as readonly string[]).includes(v);
 }
 
-export const DETECTION_RULE_TYPES = ["user_agent", "ip_pattern", "country", "rate_limit", "keyword"] as const;
-export type DetectionRuleType = (typeof DETECTION_RULE_TYPES)[number];
-export const DETECTION_RULE_TYPE_LABELS: Record<DetectionRuleType, string> = {
-  user_agent: "User-Agent (Regex)",
-  ip_pattern: "IP pattern (CIDR)",
-  country: "Country (ISO-2)",
-  rate_limit: "Request rate",
-  keyword: "Keyword (UA/path)",
-};
-
-export const CLASSIFICATIONS = ["bot", "suspicious"] as const;
-export type Classification = (typeof CLASSIFICATIONS)[number];
-export const CLASSIFICATION_LABELS: Record<Classification, string> = {
-  bot: "Bot",
-  suspicious: "Suspicious",
-};
-
-export type DetectionRule = {
-  id: string;
-  type: DetectionRuleType;
-  name: string;
-  pattern: string;
-  classification: Classification;
-  is_active: boolean;
-  priority: number;
-  notes: string | null;
-  created_at: string;
-  updated_at: string;
-};
-
-export function isDetectionRuleType(v: unknown): v is DetectionRuleType {
-  return typeof v === "string" && (DETECTION_RULE_TYPES as readonly string[]).includes(v);
-}
-export function isClassification(v: unknown): v is Classification {
-  return typeof v === "string" && (CLASSIFICATIONS as readonly string[]).includes(v);
-}
