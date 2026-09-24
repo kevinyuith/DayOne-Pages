@@ -118,7 +118,7 @@ export function PagesBrowser({ folders, pages, currentFolderId }: { folders: Fol
     [start],
   );
 
-  const targetLabel = useCallback((id: string | null) => (id ? (map.get(id)?.name ?? "pasta") : ROOT_LABEL), [map]);
+  const targetLabel = useCallback((id: string | null) => (id ? (map.get(id)?.name ?? "folder") : ROOT_LABEL), [map]);
 
   /** Pode soltar `item` na pasta `target` (null = raiz)? Não na mesma pasta, nem uma pasta dentro dela mesma. */
   const canDropItem = useCallback(
@@ -134,7 +134,7 @@ export function PagesBrowser({ folders, pages, currentFolderId }: { folders: Fol
   const moveItem = useCallback(
     (item: Drag, target: string | null) => {
       if (!canDropItem(item, target)) return;
-      const done = () => setNotice(`Movido para ${targetLabel(target)}.`);
+      const done = () => setNotice(`Moved to ${targetLabel(target)}.`);
       if (item.type === "page") run(() => movePage(item.id, target), done);
       else run(() => moveFolder(item.id, target), done);
     },
@@ -185,15 +185,15 @@ export function PagesBrowser({ folders, pages, currentFolderId }: { folders: Fol
 
   // ── Ações dos menus ────────────────────────────────────────────────────────
   const onDeletePage = (p: PageListItem) => {
-    if (!window.confirm(`Excluir o template "${p.name}" e todas as slugs dele? As cópias que os domínios já têm não mudam.`)) return;
-    run(() => deletePage(p.id), () => setNotice("Template excluído."));
+    if (!window.confirm(`Delete the template "${p.name}" and all its slugs? The copies domains already have won't change.`)) return;
+    run(() => deletePage(p.id), () => setNotice("Template deleted."));
   };
   const onDeleteFolder = (f: Folder) => {
-    const dest = f.parent_id ? `"${map.get(f.parent_id)?.name ?? "pasta acima"}"` : "a raiz";
-    if (!window.confirm(`Excluir a pasta "${f.name}"? Os templates e subpastas dentro dela vão para ${dest}.`)) return;
-    run(() => deleteFolder(f.id), () => setNotice("Pasta excluída."));
+    const dest = f.parent_id ? `"${map.get(f.parent_id)?.name ?? "parent folder"}"` : "the root";
+    if (!window.confirm(`Delete the folder "${f.name}"? The templates and subfolders inside it will move to ${dest}.`)) return;
+    run(() => deleteFolder(f.id), () => setNotice("Folder deleted."));
   };
-  const onDuplicate = (p: PageListItem) => run(() => duplicatePage(p.id), () => setNotice(`"${p.name}" duplicado como rascunho.`));
+  const onDuplicate = (p: PageListItem) => run(() => duplicatePage(p.id), () => setNotice(`"${p.name}" duplicated as a draft.`));
 
   const closeDialog = useCallback(() => setDialog(null), []);
 
@@ -203,7 +203,7 @@ export function PagesBrowser({ folders, pages, currentFolderId }: { folders: Fol
     <div>
       {/* Breadcrumb + busca + nova pasta */}
       <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <nav aria-label="Pastas" className="flex min-w-0 flex-wrap items-center gap-1 text-sm">
+        <nav aria-label="Folders" className="flex min-w-0 flex-wrap items-center gap-1 text-sm">
           <Crumb href="/paginas" active={currentId === null} highlight={dropKey === "crumb:root"} {...dropProps(null, "crumb:root")}>
             {ROOT_LABEL}
           </Crumb>
@@ -223,13 +223,13 @@ export function PagesBrowser({ folders, pages, currentFolderId }: { folders: Fol
               type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Buscar template ou pasta…"
-              aria-label="Buscar"
+              placeholder="Search templates or folders…"
+              aria-label="Search"
               className={`${INPUT_CLASS} pl-8`}
             />
           </label>
           <Button variant="secondary" onClick={() => setDialog({ kind: "new-folder" })} disabled={pending}>
-            <FolderPlusIcon className="size-4" /> Nova pasta
+            <FolderPlusIcon className="size-4" /> New folder
           </Button>
         </div>
       </div>
@@ -246,7 +246,7 @@ export function PagesBrowser({ folders, pages, currentFolderId }: { folders: Fol
       ) : null}
       {searching ? (
         <p className="mb-3 text-xs text-muted">
-          {shownFolders.length + shownPages.length} resultado(s) para “{query.trim()}” em todas as pastas.
+          {shownFolders.length + shownPages.length} {shownFolders.length + shownPages.length === 1 ? "result" : "results"} for “{query.trim()}” in all folders.
         </p>
       ) : null}
 
@@ -258,7 +258,7 @@ export function PagesBrowser({ folders, pages, currentFolderId }: { folders: Fol
             className="flex min-h-56 flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-accent/50 bg-accent/5 p-4 text-accent transition-colors hover:border-accent hover:bg-accent/10"
           >
             <FilePlusIcon className="size-12" strokeWidth={1.25} />
-            <span className="text-sm font-semibold">Criar template</span>
+            <span className="text-sm font-semibold">Create template</span>
           </button>
         ) : null}
 
@@ -273,10 +273,10 @@ export function PagesBrowser({ folders, pages, currentFolderId }: { folders: Fol
             dragProps={dragProps({ type: "folder", id: f.id })}
             dropProps={dropProps(f.id, `folder:${f.id}`)}
             menu={[
-              { label: "Renomear", icon: <PencilIcon className="size-4" />, onClick: () => setDialog({ kind: "rename-folder", folder: f }) },
-              { label: "Cor da pasta", icon: <PaletteIcon className="size-4" />, onClick: () => setDialog({ kind: "color", folder: f }) },
-              { label: "Mover para…", icon: <MoveIcon className="size-4" />, onClick: () => setDialog({ kind: "move", item: { type: "folder", id: f.id }, name: f.name, from: f.parent_id }) },
-              { label: "Excluir", icon: <TrashIcon className="size-4" />, danger: true, onClick: () => onDeleteFolder(f) },
+              { label: "Rename", icon: <PencilIcon className="size-4" />, onClick: () => setDialog({ kind: "rename-folder", folder: f }) },
+              { label: "Folder color", icon: <PaletteIcon className="size-4" />, onClick: () => setDialog({ kind: "color", folder: f }) },
+              { label: "Move to…", icon: <MoveIcon className="size-4" />, onClick: () => setDialog({ kind: "move", item: { type: "folder", id: f.id }, name: f.name, from: f.parent_id }) },
+              { label: "Delete", icon: <TrashIcon className="size-4" />, danger: true, onClick: () => onDeleteFolder(f) },
             ]}
           />
         ))}
@@ -289,11 +289,11 @@ export function PagesBrowser({ folders, pages, currentFolderId }: { folders: Fol
             dimmed={dragging?.type === "page" && dragging.id === p.id}
             dragProps={dragProps({ type: "page", id: p.id })}
             menu={[
-              { label: "Abrir", icon: <ExternalIcon className="size-4" />, href: `/paginas/${p.id}` },
-              { label: "Renomear", icon: <PencilIcon className="size-4" />, onClick: () => setDialog({ kind: "rename-page", page: p }) },
-              { label: "Duplicar", icon: <DuplicateIcon className="size-4" />, onClick: () => onDuplicate(p) },
-              { label: "Mover para…", icon: <MoveIcon className="size-4" />, onClick: () => setDialog({ kind: "move", item: { type: "page", id: p.id }, name: p.name, from: p.folder_id }) },
-              { label: "Excluir", icon: <TrashIcon className="size-4" />, danger: true, onClick: () => onDeletePage(p) },
+              { label: "Open", icon: <ExternalIcon className="size-4" />, href: `/paginas/${p.id}` },
+              { label: "Rename", icon: <PencilIcon className="size-4" />, onClick: () => setDialog({ kind: "rename-page", page: p }) },
+              { label: "Duplicate", icon: <DuplicateIcon className="size-4" />, onClick: () => onDuplicate(p) },
+              { label: "Move to…", icon: <MoveIcon className="size-4" />, onClick: () => setDialog({ kind: "move", item: { type: "page", id: p.id }, name: p.name, from: p.folder_id }) },
+              { label: "Delete", icon: <TrashIcon className="size-4" />, danger: true, onClick: () => onDeletePage(p) },
             ]}
           />
         ))}
@@ -301,16 +301,16 @@ export function PagesBrowser({ folders, pages, currentFolderId }: { folders: Fol
 
       {empty ? (
         <p className="mt-4 text-sm text-muted">
-          {current ? "Esta pasta está vazia. Crie um template aqui ou arraste templates e pastas para dentro dela." : "Nenhum template ainda. Crie o primeiro: ele nasce como rascunho com a slug /."}
+          {current ? "This folder is empty. Create a template here or drag templates and folders into it." : "No templates yet. Create the first one: it starts as a draft with the slug /."}
         </p>
       ) : null}
-      {searching && shownFolders.length + shownPages.length === 0 ? <p className="mt-4 text-sm text-muted">Nada com esse nome.</p> : null}
+      {searching && shownFolders.length + shownPages.length === 0 ? <p className="mt-4 text-sm text-muted">Nothing with that name.</p> : null}
 
       {/* ── Diálogos ─────────────────────────────────────────────────────── */}
       <Dialog
         open={dialog?.kind === "create-page"}
-        title="Novo template"
-        description={current ? `Será criado em "${current.name}".` : "Será criado na raiz."}
+        title="New template"
+        description={current ? `It will be created in "${current.name}".` : "It will be created in the root."}
         onClose={closeDialog}
         className="sm:max-w-2xl"
       >
@@ -319,20 +319,20 @@ export function PagesBrowser({ folders, pages, currentFolderId }: { folders: Fol
 
       <NameDialog
         open={dialog?.kind === "new-folder"}
-        title="Nova pasta"
-        description={current ? `Dentro de "${current.name}".` : "Na raiz."}
-        label="Nome da pasta"
-        submitLabel="Criar pasta"
+        title="New folder"
+        description={current ? `Inside "${current.name}".` : "In the root."}
+        label="Folder name"
+        submitLabel="Create folder"
         maxLength={80}
         onClose={closeDialog}
-        onSubmit={(name) => run(() => createFolder(currentId, name), () => setNotice(`Pasta "${name}" criada.`))}
+        onSubmit={(name) => run(() => createFolder(currentId, name), () => setNotice(`Folder "${name}" created.`))}
       />
 
       <NameDialog
         open={dialog?.kind === "rename-folder"}
-        title="Renomear pasta"
-        label="Nome"
-        submitLabel="Renomear"
+        title="Rename folder"
+        label="Name"
+        submitLabel="Rename"
         maxLength={80}
         initial={dialog?.kind === "rename-folder" ? dialog.folder.name : ""}
         onClose={closeDialog}
@@ -341,9 +341,9 @@ export function PagesBrowser({ folders, pages, currentFolderId }: { folders: Fol
 
       <NameDialog
         open={dialog?.kind === "rename-page"}
-        title="Renomear template"
-        label="Nome"
-        submitLabel="Renomear"
+        title="Rename template"
+        label="Name"
+        submitLabel="Rename"
         minLength={2}
         maxLength={120}
         initial={dialog?.kind === "rename-page" ? dialog.page.name : ""}
@@ -362,7 +362,7 @@ export function PagesBrowser({ folders, pages, currentFolderId }: { folders: Fol
         }}
       />
 
-      <Dialog open={dialog?.kind === "color"} title="Cor da pasta" onClose={closeDialog}>
+      <Dialog open={dialog?.kind === "color"} title="Folder color" onClose={closeDialog}>
         {dialog?.kind === "color" ? (
           <div className="flex flex-wrap gap-2">
             {FOLDER_COLORS.map((c) => (
@@ -390,7 +390,7 @@ export function PagesBrowser({ folders, pages, currentFolderId }: { folders: Fol
                 run(() => setFolderColor(id, null));
               }}
             >
-              Padrão
+              Default
             </Button>
           </div>
         ) : null}
@@ -434,11 +434,11 @@ function FolderCard({
       data-folder-card={folder.id}
       className={`${CARD} ${highlight ? "border-accent bg-accent/10 ring-2 ring-accent" : "border-border hover:border-accent/50"} ${dimmed ? "opacity-40" : ""}`}
     >
-      <Link href={`/paginas?pasta=${folder.id}`} draggable={false} className="absolute inset-0 rounded-xl" aria-label={`Abrir pasta ${folder.name}`} />
+      <Link href={`/paginas?pasta=${folder.id}`} draggable={false} className="absolute inset-0 rounded-xl" aria-label={`Open folder ${folder.name}`} />
       <FolderIcon className={`size-16 ${folderColorClass(folder.color)}`} strokeWidth={1.25} />
       <span className="line-clamp-2 text-sm font-semibold">{folder.name}</span>
-      <span className="text-[11px] text-muted">{subtitle ?? `${count} ${count === 1 ? "item" : "itens"}`}</span>
-      <CardMenu label={`Opções da pasta ${folder.name}`} items={menu} />
+      <span className="text-[11px] text-muted">{subtitle ?? `${count} ${count === 1 ? "item" : "items"}`}</span>
+      <CardMenu label={`Options for folder ${folder.name}`} items={menu} />
     </div>
   );
 }
@@ -460,7 +460,7 @@ function PageCard({
   const Icon = draft ? FileEditIcon : FileIcon;
   return (
     <div {...dragProps} data-page-card={page.id} className={`${CARD} border-border hover:border-accent/50 ${dimmed ? "opacity-40" : ""}`}>
-      <Link href={`/paginas/${page.id}`} draggable={false} className="absolute inset-0 rounded-xl" aria-label={`Abrir ${page.name}`} />
+      <Link href={`/paginas/${page.id}`} draggable={false} className="absolute inset-0 rounded-xl" aria-label={`Open ${page.name}`} />
       <Icon className={`size-16 ${draft ? "text-muted" : "text-foreground"}`} strokeWidth={1.25} />
       <span className="line-clamp-2 text-sm font-semibold">{page.name}</span>
       <span className="flex items-center gap-1.5 text-[11px] text-muted">
@@ -470,10 +470,10 @@ function PageCard({
         {PAGE_KIND_LABELS[page.kind]}
       </span>
       <span className="text-[11px] text-muted/70">
-        {page.copies_count === 0 ? "sem cópias em domínios" : `copiado para ${page.copies_count} ${page.copies_count === 1 ? "domínio" : "domínios"}`}
+        {page.copies_count === 0 ? "no copies on domains" : `copied to ${page.copies_count} ${page.copies_count === 1 ? "domain" : "domains"}`}
       </span>
       {subtitle ? <span className="text-[11px] text-muted/70">{subtitle}</span> : null}
-      <CardMenu label={`Opções de ${page.name}`} items={menu} />
+      <CardMenu label={`Options for ${page.name}`} items={menu} />
     </div>
   );
 }
@@ -601,7 +601,7 @@ function NameDialog({
         <div className="flex gap-2">
           <Button type="submit">{submitLabel}</Button>
           <Button variant="ghost" onClick={onClose}>
-            Cancelar
+            Cancel
           </Button>
         </div>
       </form>
@@ -624,7 +624,7 @@ function MoveDialog({
 }) {
   const options = useMemo(() => folderOptions(folders, state?.item.type === "folder" ? state.item.id : null, ROOT_LABEL), [folders, state]);
   return (
-    <Dialog open={open} title={`Mover "${state?.name ?? ""}"`} description="Escolha a pasta de destino." onClose={onClose}>
+    <Dialog open={open} title={`Move "${state?.name ?? ""}"`} description="Choose the destination folder." onClose={onClose}>
       <form
         key={state?.item.id ?? "none"}
         onSubmit={(e) => {
@@ -635,7 +635,7 @@ function MoveDialog({
         }}
         className="flex flex-col gap-3"
       >
-        <select name="target" defaultValue={state?.from ?? ""} aria-label="Pasta de destino" className={SELECT_CLASS}>
+        <select name="target" defaultValue={state?.from ?? ""} aria-label="Destination folder" className={SELECT_CLASS}>
           {options.map((o) => (
             <option key={o.id ?? "root"} value={o.id ?? ""}>
               {"  ".repeat(o.depth)}
@@ -645,9 +645,9 @@ function MoveDialog({
           ))}
         </select>
         <div className="flex gap-2">
-          <Button type="submit">Mover</Button>
+          <Button type="submit">Move</Button>
           <Button variant="ghost" onClick={onClose}>
-            Cancelar
+            Cancel
           </Button>
         </div>
       </form>

@@ -48,8 +48,8 @@ export function Sidebar({ defaultCollapsed }: { defaultCollapsed: boolean }) {
             type="button"
             onClick={toggle}
             aria-pressed={!collapsed}
-            aria-label={collapsed ? "Fixar menu aberto" : "Recolher menu"}
-            title={collapsed ? "Fixar menu aberto" : "Recolher menu"}
+            aria-label={collapsed ? "Pin menu open" : "Collapse menu"}
+            title={collapsed ? "Pin menu open" : "Collapse menu"}
             className="hidden shrink-0 items-center rounded-lg px-3 py-2 text-muted transition-colors hover:bg-foreground/5 hover:text-foreground md:flex"
           >
             <SidebarIcon className="size-5" />

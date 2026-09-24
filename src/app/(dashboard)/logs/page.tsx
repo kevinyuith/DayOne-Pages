@@ -21,8 +21,8 @@ export const metadata: Metadata = {
 
 const PAGE_SIZE = 100;
 
-const dateFmt = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "medium", timeZone: APP_TZ });
-const loadFmt = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+const dateFmt = new Intl.DateTimeFormat("en-US", { dateStyle: "short", timeStyle: "medium", timeZone: APP_TZ });
+const loadFmt = new Intl.NumberFormat("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
 /**
  * Cada request registrado em pages.hits, com todas as colunas, do mais novo
@@ -56,17 +56,17 @@ export default async function LogsPage({
 
   return (
     <>
-      <PageHeader title="Logs" description="Cada request servido, com tudo o que foi registrado, do mais novo para o mais antigo." />
+      <PageHeader title="Logs" description="Every request served, with everything that was logged, newest first." />
 
       <form method="get" className="mb-6 flex flex-wrap items-center gap-2">
         <label className="relative">
-          <span className="sr-only">Domínio</span>
+          <span className="sr-only">Domain</span>
           <select
             name="domain"
             defaultValue={selected ?? ""}
             className="appearance-none rounded-lg border border-border bg-surface py-2 pl-3 pr-9 text-sm font-medium text-muted transition-colors hover:text-foreground"
           >
-            <option value="">Todos os domínios</option>
+            <option value="">All domains</option>
             {domains.map((d) => (
               <option key={d.id} value={d.id}>
                 {d.domain}
@@ -76,40 +76,40 @@ export default async function LogsPage({
           <ChevronDownIcon className="pointer-events-none absolute right-2.5 top-1/2 size-4 -translate-y-1/2 text-muted" />
         </label>
         <Button type="submit" variant="secondary">
-          Filtrar
+          Filter
         </Button>
       </form>
 
       {hits.length === 0 ? (
         <EmptyState
-          title={beforeId ? "Não há requests mais antigos" : "Nenhum request registrado"}
-          description="Os requests aparecem aqui conforme o servidor de entrega os registra."
+          title={beforeId ? "No older requests" : "No requests logged"}
+          description="Requests show up here as the delivery server logs them."
         />
       ) : (
         <Table className="min-w-[3360px]">
           <thead>
             <tr>
-              <Th>Data</Th>
+              <Th>Date</Th>
               <Th>Request</Th>
-              <Th>Parâmetros</Th>
-              <Th>Domínio</Th>
+              <Th>Parameters</Th>
+              <Th>Domain</Th>
               <Th>Slug</Th>
-              <Th>Decisão</Th>
+              <Th>Decision</Th>
               <Th className="text-right">Status</Th>
-              <Th>Resultado</Th>
-              <Th title="O navegador avisou que a página terminou de carregar (evento load). Ping, prefetch, robô de prévia de link e curl não avisam. — = não se aplica (redirect, 404, arquivo ou registro antigo).">
-                Carregou
+              <Th>Result</Th>
+              <Th title="The browser reported that the page finished loading (load event). Pings, prefetches, link-preview bots and curl don't report. — = not applicable (redirect, 404, file or old record).">
+                Loaded
               </Th>
-              <Th>País</Th>
-              <Th>Estado</Th>
-              <Th>Dispositivo</Th>
-              <Th>Navegador</Th>
-              <Th title="Pelo User-Agent. macOS, Windows 11 e Chrome no Android escondem a versão real; aí só aparece o nome.">Sistema</Th>
+              <Th>Country</Th>
+              <Th>State</Th>
+              <Th>Device</Th>
+              <Th>Browser</Th>
+              <Th title="From the User-Agent. macOS, Windows 11 and Chrome on Android hide the real version, so only the name shows.">OS</Th>
               <Th>Referrer</Th>
               <Th>IP</Th>
               <Th>Hostname</Th>
               <Th>ASN</Th>
-              <Th title="Estimada pelo ASN (aproximada). O servidor não distingue WiFi de cabo.">Conexão</Th>
+              <Th title="Estimated from the ASN (approximate). The server can't tell WiFi from cable.">Connection</Th>
               <Th>User-Agent</Th>
               <Th>Cookies</Th>
             </tr>
@@ -141,9 +141,9 @@ export default async function LogsPage({
                     ) : registrable.has(normalizeHost(h.host)) ? (
                       <span className="flex flex-col items-start gap-1">
                         <span className="text-foreground">{normalizeHost(h.host)}</span>
-                        <span className="font-sans text-[11px] text-amber-600 dark:text-amber-400">não cadastrado</span>
+                        <span className="font-sans text-[11px] text-amber-600 dark:text-amber-400">not registered</span>
                         <span className="break-normal font-sans">
-                          <RowAction action={registerSeenDomain.bind(null, h.host)} label="Cadastrar" pendingLabel="Cadastrando…" />
+                          <RowAction action={registerSeenDomain.bind(null, h.host)} label="Register" pendingLabel="Registering…" />
                         </span>
                       </span>
                     ) : (
@@ -164,7 +164,7 @@ export default async function LogsPage({
                       "—"
                     )}
                   </Td>
-                  <Td className="min-w-[320px] max-w-[400px] font-mono text-xs text-muted" title={h.route_id ? `rota ${h.route_id}` : undefined}>
+                  <Td className="min-w-[320px] max-w-[400px] font-mono text-xs text-muted" title={h.route_id ? `route ${h.route_id}` : undefined}>
                     <span className="whitespace-nowrap">{h.decision || "—"}</span>
                     {h.redirect_url ? (
                       <span className="mt-0.5 line-clamp-3 break-all text-[11px] leading-snug text-foreground" title={h.redirect_url}>
@@ -183,8 +183,8 @@ export default async function LogsPage({
                     {h.load ? (
                       <Badge tone="success">✓{h.load.load_ms !== null ? ` ${loadFmt.format(h.load.load_ms / 1000)}s` : ""}</Badge>
                     ) : h.visit_id ? (
-                      <span className="text-xs text-muted" title="O navegador não avisou: ping, prefetch, robô, JavaScript bloqueado ou saiu antes de carregar.">
-                        não
+                      <span className="text-xs text-muted" title="The browser didn't report: ping, prefetch, bot, blocked JavaScript or the visitor left before it loaded.">
+                        no
                       </span>
                     ) : (
                       <span className="text-muted">—</span>
@@ -234,14 +234,14 @@ export default async function LogsPage({
         <nav className="mt-4 flex items-center justify-between text-sm">
           {beforeId ? (
             <Link href={pageHref(null)} className="font-medium text-muted hover:text-foreground">
-              ← Mais recentes
+              ← Newer
             </Link>
           ) : (
             <span />
           )}
           {hasMore ? (
             <Link href={pageHref(hits[hits.length - 1].id)} className="font-medium text-muted hover:text-foreground">
-              Mais antigos →
+              Older →
             </Link>
           ) : null}
         </nav>

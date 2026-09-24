@@ -144,7 +144,7 @@ function parseOutput(text: string): Rewrite {
     const parsed = OutputSchema.parse(JSON.parse(text));
     return { ok: true, texts: new Map(parsed.segments.map((s) => [s.id, s.text])) };
   } catch {
-    return { ok: false, reason: "A resposta do modelo veio num formato inesperado. Tente de novo." };
+    return { ok: false, reason: "The model's response came back in an unexpected format. Try again." };
   }
 }
 
@@ -171,16 +171,16 @@ async function rewriteWithKimi(key: string, model: string, segments: { id: numbe
     });
   } catch (cause) {
     const timeout = cause instanceof Error && cause.name === "TimeoutError";
-    return { ok: false, reason: timeout ? "O Kimi demorou demais para responder. Tente com uma página menor." : "Não consegui falar com a API do Kimi." };
+    return { ok: false, reason: timeout ? "Kimi took too long to respond. Try a smaller page." : "Couldn't reach the Kimi API." };
   }
-  if (res.status === 401) return { ok: false, reason: "A chave do Kimi foi recusada. Confira em Configurações." };
-  if (res.status === 429) return { ok: false, reason: "Limite de uso da API do Kimi atingido (ou sem saldo). Tente de novo em instantes." };
-  if (!res.ok) return { ok: false, reason: `A API do Kimi respondeu com erro (HTTP ${res.status}). Tente de novo.` };
+  if (res.status === 401) return { ok: false, reason: "The Kimi key was rejected. Check it in Settings." };
+  if (res.status === 429) return { ok: false, reason: "Kimi API usage limit reached (or out of credit). Try again in a moment." };
+  if (!res.ok) return { ok: false, reason: `The Kimi API returned an error (HTTP ${res.status}). Try again.` };
 
   const body = (await res.json().catch(() => null)) as { choices?: { finish_reason?: string; message?: { content?: string } }[] } | null;
   const choice = body?.choices?.[0];
-  if (choice?.finish_reason === "length") return { ok: false, reason: "A resposta ficou longa demais. Tente com uma página menor." };
-  if (choice?.finish_reason === "content_filter") return { ok: false, reason: "O modelo não aceitou reescrever esta página. Tente outro ângulo." };
+  if (choice?.finish_reason === "length") return { ok: false, reason: "The response was too long. Try a smaller page." };
+  if (choice?.finish_reason === "content_filter") return { ok: false, reason: "The model declined to rewrite this page. Try another angle." };
   return parseOutput(choice?.message?.content ?? "");
 }
 
@@ -200,13 +200,13 @@ async function rewriteWithClaude(segments: { id: number; text: string }[], brief
     });
     message = await stream.finalMessage();
   } catch (error) {
-    if (error instanceof Anthropic.AuthenticationError) return { ok: false, reason: "A ANTHROPIC_API_KEY do painel foi recusada. Confira a chave." };
-    if (error instanceof Anthropic.RateLimitError) return { ok: false, reason: "Limite de uso da API da Anthropic atingido. Tente de novo em instantes." };
-    if (error instanceof Anthropic.APIError) return { ok: false, reason: `A API da Anthropic respondeu com erro (${error.status ?? "sem status"}). Tente de novo.` };
-    return { ok: false, reason: "Não consegui falar com a API da Anthropic." };
+    if (error instanceof Anthropic.AuthenticationError) return { ok: false, reason: "The dashboard's ANTHROPIC_API_KEY was rejected. Check the key." };
+    if (error instanceof Anthropic.RateLimitError) return { ok: false, reason: "Anthropic API usage limit reached. Try again in a moment." };
+    if (error instanceof Anthropic.APIError) return { ok: false, reason: `The Anthropic API returned an error (${error.status ?? "no status"}). Try again.` };
+    return { ok: false, reason: "Couldn't reach the Anthropic API." };
   }
-  if (message.stop_reason === "refusal") return { ok: false, reason: "O modelo não aceitou reescrever esta página. Tente outro ângulo." };
-  if (message.stop_reason === "max_tokens") return { ok: false, reason: "A resposta ficou longa demais. Tente com uma página menor." };
+  if (message.stop_reason === "refusal") return { ok: false, reason: "The model declined to rewrite this page. Try another angle." };
+  if (message.stop_reason === "max_tokens") return { ok: false, reason: "The response was too long. Try a smaller page." };
   return parseOutput(message.content.find((b): b is Anthropic.Beta.BetaTextBlock => b.type === "text")?.text ?? "");
 }
 
@@ -218,14 +218,14 @@ export async function rewriteCopyAngle(pages: Record<string, string>, brief: str
   const kimiKey = await getKimiKey();
   const claude = !!(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN);
   if (!kimiKey && !claude) {
-    return { ok: false, reason: "Para reescrever a copy, cadastre a chave do Kimi em Configurações. A variação visual funciona sem isso." };
+    return { ok: false, reason: "To rewrite the copy, add the Kimi key in Settings. The visual variation works without it." };
   }
 
   const { segments, rebuild } = extractCopySegments(pages);
-  if (segments.length === 0) return { ok: false, reason: "Não achei texto para reescrever nesta página." };
+  if (segments.length === 0) return { ok: false, reason: "Couldn't find any text to rewrite on this page." };
   const chars = segments.reduce((n, s) => n + s.text.length, 0);
   if (segments.length > MAX_SEGMENTS || chars > MAX_CHARS) {
-    return { ok: false, reason: `A página tem texto demais para reescrever de uma vez (${segments.length} trechos, ${chars} caracteres). Gere só a variação visual.` };
+    return { ok: false, reason: `The page has too much text to rewrite in one go (${segments.length} segments, ${chars} characters). Generate only the visual variation.` };
   }
 
   const r = kimiKey ? await rewriteWithKimi(kimiKey, await getAiModel(), segments, brief) : await rewriteWithClaude(segments, brief);

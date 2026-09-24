@@ -9,7 +9,7 @@ type Params = Promise<{ id: string; slugId: string }>;
 export async function generateMetadata({ params }: { params: Params }): Promise<Metadata> {
   const { id } = await params;
   const page = await getPageWithSlugs(id);
-  return { title: page ? `Editar: ${page.name}` : "Página" };
+  return { title: page ? `Edit: ${page.name}` : "Template" };
 }
 
 /** O editor aberto num template. A página de um domínio usa o mesmo editor em /dominios/[id]/paginas/[pageId]. */
@@ -37,7 +37,7 @@ export default async function SlugEditorPage({ params }: { params: Params }) {
       nav={{
         // Volta para a pasta onde o template está, não para a raiz.
         backHref: page.folder_id ? `/paginas?pasta=${page.folder_id}` : "/paginas",
-        backTitle: "Voltar para as páginas",
+        backTitle: "Back to templates",
         slugHref: `/paginas/${page.id}/slugs/{slug}`,
         afterDeleteHref: "/paginas",
       }}

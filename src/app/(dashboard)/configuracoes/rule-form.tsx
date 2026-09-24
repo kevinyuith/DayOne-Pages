@@ -43,7 +43,7 @@ export function RuleForm({ rule, onSuccess }: RuleFormProps) {
       onSuccess?.();
       e.currentTarget.reset();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao salvar regra");
+      setError(err instanceof Error ? err.message : "Couldn't save the rule");
     } finally {
       setLoading(false);
     }
@@ -54,7 +54,7 @@ export function RuleForm({ rule, onSuccess }: RuleFormProps) {
       {error && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</div>}
 
       <div>
-        <label className="block text-sm font-medium mb-1">Tipo de Regra</label>
+        <label className="block text-sm font-medium mb-1">Rule type</label>
         <Select name="type" defaultValue={rule?.type ?? "user_agent"} required>
           {DETECTION_RULE_TYPES.map((type) => (
             <option key={type} value={type}>
@@ -65,15 +65,15 @@ export function RuleForm({ rule, onSuccess }: RuleFormProps) {
       </div>
 
       <div>
-        <label className="block text-sm font-medium mb-1">Nome</label>
-        <Input name="name" placeholder="Ex: Scrapers comuns" defaultValue={rule?.name ?? ""} required />
+        <label className="block text-sm font-medium mb-1">Name</label>
+        <Input name="name" placeholder="E.g. Common scrapers" defaultValue={rule?.name ?? ""} required />
       </div>
 
       <div>
-        <label className="block text-sm font-medium mb-1">Padrão</label>
+        <label className="block text-sm font-medium mb-1">Pattern</label>
         <Textarea
           name="pattern"
-          placeholder="Regex para UA, CIDR para IP, ISO-2 para país, etc"
+          placeholder="Regex for UA, CIDR for IP, ISO-2 for country, etc"
           defaultValue={rule?.pattern ?? ""}
           required
           rows={3}
@@ -81,7 +81,7 @@ export function RuleForm({ rule, onSuccess }: RuleFormProps) {
       </div>
 
       <div>
-        <label className="block text-sm font-medium mb-1">Classificação</label>
+        <label className="block text-sm font-medium mb-1">Classification</label>
         <Select name="classification" defaultValue={rule?.classification ?? "bot"} required>
           {CLASSIFICATIONS.map((cls) => (
             <option key={cls} value={cls}>
@@ -92,24 +92,24 @@ export function RuleForm({ rule, onSuccess }: RuleFormProps) {
       </div>
 
       <div>
-        <label className="block text-sm font-medium mb-1">Prioridade</label>
+        <label className="block text-sm font-medium mb-1">Priority</label>
         <Input type="number" name="priority" placeholder="100" defaultValue={rule?.priority ?? 100} min="0" required />
       </div>
 
       <div>
         <label className="flex items-center gap-2">
           <Checkbox name="is_active" defaultChecked={rule?.is_active ?? true} />
-          <span className="text-sm font-medium">Ativo</span>
+          <span className="text-sm font-medium">Active</span>
         </label>
       </div>
 
       <div>
-        <label className="block text-sm font-medium mb-1">Notas</label>
-        <Textarea name="notes" placeholder="Detalhes sobre essa regra..." defaultValue={rule?.notes ?? ""} rows={2} />
+        <label className="block text-sm font-medium mb-1">Notes</label>
+        <Textarea name="notes" placeholder="Details about this rule..." defaultValue={rule?.notes ?? ""} rows={2} />
       </div>
 
       <Button type="submit" disabled={loading}>
-        {loading ? "Salvando..." : rule?.id ? "Atualizar Regra" : "Criar Regra"}
+        {loading ? "Saving..." : rule?.id ? "Update rule" : "Create rule"}
       </Button>
     </form>
   );

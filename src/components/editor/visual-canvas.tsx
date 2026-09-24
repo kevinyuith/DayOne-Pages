@@ -27,7 +27,7 @@ import { normalizePages, pageById, pageOf, setCurrent, startPage } from "@/lib/p
  * um chip por link visível, desenhado pelo pai por cima do iframe. Clicar no
  * chip seleciona o elemento. Recalculados a cada mudança/rolagem, via rAF.
  */
-type Marker = { uid: string; kind: "a" | "form" | "atrelado"; top: number; left: number };
+type Marker = { uid: string; kind: "a" | "form" | "bound"; top: number; left: number };
 const MARKER_SELECTOR = `a[href], area[href], form[action], [${HREF_ATTR}]`;
 
 /**
@@ -152,7 +152,7 @@ export const VisualCanvas = forwardRef<
         if (r.width < 4 || r.height < 4 || r.bottom < 0 || r.top > vh || r.right < 0 || r.left > vw) return;
         out.push({
           uid,
-          kind: el.hasAttribute(HREF_ATTR) ? "atrelado" : el.tagName === "FORM" ? "form" : "a",
+          kind: el.hasAttribute(HREF_ATTR) ? "bound" : el.tagName === "FORM" ? "form" : "a",
           top: Math.max(r.top, 8),
           left: Math.max(r.left, 0),
         });
@@ -540,7 +540,7 @@ export const VisualCanvas = forwardRef<
     <div className="relative h-full w-full">
       <iframe
         ref={iframeRef}
-        title="Editor da página"
+        title="Page editor"
         sandbox="allow-same-origin allow-forms"
         className="block h-full w-full border-0 bg-white"
       />
@@ -551,10 +551,10 @@ export const VisualCanvas = forwardRef<
             <button
               key={m.uid}
               type="button"
-              title={m.kind === "a" ? "Link — clique para selecionar" : m.kind === "form" ? "Formulário — clique para selecionar" : "Link atrelado — clique para selecionar"}
+              title={m.kind === "a" ? "Link — click to select" : m.kind === "form" ? "Form — click to select" : "Bound link — click to select"}
               onClick={() => cmdSelectByUid(m.uid)}
               className={`pointer-events-auto absolute z-10 inline-flex h-4 -translate-y-1/2 items-center gap-0.5 rounded px-1 text-[9px] font-semibold leading-none text-white shadow ${
-                m.kind === "atrelado" ? "bg-violet-600" : m.kind === "form" ? "bg-amber-600" : "bg-accent"
+                m.kind === "bound" ? "bg-violet-600" : m.kind === "form" ? "bg-amber-600" : "bg-accent"
               }`}
               style={{ top: m.top, left: m.left }}
             >

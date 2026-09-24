@@ -15,7 +15,7 @@ export type AiKeyState = { error?: string; success?: string; attempt: number };
 export async function saveKimiKey(prev: AiKeyState, fd: FormData): Promise<AiKeyState> {
   const attempt = prev.attempt + 1;
   const key = String(fd.get("key") ?? "").trim();
-  if (!/^sk-[A-Za-z0-9_-]{20,}$/.test(key)) return { error: "Cole a chave da Moonshot (começa com sk-).", attempt };
+  if (!/^sk-[A-Za-z0-9_-]{20,}$/.test(key)) return { error: "Paste the Moonshot key (it starts with sk-).", attempt };
   const check = await listKimiModels(key);
   if (!check.ok) return { error: check.reason, attempt };
   try {
@@ -24,7 +24,7 @@ export async function saveKimiKey(prev: AiKeyState, fd: FormData): Promise<AiKey
     return { error: errorReason(cause), attempt };
   }
   revalidatePath("/configuracoes");
-  return { success: `Chave salva. ${check.models.length} ${check.models.length === 1 ? "modelo liberado" : "modelos liberados"}.`, attempt };
+  return { success: `Key saved. ${check.models.length} ${check.models.length === 1 ? "model available" : "models available"}.`, attempt };
 }
 
 export async function removeKimiKey(): Promise<ActionResult> {
@@ -41,7 +41,7 @@ export async function removeKimiKey(): Promise<ActionResult> {
 export async function loadKimiModels(): Promise<ActionResult<{ models: string[] }>> {
   try {
     const key = await getKimiKey();
-    if (!key) return fail("Nenhuma chave configurada.");
+    if (!key) return fail("No key configured.");
     const r = await listKimiModels(key);
     return r.ok ? { ok: true, models: r.models } : fail(r.reason);
   } catch (cause) {
@@ -50,7 +50,7 @@ export async function loadKimiModels(): Promise<ActionResult<{ models: string[] 
 }
 
 export async function saveAiModel(model: string): Promise<ActionResult> {
-  if (!/^[A-Za-z0-9._-]{2,80}$/.test(model)) return fail("Modelo inválido.");
+  if (!/^[A-Za-z0-9._-]{2,80}$/.test(model)) return fail("Invalid model.");
   try {
     await setAiModel(model);
     revalidatePath("/configuracoes");

@@ -1,4 +1,4 @@
-export type ConnectionType = "Celular" | "Fixa (WiFi/cabo)" | "Datacenter/VPN";
+export type ConnectionType = "Mobile" | "Fixed (WiFi/cable)" | "Datacenter/VPN";
 
 // Nuvem, hospedagem, CDN/relay e redes de VPN. Conferidos na Team Cymru em 22/09/2026.
 const DATACENTER = new Set([
@@ -63,10 +63,10 @@ const FIXED = new Set([
 export function connectionType(asn: number | null, asName: string | null): ConnectionType | null {
   if (!asn) return null;
   if (DATACENTER.has(asn)) return "Datacenter/VPN";
-  if (MOBILE.has(asn)) return "Celular";
-  if (FIXED.has(asn)) return "Fixa (WiFi/cabo)";
+  if (MOBILE.has(asn)) return "Mobile";
+  if (FIXED.has(asn)) return "Fixed (WiFi/cable)";
   const name = asName ?? "";
   if (/hosting|cloud|data ?cent|server|\bvps\b|\bcolo/i.test(name)) return "Datacenter/VPN";
-  if (/mobil|wireless|cellular|cellco|celular|m[oó]vil|m[oó]vel/i.test(name)) return "Celular";
-  return "Fixa (WiFi/cabo)";
+  if (/mobil|wireless|cellular|cellco|celular|m[oó]vil|m[oó]vel/i.test(name)) return "Mobile";
+  return "Fixed (WiFi/cable)";
 }

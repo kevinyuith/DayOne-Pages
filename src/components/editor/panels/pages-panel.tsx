@@ -32,7 +32,7 @@ export function PagesPanel({
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="border-b border-border px-3 py-2">
         <div className="text-xs font-semibold uppercase tracking-wide text-muted">Pages</div>
-        <p className="mt-0.5 text-[11px] text-muted">Cada slug tem o próprio HTML.</p>
+        <p className="mt-0.5 text-[11px] text-muted">Each slug has its own HTML.</p>
       </div>
       <ul className="min-h-0 flex-1 overflow-auto p-2">
         {slugs.map((s) => (
@@ -45,7 +45,7 @@ export function PagesPanel({
                 s.id === currentSlugId ? "bg-accent/10 text-accent" : "text-foreground hover:bg-foreground/5",
                 s.is_active ? "" : "line-through opacity-60",
               ].join(" ")}
-              title={s.is_active ? s.slug : `${s.slug} (inativa)`}
+              title={s.is_active ? s.slug : `${s.slug} (inactive)`}
             >
               {s.slug}
             </Link>
@@ -53,20 +53,20 @@ export function PagesPanel({
         ))}
       </ul>
       <form onSubmit={onNewSlug} className="flex gap-1 border-t border-border p-2">
-        <input name="slug" placeholder="/nova" disabled={busy} className={`${INPUT_BASE} h-8 w-full font-mono text-xs`} />
+        <input name="slug" placeholder="/new" disabled={busy} className={`${INPUT_BASE} h-8 w-full font-mono text-xs`} />
         <Button type="submit" size="sm" variant="secondary" disabled={busy}>
           +
         </Button>
       </form>
       <div className="flex flex-wrap gap-1 border-t border-border p-2">
         <Button size="sm" variant="ghost" onClick={onRename} disabled={busy}>
-          Renomear
+          Rename
         </Button>
         <Button size="sm" variant="ghost" onClick={onToggle} disabled={busy}>
-          {currentActive ? "Desativar" : "Ativar"}
+          {currentActive ? "Deactivate" : "Activate"}
         </Button>
         <Button size="sm" variant="ghost" onClick={onRemove} disabled={busy}>
-          Remover
+          Remove
         </Button>
       </div>
     </div>

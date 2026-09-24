@@ -20,11 +20,11 @@ export const navGroups: NavGroup[] = [
   {
     items: [
       { href: "/", label: "Dashboard", description: "Overview of your workspace.", icon: DashboardIcon },
-      { href: "/paginas", label: "Templates de página", description: "Build page templates; each domain gets its own copy.", icon: PagesIcon },
+      { href: "/paginas", label: "Page templates", description: "Build page templates; each domain gets its own copy.", icon: PagesIcon },
       { href: "/dominios", label: "Domains", description: "Point domains and route each path.", icon: GlobeIcon },
-      { href: "/funil", label: "Funil", description: "Your funnel.", icon: FunnelIcon },
+      { href: "/funil", label: "Funnel", description: "Your funnel.", icon: FunnelIcon },
       { href: "/logs", label: "Logs", description: "Every request, one row each.", icon: LogsIcon },
-      { href: "/configuracoes", label: "Configurações", description: "Bot detection rules and settings.", icon: GearIcon },
+      { href: "/configuracoes", label: "Settings", description: "Bot detection rules and settings.", icon: GearIcon },
     ],
   },
 ];

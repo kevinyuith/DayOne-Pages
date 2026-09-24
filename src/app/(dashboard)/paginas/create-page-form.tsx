@@ -16,10 +16,10 @@ const INITIAL: CreatePageState = { attempt: 0 };
 type Source = "template" | "link" | "html" | "blank";
 
 const OPTIONS: { key: Source; label: string; hint: string; Icon: typeof FilePlusIcon }[] = [
-  { key: "template", label: "Copiar de outro template", hint: "Uma cópia de um template que já existe, com todas as slugs.", Icon: DuplicateIcon },
-  { key: "link", label: "Copiar através de link", hint: "Busca a página pelo endereço e traz o HTML dela.", Icon: LinkIcon },
-  { key: "html", label: "Copiar através de HTML", hint: "Cole o código de uma página pronta.", Icon: CodeIcon },
-  { key: "blank", label: "Criar do zero", hint: "Começa do modelo em branco.", Icon: FilePlusIcon },
+  { key: "template", label: "Copy from another template", hint: "A copy of an existing template, with all its slugs.", Icon: DuplicateIcon },
+  { key: "link", label: "Copy from a link", hint: "Fetches the page by its URL and brings in its HTML.", Icon: LinkIcon },
+  { key: "html", label: "Copy from HTML", hint: "Paste the code of a ready-made page.", Icon: CodeIcon },
+  { key: "blank", label: "Start from scratch", hint: "Starts from the blank template.", Icon: FilePlusIcon },
 ];
 
 /**
@@ -55,7 +55,7 @@ export function CreatePageForm({
                 <Icon className="mt-0.5 size-5 shrink-0 text-accent" />
                 <span>
                   <span className="block text-sm font-semibold">{label}</span>
-                  <span className="mt-0.5 block text-xs text-muted">{disabled ? "Ainda não há templates." : hint}</span>
+                  <span className="mt-0.5 block text-xs text-muted">{disabled ? "No templates yet." : hint}</span>
                 </span>
               </button>
             );
@@ -64,7 +64,7 @@ export function CreatePageForm({
         {onCancel ? (
           <div>
             <Button variant="ghost" onClick={onCancel}>
-              Cancelar
+              Cancel
             </Button>
           </div>
         ) : null}
@@ -121,7 +121,7 @@ function SourceForm({
     setTemplateId(id);
     const t = templates.find((p) => p.id === id);
     if (t) {
-      suggestName(`${t.name} (cópia)`);
+      suggestName(`${t.name} (copy)`);
       setKind(t.kind);
     }
   };
@@ -153,16 +153,16 @@ function SourceForm({
 
       <div className="flex items-center gap-2 text-sm">
         <button type="button" onClick={onBack} disabled={pending} className="text-muted hover:text-foreground">
-          ← Opções
+          ← Options
         </button>
         <span className="text-muted">·</span>
         <span className="font-medium">{option.label}</span>
       </div>
 
       {source === "template" ? (
-        <Field label="Template de origem">
+        <Field label="Source template">
           <select name="template_id" value={templateId} onChange={(e) => onPickTemplate(e.target.value)} disabled={pending} className={SELECT_CLASS}>
-            <option value="">— escolher —</option>
+            <option value="">— choose —</option>
             {templates.map((t) => (
               <option key={t.id} value={t.id}>
                 {t.name} · {PAGE_KIND_LABELS[t.kind]} · {t.slugs_count} {t.slugs_count === 1 ? "slug" : "slugs"}
@@ -174,7 +174,7 @@ function SourceForm({
 
       {source === "link" ? (
         <div className="flex flex-col gap-2">
-          <Field label="Endereço da página">
+          <Field label="Page URL">
             <div className="flex gap-2">
               <input
                 type="url"
@@ -186,12 +186,12 @@ function SourceForm({
                     onFetch();
                   }
                 }}
-                placeholder="https://exemplo.com/pagina"
+                placeholder="https://example.com/page"
                 disabled={pending || fetching}
                 className={INPUT_CLASS}
               />
               <Button type="button" variant="secondary" onClick={onFetch} disabled={pending || fetching || !url.trim()}>
-                {fetching ? "Buscando…" : "Buscar"}
+                {fetching ? "Fetching…" : "Fetch"}
               </Button>
             </div>
           </Field>
@@ -203,8 +203,8 @@ function SourceForm({
               <input type="hidden" name="source_url" value={imported.finalUrl} />
               <HtmlPreview html={linkHtml} className="h-56 w-full bg-white" />
               <p className="text-xs text-muted">
-                Trazido de {imported.finalUrl} ({Math.max(1, Math.round(new Blob([imported.html]).size / 1024))} KB). Imagens, CSS e links viraram endereços
-                absolutos; os links continuam apontando para o site de origem — troque no painel Links do editor.
+                Fetched from {imported.finalUrl} ({Math.max(1, Math.round(new Blob([imported.html]).size / 1024))} KB). Images, CSS and links now use absolute
+                URLs; the links still point to the source site — change them in the editor&apos;s Links panel.
               </p>
             </>
           ) : null}
@@ -213,7 +213,7 @@ function SourceForm({
 
       {source === "html" ? (
         <div className="flex flex-col gap-2">
-          <Field label="HTML da página">
+          <Field label="Page HTML">
             <textarea
               name="content"
               required
@@ -232,7 +232,7 @@ function SourceForm({
 
       {/* Sem campo de tipo: cópia herda o do template de origem; o resto nasce como "Outra". */}
       <input type="hidden" name="kind" value={kind} />
-      <Field label="Nome do template">
+      <Field label="Template name">
         <input
           name="name"
           required
@@ -243,7 +243,7 @@ function SourceForm({
             setName(e.target.value);
             setNameTouched(true);
           }}
-          placeholder="Ex.: Oferta principal"
+          placeholder="E.g. Main offer"
           disabled={pending}
           className={INPUT_CLASS}
         />
@@ -256,11 +256,11 @@ function SourceForm({
       ) : null}
       <div className="mt-1 flex gap-2">
         <Button type="submit" disabled={blocked}>
-          {pending ? "Criando…" : "Criar template"}
+          {pending ? "Creating…" : "Create template"}
         </Button>
         {onCancel ? (
           <Button variant="ghost" onClick={onCancel} disabled={pending}>
-            Cancelar
+            Cancel
           </Button>
         ) : null}
       </div>
@@ -293,7 +293,7 @@ function PlaceholderSuggestions({ html, sourceUrl, onApply }: { html: string; so
   if (answer?.kind === "yes") {
     return (
       <p className="flex flex-wrap items-center gap-2 text-xs text-emerald-700 dark:text-emerald-400">
-        {answer.replaced} {answer.replaced === 1 ? "trecho trocado" : "trechos trocados"} por marcadores. Cada domínio mostra os próprios dados.
+        {answer.replaced} {answer.replaced === 1 ? "snippet replaced" : "snippets replaced"} with placeholders. Each domain shows its own details.
         <button
           type="button"
           className="text-muted underline hover:text-foreground"
@@ -302,7 +302,7 @@ function PlaceholderSuggestions({ html, sourceUrl, onApply }: { html: string; so
             setAnswer(null);
           }}
         >
-          Desfazer
+          Undo
         </button>
       </p>
     );
@@ -310,9 +310,9 @@ function PlaceholderSuggestions({ html, sourceUrl, onApply }: { html: string; so
   if (answer?.kind === "no") {
     return (
       <p className="flex flex-wrap items-center gap-2 text-xs text-muted">
-        Mantido o texto original.
+        Kept the original text.
         <button type="button" className="underline hover:text-foreground" onClick={() => setAnswer(null)}>
-          Rever
+          Review
         </button>
       </p>
     );
@@ -320,8 +320,8 @@ function PlaceholderSuggestions({ html, sourceUrl, onApply }: { html: string; so
 
   return (
     <div className="rounded-lg border border-accent/30 bg-accent/5 p-3 text-sm">
-      <p className="font-medium">Gostaria de trocar as informações de Empresa por placeholder?</p>
-      <p className="mt-0.5 text-xs text-muted">Encontramos estes textos. Desmarque o que não for dado da empresa.</p>
+      <p className="font-medium">Replace the company details with placeholders?</p>
+      <p className="mt-0.5 text-xs text-muted">We found these texts. Uncheck anything that isn&apos;t company details.</p>
       <ul className="mt-2 flex max-h-48 flex-col gap-1 overflow-auto">
         {findings.map((f) => (
           <li key={f.id}>
@@ -347,10 +347,10 @@ function PlaceholderSuggestions({ html, sourceUrl, onApply }: { html: string; so
             setAnswer({ kind: "yes", replaced: chosen.reduce((n, f) => n + f.count, 0) });
           }}
         >
-          Sim, trocar
+          Yes, replace
         </Button>
         <Button type="button" size="sm" variant="ghost" onClick={() => setAnswer({ kind: "no" })}>
-          Não, manter
+          No, keep
         </Button>
       </div>
     </div>

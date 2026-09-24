@@ -248,7 +248,7 @@ export function PageEditor({
         if (!result.ok) {
           setMessage(
             result.reason === "conflict"
-              ? { tone: "warning", text: "Esta página foi salva em outro lugar desde que você a abriu. Recarregue para ver a versão atual (o que está nesta tela será descartado)." }
+              ? { tone: "warning", text: "This page was saved somewhere else since you opened it. Reload to see the current version (what's on this screen will be discarded)." }
               : { tone: "danger", text: result.reason },
           );
           return;
@@ -297,7 +297,7 @@ export function PageEditor({
       if (!dirtyRef.current) return;
       const anchor = (e.target as HTMLElement | null)?.closest?.("a[href]");
       if (!anchor || anchor.getAttribute("target") === "_blank") return;
-      if (!window.confirm("Há alterações não salvas. Sair mesmo assim?")) {
+      if (!window.confirm("You have unsaved changes. Leave anyway?")) {
         e.preventDefault();
         e.stopPropagation();
       }
@@ -314,7 +314,7 @@ export function PageEditor({
     startBusy(async () => {
       const r = await task();
       if (!r.ok) {
-        setMessage({ tone: "danger", text: r.reason ?? "Erro." });
+        setMessage({ tone: "danger", text: r.reason ?? "Error." });
         return;
       }
       setMessage(null);
@@ -337,7 +337,7 @@ export function PageEditor({
     });
   }
   function onRenameSlug() {
-    const value = window.prompt("Novo path da slug:", slug.slug);
+    const value = window.prompt("New slug path:", slug.slug);
     if (value === null || value.trim() === slug.slug) return;
     startBusy(async () => {
       const r = await actions.renameSlug(slug.id, value);
@@ -349,7 +349,7 @@ export function PageEditor({
     });
   }
   function onDeleteSlug() {
-    if (!window.confirm(`Remover a slug ${slug.slug}? O HTML dela será perdido.`)) return;
+    if (!window.confirm(`Remove the slug ${slug.slug}? Its HTML will be lost.`)) return;
     startBusy(async () => {
       const r = await actions.deleteSlug(slug.id);
       if (!r.ok) return setMessage({ tone: "danger", text: r.reason });
@@ -360,8 +360,8 @@ export function PageEditor({
   function onDeletePage() {
     const question =
       scope === "template"
-        ? `Excluir o template "${page.name}" e todas as slugs? As cópias que os domínios já têm não mudam.`
-        : `Remover a página "${page.name}" deste domínio? O HTML dela será perdido.`;
+        ? `Delete the template "${page.name}" and all its slugs? The copies domains already have won't change.`
+        : `Remove the page "${page.name}" from this domain? Its HTML will be lost.`;
     if (!window.confirm(question)) return;
     startBusy(async () => {
       const r = await actions.deletePage();
@@ -462,13 +462,13 @@ export function PageEditor({
 
   const activeSteps = outline.pages.filter((p) => p.active);
   const destinations: LinkDestination[] = [
-    ...(activeSteps.length > 1 ? [{ label: "Próxima etapa (#next-step)", href: NEXT_STEP, group: "Funil desta slug (mesma URL)" }] : []),
-    ...activeSteps.filter((p) => p.id !== currentPageId).map((p) => ({ label: p.name, href: pageHref(p.id), group: "Funil desta slug (mesma URL)" })),
-    ...slugs.filter((s) => s.id !== slug.id && s.is_active).map((s) => ({ label: s.slug, href: s.slug, group: "Slugs desta página (muda a URL)" })),
+    ...(activeSteps.length > 1 ? [{ label: "Next step (#next-step)", href: NEXT_STEP, group: "This slug's funnel (same URL)" }] : []),
+    ...activeSteps.filter((p) => p.id !== currentPageId).map((p) => ({ label: p.name, href: pageHref(p.id), group: "This slug's funnel (same URL)" })),
+    ...slugs.filter((s) => s.id !== slug.id && s.is_active).map((s) => ({ label: s.slug, href: s.slug, group: "This page's slugs (changes the URL)" })),
   ];
 
   const baseHref = previewBase ? `https://${previewBase}/` : undefined;
-  const savedLabel = pending ? "Saving…" : dirty ? "Unsaved" : lastSavedAt ? `Saved ${lastSavedAt.toLocaleTimeString("pt-BR", { timeZone: APP_TZ })}` : "Saved";
+  const savedLabel = pending ? "Saving…" : dirty ? "Unsaved" : lastSavedAt ? `Saved ${lastSavedAt.toLocaleTimeString("en-US", { timeZone: APP_TZ })}` : "Saved";
 
   return (
     <div className="flex h-[calc(100dvh-4rem)] flex-col gap-2">
@@ -477,15 +477,15 @@ export function PageEditor({
         <Link href={nav.backHref} title={nav.backTitle} className="text-sm text-muted hover:text-foreground">
           ←
         </Link>
-        <input value={name} onChange={(e) => setName(e.target.value)} aria-label="Nome da página" className={`${INPUT_BASE} h-9 w-52 font-medium`} />
+        <input value={name} onChange={(e) => setName(e.target.value)} aria-label="Page name" className={`${INPUT_BASE} h-9 w-52 font-medium`} />
         <Badge tone={PAGE_STATUS_TONE[savedSnapshot.status]}>{PAGE_STATUS_LABELS[savedSnapshot.status]}</Badge>
         <span className="text-xs text-muted">· {savedLabel}</span>
         {scope === "domain" ? (
-          <span className="text-xs text-muted" title="Página exclusiva deste domínio. O template não muda quando você edita aqui.">
-            · página de {domains[0]}
+          <span className="text-xs text-muted" title="Page exclusive to this domain. The template doesn't change when you edit here.">
+            · page on {domains[0]}
           </span>
         ) : (
-          <span className="text-xs text-muted" title="Template: os domínios recebem cópias. Editar aqui não muda as cópias que já existem.">
+          <span className="text-xs text-muted" title="Template: domains get copies. Editing here doesn't change the copies that already exist.">
             · template
           </span>
         )}
@@ -512,7 +512,7 @@ export function PageEditor({
           <span>{message.text}</span>
           {message.tone === "warning" ? (
             <button type="button" className="ml-2 underline" onClick={() => window.location.reload()}>
-              Recarregar
+              Reload
             </button>
           ) : null}
         </Alert>
@@ -588,10 +588,10 @@ export function PageEditor({
                 />
               ) : (
                 <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
-                  <p className="text-sm font-medium">A edição visual precisa de um documento HTML completo.</p>
-                  <p className="max-w-sm text-xs text-muted">Este conteúdo é um fragmento. Embrulhe num documento para editar no canvas, ou use o modo Código.</p>
+                  <p className="text-sm font-medium">Visual editing needs a complete HTML document.</p>
+                  <p className="max-w-sm text-xs text-muted">This content is a fragment. Wrap it in a document to edit it on the canvas, or use Code mode.</p>
                   <Button size="sm" onClick={() => updateContent(wrapFragment(content, { title: name }))}>
-                    Envolver fragmento em documento
+                    Wrap fragment in a document
                   </Button>
                 </div>
               )}
@@ -607,7 +607,7 @@ export function PageEditor({
               <Seg active={device === "tablet"} title="Tablet" onClick={() => setDevice("tablet")}>
                 <TabletIcon className="size-4" />
               </Seg>
-              <Seg active={device === "mobile"} title="Celular" onClick={() => setDevice("mobile")}>
+              <Seg active={device === "mobile"} title="Mobile" onClick={() => setDevice("mobile")}>
                 <MobileIcon className="size-4" />
               </Seg>
             </div>
@@ -616,13 +616,13 @@ export function PageEditor({
               <Seg active={mode === "visual" && !previewing} title="Visual" onClick={() => switchMode("visual")}>
                 <EyeIcon className="size-4" />
               </Seg>
-              <Seg active={mode === "code" && !previewing} title="Código" onClick={() => switchMode("code")}>
+              <Seg active={mode === "code" && !previewing} title="Code" onClick={() => switchMode("code")}>
                 <CodeIcon className="size-4" />
               </Seg>
             </div>
 
-            <select value={previewBase} onChange={(e) => setPreviewBase(e.target.value)} aria-label="Domínio base" className={`${SELECT_BASE} h-8 w-40 text-xs`}>
-              <option value="">Sem domínio base</option>
+            <select value={previewBase} onChange={(e) => setPreviewBase(e.target.value)} aria-label="Base domain" className={`${SELECT_BASE} h-8 w-40 text-xs`}>
+              <option value="">No base domain</option>
               {domains.map((d) => (
                 <option key={d} value={d}>
                   {d}
@@ -635,7 +635,7 @@ export function PageEditor({
                 type="button"
                 onClick={() => setShowMarkers((v) => !v)}
                 aria-pressed={showMarkers}
-                title={showMarkers ? "Ocultar marcadores de link" : "Mostrar marcadores de link"}
+                title={showMarkers ? "Hide link markers" : "Show link markers"}
                 className={`ml-auto inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs transition-colors ${
                   showMarkers ? "border-accent/40 bg-accent/10 text-accent" : "border-border text-muted hover:text-foreground"
                 }`}
@@ -697,13 +697,13 @@ function PageSettings({
 }) {
   return (
     <div className="flex flex-col gap-4">
-      <p className="text-xs text-muted">Nada selecionado. Clique num elemento do canvas para editá-lo, ou ajuste a página:</p>
+      <p className="text-xs text-muted">Nothing selected. Click an element on the canvas to edit it, or adjust the page:</p>
       <label className="flex flex-col gap-1.5">
         <span className="text-xs font-medium text-muted">Slug</span>
         <code className="rounded-md bg-foreground/5 px-2 py-1.5 font-mono text-xs">{slugPath}</code>
       </label>
       <label className="flex flex-col gap-1.5">
-        <span className="text-xs font-medium text-muted">Tipo</span>
+        <span className="text-xs font-medium text-muted">Type</span>
         <select value={kind} onChange={(e) => onKind(e.target.value as PageKind)} className={`${SELECT_BASE} w-full`}>
           {PAGE_KINDS.map((k) => (
             <option key={k} value={k}>
@@ -721,10 +721,10 @@ function PageSettings({
         </select>
       </label>
       {status !== "PUBLISHED" ? (
-        <p className="text-xs text-amber-700 dark:text-amber-400">Só páginas Publicadas são servidas nos domínios.</p>
+        <p className="text-xs text-amber-700 dark:text-amber-400">Only Published pages are served on domains.</p>
       ) : null}
       <Button size="sm" variant="danger" onClick={onDeletePage} disabled={busy} className="mt-2 w-full">
-        Excluir página
+        Delete page
       </Button>
     </div>
   );
@@ -749,23 +749,23 @@ function PlaceholdersMenu({ values }: { values: Record<string, string> | null })
   return (
     <details className="relative">
       <summary className="inline-flex h-8 cursor-pointer list-none items-center rounded-lg border border-border px-2.5 text-xs text-muted hover:text-foreground">
-        {"{{ }}"} Marcadores
+        {"{{ }}"} Placeholders
       </summary>
       <div className="absolute right-0 z-20 mt-1 w-80 rounded-xl border border-border bg-surface p-2 text-xs shadow-lg">
         <p className="px-1 pb-2 text-muted">
-          Escreva o marcador no texto ou num link (ex.: <code>mailto:{"{{company.email}}"}</code>). Ao servir, o domínio troca pelo valor dele;
-          idioma e data seguem o navegador de quem visita (o preview mostra em inglês).
+          Write the placeholder in the text or in a link (e.g. <code>mailto:{"{{company.email}}"}</code>). When serving, the domain replaces it with its value;
+          language and date follow the visitor&apos;s browser (the preview shows English).
         </p>
         <ul className="max-h-72 overflow-auto">
           {rows.map((r) => {
             const value = values ? values[r.key] : undefined;
             return (
               <li key={r.key} className="flex items-center gap-2 rounded-lg px-1 py-1 hover:bg-foreground/5">
-                <button type="button" onClick={() => copy(r.key)} className="font-mono text-accent" title="Copiar">
+                <button type="button" onClick={() => copy(r.key)} className="font-mono text-accent" title="Copy">
                   {placeholderToken(r.key)}
                 </button>
                 <span className="min-w-0 flex-1 truncate text-muted" title={value ?? r.hint}>
-                  {copied === r.key ? "copiado" : values ? value || "(vazio neste domínio)" : r.label}
+                  {copied === r.key ? "copied" : values ? value || "(empty on this domain)" : r.label}
                 </span>
               </li>
             );

@@ -51,9 +51,9 @@ export function LinksPanel({
         <div className="text-xs font-semibold uppercase tracking-wide text-muted">Links</div>
         <p className="mt-0.5 text-[11px] text-muted">
           {links.length === 0
-            ? "Nenhum link nesta página."
-            : `${links.length} ${links.length === 1 ? "link" : "links"} · ${groups.length} ${groups.length === 1 ? "destino" : "destinos"}${
-                attached ? ` · ${attached} atrelado${attached > 1 ? "s" : ""}` : ""
+            ? "No links on this page."
+            : `${links.length} ${links.length === 1 ? "link" : "links"} · ${groups.length} ${groups.length === 1 ? "destination" : "destinations"}${
+                attached ? ` · ${attached} bound` : ""
               }`}
         </p>
       </div>
@@ -64,17 +64,17 @@ export function LinksPanel({
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Filtrar por URL ou texto…"
+            placeholder="Filter by URL or text…"
             className={`${INPUT_BASE} h-8 w-full pl-8 text-xs`}
           />
         </label>
       ) : null}
 
       <ul className="min-h-0 flex-1 overflow-auto p-2">
-        {groups.length === 0 && links.length > 0 ? <li className="px-2 py-4 text-center text-xs text-muted">Nada bate com o filtro.</li> : null}
+        {groups.length === 0 && links.length > 0 ? <li className="px-2 py-4 text-center text-xs text-muted">Nothing matches the filter.</li> : null}
         {links.length === 0 ? (
           <li className="px-2 py-4 text-center text-xs text-muted">
-            Selecione um botão, imagem ou bloco na canvas e cole um destino no campo <b>Link</b> do inspetor para atrelar um link a ele.
+            Select a button, image or block on the canvas and paste a destination into the inspector&apos;s <b>Link</b> field to bind a link to it.
           </li>
         ) : null}
         {groups.map((g) => (
@@ -97,28 +97,28 @@ export function LinksPanel({
             e.preventDefault();
             const to = allTo.trim();
             if (!to) return;
-            if (!window.confirm(`Apontar todos os ${links.length} links desta página para\n${to}?`)) return;
+            if (!window.confirm(`Point all ${links.length} links on this page to\n${to}?`)) return;
             onReplaceAll(to);
             setAllTo("");
           }}
         >
-          <span className="text-[11px] font-medium text-muted">Apontar todos os links para</span>
+          <span className="text-[11px] font-medium text-muted">Point all links to</span>
           <div className="flex gap-1">
             <input value={allTo} onChange={(e) => setAllTo(e.target.value)} placeholder="https://…" className={`${INPUT_BASE} h-8 w-full font-mono text-xs`} />
             <Button type="submit" size="sm" variant="secondary" disabled={!allTo.trim()}>
-              Aplicar
+              Apply
             </Button>
           </div>
         </form>
       ) : null}
       {!canEdit && links.length > 0 ? (
-        <p className="border-t border-border p-2 text-[11px] text-muted">Para trocar links, envolva o fragmento num documento (modo Visual).</p>
+        <p className="border-t border-border p-2 text-[11px] text-muted">To change links, wrap the fragment in a document (Visual mode).</p>
       ) : null}
     </div>
   );
 }
 
-const KIND_LABEL: Record<LinkKind, string> = { anchor: "a", form: "form", attached: "atrelado" };
+const KIND_LABEL: Record<LinkKind, string> = { anchor: "a", form: "form", attached: "bound" };
 
 function DestinationGroup({
   href,
@@ -151,7 +151,7 @@ function DestinationGroup({
   return (
     <li className={`mb-1 rounded-lg border ${hasSelected ? "border-accent/50" : "border-border"}`}>
       <div className="flex items-start gap-1 px-2 py-1.5">
-        <button type="button" onClick={() => setOpen((o) => !o)} className="mt-0.5 shrink-0 text-muted hover:text-foreground" title={open ? "Recolher" : "Expandir"}>
+        <button type="button" onClick={() => setOpen((o) => !o)} className="mt-0.5 shrink-0 text-muted hover:text-foreground" title={open ? "Collapse" : "Expand"}>
           <ChevronRightIcon className={`size-3.5 transition-transform ${open ? "rotate-90" : ""}`} />
         </button>
         <div className="min-w-0 flex-1">
@@ -175,19 +175,19 @@ function DestinationGroup({
               type="button"
               onClick={() => onSelect(entries[0].uid)}
               className="flex w-full items-center gap-1 text-left font-mono text-[11px] text-foreground hover:text-accent"
-              title={href || "(sem destino)"}
+              title={href || "(no destination)"}
             >
               {external ? <ExternalIcon className="size-3 shrink-0 text-muted" /> : <LinkIcon className="size-3 shrink-0 text-muted" />}
-              <span className="truncate">{href || <em className="text-muted">(sem destino)</em>}</span>
+              <span className="truncate">{href || <em className="text-muted">(no destination)</em>}</span>
             </button>
           )}
           <div className="mt-0.5 flex items-center gap-2 text-[10px] text-muted">
             <span>
-              {entries.length} {entries.length === 1 ? "ocorrência" : "ocorrências"}
+              {entries.length} {entries.length === 1 ? "occurrence" : "occurrences"}
             </span>
             {canEdit && !editing ? (
               <button type="button" onClick={() => setEditing(true)} className="text-accent hover:underline">
-                Trocar
+                Change
               </button>
             ) : null}
           </div>
@@ -207,8 +207,8 @@ function DestinationGroup({
               >
                 <code className="shrink-0 rounded bg-foreground/5 px-1 text-[10px] text-muted">{KIND_LABEL[e.kind] === "a" ? `<${e.tag}>` : KIND_LABEL[e.kind]}</code>
                 <span className="truncate">{e.label}</span>
-                {e.page ? <span className="ml-auto shrink-0 rounded bg-foreground/5 px-1 text-[9px] text-muted" title={`Etapa do funil: ${e.page}`}>{e.page}</span> : null}
-                {e.target === "_blank" ? <ExternalIcon className={`size-3 shrink-0 text-muted ${e.page ? "" : "ml-auto"}`} aria-label="Abre em nova aba" /> : null}
+                {e.page ? <span className="ml-auto shrink-0 rounded bg-foreground/5 px-1 text-[9px] text-muted" title={`Funnel step: ${e.page}`}>{e.page}</span> : null}
+                {e.target === "_blank" ? <ExternalIcon className={`size-3 shrink-0 text-muted ${e.page ? "" : "ml-auto"}`} aria-label="Opens in new tab" /> : null}
               </button>
             </li>
           ))}

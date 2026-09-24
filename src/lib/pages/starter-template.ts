@@ -8,11 +8,11 @@
  */
 
 export const STARTER_HTML = `<!doctype html>
-<html lang="pt-BR">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Nova página</title>
+  <title>New page</title>
   <meta name="robots" content="noindex">
   <style>
     :root { color-scheme: light; }
@@ -26,9 +26,9 @@ export const STARTER_HTML = `<!doctype html>
 </head>
 <body>
   <main>
-    <h1>Sua página começa aqui</h1>
-    <p>Edite este HTML no painel. Use URLs absolutas (https://...) para imagens e scripts.</p>
-    <a class="cta" href="#">Chamada para ação</a>
+    <h1>Your page starts here</h1>
+    <p>Edit this HTML in the dashboard. Use absolute URLs (https://...) for images and scripts.</p>
+    <a class="cta" href="#">Call to action</a>
   </main>
 </body>
 </html>
@@ -45,8 +45,8 @@ function escapeHtml(s: string): string {
 
 /** Embrulha um fragmento num documento mínimo. */
 export function wrapFragment(fragment: string, opts: { title?: string; lang?: string } = {}): string {
-  const title = escapeHtml(opts.title ?? "Página");
-  const lang = escapeHtml(opts.lang ?? "pt-BR");
+  const title = escapeHtml(opts.title ?? "Page");
+  const lang = escapeHtml(opts.lang ?? "en");
   return `<!doctype html>
 <html lang="${lang}">
 <head>

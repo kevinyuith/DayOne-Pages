@@ -13,10 +13,10 @@ export function LayersPanel({ layers, selectedUid, onSelect }: { layers: LayerNo
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="border-b border-border px-3 py-2">
         <div className="text-xs font-semibold uppercase tracking-wide text-muted">Layers</div>
-        <p className="mt-0.5 text-[11px] text-muted">Estrutura da página. Clique para selecionar na canvas.</p>
+        <p className="mt-0.5 text-[11px] text-muted">Page structure. Click to select on the canvas.</p>
       </div>
       <ul className="min-h-0 flex-1 overflow-auto p-1 font-mono text-[11px]">
-        {layers.length === 0 ? <li className="px-2 py-4 text-center font-sans text-xs text-muted">Sem elementos no body.</li> : null}
+        {layers.length === 0 ? <li className="px-2 py-4 text-center font-sans text-xs text-muted">No elements in the body.</li> : null}
         {layers.map((n) => (
           <LayerRow key={n.uid} node={n} depth={0} selectedUid={selectedUid} onSelect={onSelect} />
         ))}
@@ -41,7 +41,7 @@ function LayerRow({ node, depth, selectedUid, onSelect }: { node: LayerNode; dep
           type="button"
           onClick={() => setOpen((o) => !o)}
           className={`shrink-0 text-muted hover:text-foreground ${has ? "" : "invisible"}`}
-          title={open ? "Recolher" : "Expandir"}
+          title={open ? "Collapse" : "Expand"}
           tabIndex={has ? 0 : -1}
         >
           <ChevronRightIcon className={`size-3.5 transition-transform ${open ? "rotate-90" : ""}`} />

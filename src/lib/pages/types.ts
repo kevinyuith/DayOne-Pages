@@ -15,41 +15,41 @@ export const PAGE_KIND_LABELS: Record<PageKind, string> = {
   ADVERTORIAL: "Advertorial",
   VSL: "VSL",
   CHECKOUT: "Checkout",
-  SAFE: "Institucional",
-  OTHER: "Outra",
+  SAFE: "Institutional",
+  OTHER: "Other",
 };
 
 export const PAGE_STATUSES = ["DRAFT", "PUBLISHED", "ARCHIVED"] as const;
 export type PageStatus = (typeof PAGE_STATUSES)[number];
 export const PAGE_STATUS_LABELS: Record<PageStatus, string> = {
-  DRAFT: "Rascunho",
-  PUBLISHED: "Publicada",
-  ARCHIVED: "Arquivada",
+  DRAFT: "Draft",
+  PUBLISHED: "Published",
+  ARCHIVED: "Archived",
 };
 
 export const DOMAIN_STATUSES = ["ACTIVE", "PAUSED", "ARCHIVED"] as const;
 export type DomainStatus = (typeof DOMAIN_STATUSES)[number];
 export const DOMAIN_STATUS_LABELS: Record<DomainStatus, string> = {
-  ACTIVE: "Ativo",
-  PAUSED: "Pausado",
-  ARCHIVED: "Arquivado",
+  ACTIVE: "Active",
+  PAUSED: "Paused",
+  ARCHIVED: "Archived",
 };
 
 export const MATCH_TYPES = ["EXACT", "PREFIX", "REGEX", "ANY"] as const;
 export type MatchType = (typeof MATCH_TYPES)[number];
 export const MATCH_TYPE_LABELS: Record<MatchType, string> = {
-  EXACT: "Exato",
-  PREFIX: "Prefixo",
+  EXACT: "Exact",
+  PREFIX: "Prefix",
   REGEX: "Regex",
-  ANY: "Qualquer path",
+  ANY: "Any path",
 };
 
 export const ROUTE_ACTIONS = ["SERVE", "REDIRECT", "BLOCK"] as const;
 export type RouteAction = (typeof ROUTE_ACTIONS)[number];
 export const ROUTE_ACTION_LABELS: Record<RouteAction, string> = {
-  SERVE: "Servir página",
-  REDIRECT: "Redirecionar",
-  BLOCK: "Bloquear",
+  SERVE: "Serve page",
+  REDIRECT: "Redirect",
+  BLOCK: "Block",
 };
 
 export const REDIRECT_CODES = [301, 302, 307, 308] as const;
@@ -72,12 +72,12 @@ export type Page = {
 export const FOLDER_COLORS = ["blue", "emerald", "violet", "amber", "rose", "slate"] as const;
 export type FolderColor = (typeof FOLDER_COLORS)[number];
 export const FOLDER_COLOR_LABELS: Record<FolderColor, string> = {
-  blue: "Azul",
-  emerald: "Verde",
-  violet: "Roxo",
-  amber: "Âmbar",
-  rose: "Rosa",
-  slate: "Cinza",
+  blue: "Blue",
+  emerald: "Green",
+  violet: "Purple",
+  amber: "Amber",
+  rose: "Pink",
+  slate: "Gray",
 };
 export function isFolderColor(v: unknown): v is FolderColor {
   return typeof v === "string" && (FOLDER_COLORS as readonly string[]).includes(v);
@@ -170,17 +170,17 @@ export const DETECTION_RULE_TYPES = ["user_agent", "ip_pattern", "country", "rat
 export type DetectionRuleType = (typeof DETECTION_RULE_TYPES)[number];
 export const DETECTION_RULE_TYPE_LABELS: Record<DetectionRuleType, string> = {
   user_agent: "User-Agent (Regex)",
-  ip_pattern: "Padrão de IP (CIDR)",
-  country: "País (ISO-2)",
-  rate_limit: "Taxa de Requisições",
-  keyword: "Palavra-chave (UA/Path)",
+  ip_pattern: "IP pattern (CIDR)",
+  country: "Country (ISO-2)",
+  rate_limit: "Request rate",
+  keyword: "Keyword (UA/path)",
 };
 
 export const CLASSIFICATIONS = ["bot", "suspicious"] as const;
 export type Classification = (typeof CLASSIFICATIONS)[number];
 export const CLASSIFICATION_LABELS: Record<Classification, string> = {
   bot: "Bot",
-  suspicious: "Suspeito",
+  suspicious: "Suspicious",
 };
 
 export type DetectionRule = {

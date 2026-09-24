@@ -50,7 +50,7 @@ function placeholderCompletions(values: Record<string, string> | null) {
         const token = placeholderToken(o.key);
         return {
           label: token,
-          detail: values ? values[o.key] || "(vazio)" : o.label,
+          detail: values ? values[o.key] || "(empty)" : o.label,
           type: "variable",
           apply: (view, completion, from, to) => {
             const after = view.state.sliceDoc(to, to + 2);

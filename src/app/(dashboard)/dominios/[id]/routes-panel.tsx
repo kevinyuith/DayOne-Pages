@@ -23,9 +23,9 @@ export function RoutesPanel({ domainId, routes, pages }: { domainId: string; rou
   return (
     <section>
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-base font-semibold">Rotas</h2>
+        <h2 className="text-base font-semibold">Routes</h2>
         <Button size="sm" onClick={() => setEditing(editing === "new" ? null : "new")}>
-          {editing === "new" ? "Cancelar" : "Nova rota"}
+          {editing === "new" ? "Cancel" : "New route"}
         </Button>
       </div>
 
@@ -37,18 +37,18 @@ export function RoutesPanel({ domainId, routes, pages }: { domainId: string; rou
 
       {routes.length === 0 ? (
         <p className="rounded-xl border border-dashed border-border bg-surface px-6 py-10 text-center text-sm text-muted">
-          Nenhuma rota. Todo path cai na página padrão.
+          No routes. Every path falls through to the default page.
         </p>
       ) : (
         <Table>
           <thead>
             <tr>
               <Th className="w-12 text-right">#</Th>
-              <Th>Rota</Th>
+              <Th>Route</Th>
               <Th>Path</Th>
-              <Th>Condições</Th>
-              <Th>Ação</Th>
-              <Th className="text-right">Ações</Th>
+              <Th>Conditions</Th>
+              <Th>Action</Th>
+              <Th className="text-right">Actions</Th>
             </tr>
           </thead>
           <tbody>
@@ -88,8 +88,8 @@ function RouteRow({
     <Tr className={[r.is_active ? "" : "opacity-60", editing ? "bg-accent/5" : ""].join(" ")}>
       <Td className="text-right tabular-nums text-muted">{r.priority}</Td>
       <Td>
-        <div className="font-medium">{r.name || <span className="text-muted">sem nome</span>}</div>
-        {!r.is_active ? <Badge tone="neutral">inativa</Badge> : null}
+        <div className="font-medium">{r.name || <span className="text-muted">unnamed</span>}</div>
+        {!r.is_active ? <Badge tone="neutral">inactive</Badge> : null}
       </Td>
       <Td>
         <span className="text-xs text-muted">{MATCH_TYPE_LABELS[r.match_type]}</span>
@@ -99,7 +99,7 @@ function RouteRow({
       <Td className="text-xs">
         {r.action === "SERVE" ? (
           <span>
-            Servir{" "}
+            Serve{" "}
             {r.page ? (
               <Link href={`/paginas/${r.page.id}`} className="font-medium hover:text-accent">
                 {r.page.name}
@@ -108,16 +108,16 @@ function RouteRow({
               "?"
             )}
             {r.page ? <span className="text-muted"> · {PAGE_KIND_LABELS[r.page.kind]}</span> : null}
-            {r.page && r.page.status !== "PUBLISHED" ? <Badge tone="warning" className="ml-1">não publicada</Badge> : null}
-            <div className="font-mono text-muted">{r.slug ?? "path da request"}</div>
+            {r.page && r.page.status !== "PUBLISHED" ? <Badge tone="warning" className="ml-1">not published</Badge> : null}
+            <div className="font-mono text-muted">{r.slug ?? "request path"}</div>
           </span>
         ) : r.action === "REDIRECT" ? (
           <span>
-            Redirecionar ({r.status_code}) → <span className="break-all font-mono">{r.redirect_url}</span>
-            {r.preserve_query ? <span className="text-muted"> · mantém query</span> : null}
+            Redirect ({r.status_code}) → <span className="break-all font-mono">{r.redirect_url}</span>
+            {r.preserve_query ? <span className="text-muted"> · keeps query</span> : null}
           </span>
         ) : (
-          <span>Bloquear ({r.status_code})</span>
+          <span>Block ({r.status_code})</span>
         )}
       </Td>
       <Td className="text-right">
@@ -125,10 +125,10 @@ function RouteRow({
           <RowAction action={moveRoute.bind(null, r.id, domainId, "up")} label="↑" variant="ghost" />
           <RowAction action={moveRoute.bind(null, r.id, domainId, "down")} label="↓" variant="ghost" />
           <Button size="sm" variant="secondary" onClick={onEdit}>
-            {editing ? "Fechar" : "Editar"}
+            {editing ? "Close" : "Edit"}
           </Button>
-          <RowAction action={toggleRoute.bind(null, r.id, domainId, !r.is_active)} label={r.is_active ? "Desativar" : "Ativar"} variant="ghost" />
-          <RowAction action={deleteRoute.bind(null, r.id, domainId)} label="Remover" variant="danger" confirm="Remover esta rota?" />
+          <RowAction action={toggleRoute.bind(null, r.id, domainId, !r.is_active)} label={r.is_active ? "Deactivate" : "Activate"} variant="ghost" />
+          <RowAction action={deleteRoute.bind(null, r.id, domainId)} label="Remove" variant="danger" confirm="Remove this route?" />
         </div>
       </Td>
     </Tr>

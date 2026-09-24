@@ -16,18 +16,18 @@ export type WidgetDef = {
 };
 
 export const WIDGETS: WidgetDef[] = [
-  { key: "text", label: "Text", hint: "Parágrafo de texto" },
-  { key: "image", label: "Image", hint: "Imagem por URL", prompt: { label: "URL da imagem", placeholder: "https://…/imagem.jpg" } },
-  { key: "video", label: "Video", hint: "YouTube, Vimeo ou embed", prompt: { label: "URL do vídeo", placeholder: "https://www.youtube.com/watch?v=…" } },
-  { key: "button", label: "Button", hint: "Chamada para ação" },
-  { key: "container", label: "Container", hint: "Seção em branco" },
-  { key: "html", label: "HTML", hint: "Bloco de HTML livre", prompt: { label: "HTML do bloco", placeholder: "<div>…</div>" } },
+  { key: "text", label: "Text", hint: "Text paragraph" },
+  { key: "image", label: "Image", hint: "Image from a URL", prompt: { label: "Image URL", placeholder: "https://…/image.jpg" } },
+  { key: "video", label: "Video", hint: "YouTube, Vimeo or embed", prompt: { label: "Video URL", placeholder: "https://www.youtube.com/watch?v=…" } },
+  { key: "button", label: "Button", hint: "Call to action" },
+  { key: "container", label: "Container", hint: "Blank section" },
+  { key: "html", label: "HTML", hint: "Free-form HTML block", prompt: { label: "Block HTML", placeholder: "<div>…</div>" } },
 ];
 
 const PLACEHOLDER_IMG =
   "data:image/svg+xml;charset=utf-8," +
   encodeURIComponent(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="400" viewBox="0 0 800 400"><rect width="800" height="400" fill="#e4e4e7"/><text x="400" y="210" font-family="system-ui,sans-serif" font-size="28" fill="#71717a" text-anchor="middle">Imagem</text></svg>`,
+    `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="400" viewBox="0 0 800 400"><rect width="800" height="400" fill="#e4e4e7"/><text x="400" y="210" font-family="system-ui,sans-serif" font-size="28" fill="#71717a" text-anchor="middle">Image</text></svg>`,
   );
 
 function esc(s: string): string {
@@ -48,17 +48,17 @@ export function toEmbedUrl(url: string): string {
 export function widgetHtml(key: WidgetKey, value = ""): string {
   switch (key) {
     case "text":
-      return `<p style="margin:0 0 16px;font-size:18px;line-height:1.6">Novo texto. Dê dois cliques para editar.</p>`;
+      return `<p style="margin:0 0 16px;font-size:18px;line-height:1.6">New text. Double-click to edit.</p>`;
     case "image":
       return `<img src="${esc(value.trim() || PLACEHOLDER_IMG)}" alt="" style="display:block;max-width:100%;height:auto">`;
     case "video": {
       const src = esc(toEmbedUrl(value) || "about:blank");
-      return `<div style="position:relative;width:100%;padding-top:56.25%"><iframe src="${src}" title="Vídeo" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen style="position:absolute;inset:0;width:100%;height:100%;border:0"></iframe></div>`;
+      return `<div style="position:relative;width:100%;padding-top:56.25%"><iframe src="${src}" title="Video" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen style="position:absolute;inset:0;width:100%;height:100%;border:0"></iframe></div>`;
     }
     case "button":
-      return `<a href="#" style="display:inline-block;padding:14px 28px;border-radius:10px;background:#2563eb;color:#fff;text-decoration:none;font-weight:600">Chamada para ação</a>`;
+      return `<a href="#" style="display:inline-block;padding:14px 28px;border-radius:10px;background:#2563eb;color:#fff;text-decoration:none;font-weight:600">Call to action</a>`;
     case "container":
-      return `<section style="padding:32px 24px"><p style="margin:0">Novo container. Insira outros widgets aqui dentro.</p></section>`;
+      return `<section style="padding:32px 24px"><p style="margin:0">New container. Add other widgets inside it.</p></section>`;
     case "html":
       return value;
   }

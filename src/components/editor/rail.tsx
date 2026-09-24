@@ -11,7 +11,7 @@ export type RailPanel = "pages" | "funnel" | "widgets" | "layers" | "links";
 
 const ITEMS: { key: RailPanel; label: string; icon: ReactNode }[] = [
   { key: "pages", label: "Pages", icon: <PagesIcon className="size-5" /> },
-  { key: "funnel", label: "Funil", icon: <RouteIcon className="size-5" /> },
+  { key: "funnel", label: "Funnel", icon: <RouteIcon className="size-5" /> },
   { key: "widgets", label: "Widgets", icon: <GridIcon className="size-5" /> },
   { key: "layers", label: "Layers", icon: <LayersIcon className="size-5" /> },
   { key: "links", label: "Links", icon: <LinkIcon className="size-5" /> },
@@ -28,7 +28,7 @@ export function Rail({
   badges?: Partial<Record<RailPanel, number>>;
 }) {
   return (
-    <nav className="flex w-16 shrink-0 flex-col items-stretch gap-1 rounded-xl border border-border bg-surface p-1.5" aria-label="Painéis do editor">
+    <nav className="flex w-16 shrink-0 flex-col items-stretch gap-1 rounded-xl border border-border bg-surface p-1.5" aria-label="Editor panels">
       {ITEMS.map((it) => {
         const isActive = active === it.key;
         const badge = badges?.[it.key];

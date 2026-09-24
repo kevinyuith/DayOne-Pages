@@ -104,13 +104,13 @@ export async function fetchPublicHtml(rawUrl: string): Promise<FetchPageResult> 
   try {
     url = new URL(rawUrl.trim());
   } catch {
-    return { ok: false, reason: "Link inválido. Use o endereço completo (https://...)." };
+    return { ok: false, reason: "Invalid link. Use the full address (https://...)." };
   }
 
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
-    if (url.protocol !== "https:" && url.protocol !== "http:") return { ok: false, reason: "Só links http:// ou https://." };
-    if (url.username || url.password) return { ok: false, reason: "Link com usuário/senha não é aceito." };
-    if (!(await publicHost(url.hostname))) return { ok: false, reason: `${url.hostname} não é um endereço público.` };
+    if (url.protocol !== "https:" && url.protocol !== "http:") return { ok: false, reason: "Only http:// or https:// links." };
+    if (url.username || url.password) return { ok: false, reason: "Links with a username/password aren't accepted." };
+    if (!(await publicHost(url.hostname))) return { ok: false, reason: `${url.hostname} is not a public address.` };
 
     let res: Response;
     try {
@@ -121,25 +121,25 @@ export async function fetchPublicHtml(rawUrl: string): Promise<FetchPageResult> 
       });
     } catch (cause) {
       const timeout = cause instanceof Error && cause.name === "TimeoutError";
-      return { ok: false, reason: timeout ? "O site demorou mais de 10 s para responder." : `Não consegui acessar ${url.hostname}.` };
+      return { ok: false, reason: timeout ? "The site took more than 10 s to respond." : `Couldn't reach ${url.hostname}.` };
     }
 
     if (res.status >= 300 && res.status < 400) {
       const next = res.headers.get("location");
-      if (!next) return { ok: false, reason: `Redirect sem destino (HTTP ${res.status}).` };
+      if (!next) return { ok: false, reason: `Redirect with no destination (HTTP ${res.status}).` };
       url = new URL(next, url);
       continue;
     }
-    if (!res.ok) return { ok: false, reason: `O site respondeu HTTP ${res.status}.` };
+    if (!res.ok) return { ok: false, reason: `The site returned HTTP ${res.status}.` };
 
     const type = res.headers.get("content-type") ?? "";
-    if (type && !/html/i.test(type)) return { ok: false, reason: `O link não é uma página HTML (${type.split(";")[0]}).` };
+    if (type && !/html/i.test(type)) return { ok: false, reason: `The link is not an HTML page (${type.split(";")[0]}).` };
 
     const bytes = await readCapped(res);
-    if (!bytes) return { ok: false, reason: "A página passa de 5 MB." };
+    if (!bytes) return { ok: false, reason: "The page is larger than 5 MB." };
     const html = decode(bytes, type);
-    if (!html.trim()) return { ok: false, reason: "O site devolveu uma página vazia." };
+    if (!html.trim()) return { ok: false, reason: "The site returned an empty page." };
     return { ok: true, html, finalUrl: url.toString() };
   }
-  return { ok: false, reason: "Redirects demais." };
+  return { ok: false, reason: "Too many redirects." };
 }

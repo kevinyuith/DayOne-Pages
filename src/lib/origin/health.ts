@@ -18,7 +18,7 @@ const TIMEOUT_MS = 8_000;
 
 export async function checkDomainHealth(domain: string): Promise<HealthResult> {
   const expected = process.env.SERVER_ID;
-  if (!expected) return { ok: false, error: "SERVER_ID não configurado no dashboard." };
+  if (!expected) return { ok: false, error: "SERVER_ID is not set in the dashboard." };
 
   const errors: string[] = [];
 
@@ -37,11 +37,11 @@ export async function checkDomainHealth(domain: string): Promise<HealthResult> {
       }
       errors.push(
         marker
-          ? `${scheme}: servidor respondeu com outro SERVER_ID`
-          : `${scheme}: HTTP ${res.status} sem o marcador do nosso servidor`,
+          ? `${scheme}: server responded with a different SERVER_ID`
+          : `${scheme}: HTTP ${res.status} without our server's marker`,
       );
     } catch (cause) {
-      const msg = cause instanceof Error ? cause.name === "TimeoutError" ? "tempo esgotado" : cause.message : "falha";
+      const msg = cause instanceof Error ? cause.name === "TimeoutError" ? "timed out" : cause.message : "failed";
       errors.push(`${scheme}: ${msg}`);
     }
   }

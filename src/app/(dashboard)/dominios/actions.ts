@@ -41,7 +41,7 @@ function revalidateDomain(id?: string) {
 async function purgeAfterWrite(domain: string, done: string): Promise<ActionResult> {
   const r = await purgeHost(domain);
   if (r.ok || r.skipped) return { ok: true };
-  return fail(`${done}, mas o cache do servidor não foi limpo (${r.error}). Vale em até 30 s.`);
+  return fail(`${done}, but the server cache wasn't cleared (${r.error}). It takes effect within 30 s.`);
 }
 
 const UNIQUE_VIOLATION = "23505";
@@ -56,7 +56,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 function ownPageError(error: { code?: string; message: string }): string | null {
   if (error.code !== CHECK_VIOLATION) return null;
   if (/own pages|pages of this domain|not in site/.test(error.message)) {
-    return "Essa página não é mais deste domínio (foi removida?). Recarregue a tela.";
+    return "That page no longer belongs to this domain (was it removed?). Reload the page.";
   }
   return null;
 }
@@ -77,15 +77,15 @@ export async function addDomain(prev: DomainFormState, fd: FormData): Promise<Do
   const templateId = String(fd.get("template_id") ?? "").trim() || null;
 
   if (!isValidDomain(domain)) {
-    return { error: "Domínio inválido. Use o formato exemplo.com (sem http://, sem barra, sem www).", attempt };
+    return { error: "Invalid domain. Use the format example.com (no http://, no slash, no www).", attempt };
   }
-  if (templateId && !UUID_RE.test(templateId)) return { error: "Template inválido.", attempt };
+  if (templateId && !UUID_RE.test(templateId)) return { error: "Invalid template.", attempt };
 
   const db = supabaseService();
   try {
     const { data, error } = await db.from("domains").insert({ domain, status: "ACTIVE", placeholders: emptyPlaceholders() }).select("id").single();
     if (error) {
-      if (error.code === UNIQUE_VIOLATION) return { error: `${domain} já está cadastrado.`, attempt };
+      if (error.code === UNIQUE_VIOLATION) return { error: `${domain} is already registered.`, attempt };
       throw new Error(error.message);
     }
     if (templateId) {
@@ -93,7 +93,7 @@ export async function addDomain(prev: DomainFormState, fd: FormData): Promise<Do
       const copy = await db.rpc("domain_page_copy", { p_domain: (data as { id: string }).id, p_template: templateId });
       if (copy.error) {
         revalidateDomain();
-        return { error: `${domain} cadastrado, mas a cópia do template falhou (${copy.error.message}). Escolha o template na tela do domínio.`, attempt };
+        return { error: `${domain} registered, but copying the template failed (${copy.error.message}). Choose the template on the domain's page.`, attempt };
       }
     }
   } catch (cause) {
@@ -101,7 +101,7 @@ export async function addDomain(prev: DomainFormState, fd: FormData): Promise<Do
   }
 
   revalidateDomain();
-  return { success: `${domain} cadastrado. Aponte o DNS e clique em Verificar.`, attempt };
+  return { success: `${domain} registered. Point the DNS and click Verify.`, attempt };
 }
 
 /**
@@ -112,13 +112,13 @@ export async function addDomain(prev: DomainFormState, fd: FormData): Promise<Do
  */
 export async function registerSeenDomain(host: string): Promise<ActionResult> {
   const domain = normalizeHost(host);
-  if (!isValidDomain(domain)) return fail(`${domain || host} não é um domínio válido.`);
+  if (!isValidDomain(domain)) return fail(`${domain || host} isn't a valid domain.`);
 
   const db = supabaseService();
   try {
     const { data, error } = await db.from("domains").insert({ domain, status: "ACTIVE", placeholders: emptyPlaceholders() }).select("id").single();
     if (error) {
-      if (error.code === UNIQUE_VIOLATION) return fail(`${domain} já está cadastrado.`);
+      if (error.code === UNIQUE_VIOLATION) return fail(`${domain} is already registered.`);
       throw new Error(error.message);
     }
     const id = (data as { id: string }).id;
@@ -126,7 +126,7 @@ export async function registerSeenDomain(host: string): Promise<ActionResult> {
     const { error: hitsError } = await db.from("hits").update({ domain_id: id }).is("domain_id", null).in("host", [domain, `www.${domain}`]);
     revalidateDomain();
     revalidatePath("/logs");
-    if (hitsError) return fail(`${domain} cadastrado, mas os hits antigos não foram ligados a ele (${hitsError.message}).`);
+    if (hitsError) return fail(`${domain} registered, but its old hits weren't linked to it (${hitsError.message}).`);
     return { ok: true };
   } catch (cause) {
     return fail(errorReason(cause));
@@ -140,7 +140,7 @@ export async function verifyDomain(id: string): Promise<VerifyResult> {
   try {
     const { data, error } = await db.from("domains").select("domain").eq("id", id).maybeSingle();
     if (error) throw new Error(error.message);
-    if (!data) return fail("Domínio não encontrado.");
+    if (!data) return fail("Domain not found.");
 
     const result = await checkDomainHealth((data as { domain: string }).domain);
     const { error: updateError } = await db
@@ -170,7 +170,7 @@ export async function setDefaultPage(id: string, pageId: string | null): Promise
       throw new Error(error.message);
     }
     revalidateDomain(id);
-    return purgeAfterWrite((data as { domain: string }).domain, "Página padrão trocada");
+    return purgeAfterWrite((data as { domain: string }).domain, "Default page changed");
   } catch (cause) {
     return fail(errorReason(cause));
   }
@@ -183,16 +183,16 @@ export async function setDefaultPage(id: string, pageId: string | null): Promise
  * muda a outra. Domínio sem página padrão ganha esta como padrão.
  */
 export async function copyTemplateToDomain(domainId: string, templateId: string): Promise<ActionResult<{ pageId: string }>> {
-  if (!UUID_RE.test(templateId)) return fail("Escolha um template.");
+  if (!UUID_RE.test(templateId)) return fail("Choose a template.");
   try {
     const { data, error } = await supabaseService().rpc("domain_page_copy", { p_domain: domainId, p_template: templateId });
     if (error) {
-      if (error.code === "P0002") return fail("Template ou domínio não encontrado.");
+      if (error.code === "P0002") return fail("Template or domain not found.");
       throw new Error(error.message);
     }
     revalidateDomain(domainId);
     const domain = await domainName(domainId);
-    const purged = domain ? await purgeAfterWrite(domain, "Template copiado") : { ok: true as const };
+    const purged = domain ? await purgeAfterWrite(domain, "Template copied") : { ok: true as const };
     return purged.ok ? { ok: true, pageId: String(data) } : purged;
   } catch (cause) {
     return fail(errorReason(cause));
@@ -217,9 +217,9 @@ export type VariationPreview = { contents: Record<string, string>; summary: stri
 export async function previewTemplateVariation(input: VariationInput): Promise<ActionResult<VariationPreview>> {
   const options: VariationOptions = { colors: !!input.colors, fonts: !!input.fonts, shape: !!input.shape, spacing: !!input.spacing };
   const angle = (input.angle ?? "").trim();
-  if (!UUID_RE.test(input.templateId)) return fail("Escolha um template.");
-  if (!Object.values(options).some(Boolean) && !angle) return fail("Marque o que variar ou escreva o ângulo da copy.");
-  if (angle.length > MAX_ANGLE) return fail(`O ângulo da copy passa de ${MAX_ANGLE} caracteres.`);
+  if (!UUID_RE.test(input.templateId)) return fail("Choose a template.");
+  if (!Object.values(options).some(Boolean) && !angle) return fail("Check what to vary or write the copy angle.");
+  if (angle.length > MAX_ANGLE) return fail(`The copy angle exceeds ${MAX_ANGLE} characters.`);
 
   const db = supabaseService();
   try {
@@ -229,7 +229,7 @@ export async function previewTemplateVariation(input: VariationInput): Promise<A
     ]);
     if (page.error) throw new Error(page.error.message);
     if (slugs.error) throw new Error(slugs.error.message);
-    if (!page.data || !slugs.data?.length) return fail("Template não encontrado.");
+    if (!page.data || !slugs.data?.length) return fail("Template not found.");
 
     const params = pickVariation();
     const stats: VariationStats = { colors: 0, fonts: 0, radii: 0, shadows: 0, spacings: 0, families: {} };
@@ -250,10 +250,10 @@ export async function previewTemplateVariation(input: VariationInput): Promise<A
       const r = await rewriteCopyAngle(contents, angle);
       if (!r.ok) return fail(r.reason);
       contents = r.pages;
-      summary.push(`Copy: ${r.rewritten} ${r.rewritten === 1 ? "trecho reescrito" : "trechos reescritos"} com o novo ângulo.`);
+      summary.push(`Copy: ${r.rewritten} ${r.rewritten === 1 ? "passage rewritten" : "passages rewritten"} with the new angle.`);
     }
 
-    const name = `${(page.data as { name: string }).name} · variação`.slice(0, 120);
+    const name = `${(page.data as { name: string }).name} · variation`.slice(0, 120);
     return { ok: true, contents, summary, name };
   } catch (cause) {
     return fail(errorReason(cause));
@@ -267,11 +267,11 @@ export async function copyTemplateVariation(
   name: string,
   contents: Record<string, string>,
 ): Promise<ActionResult<{ pageId: string }>> {
-  if (!UUID_RE.test(templateId)) return fail("Escolha um template.");
+  if (!UUID_RE.test(templateId)) return fail("Choose a template.");
   const cleanName = (name ?? "").trim().slice(0, 120);
-  if (cleanName.length < 2) return fail("Dê um nome à página.");
+  if (cleanName.length < 2) return fail("Give the page a name.");
   for (const html of Object.values(contents ?? {})) {
-    if (typeof html !== "string" || Buffer.byteLength(html, "utf8") > MAX_CONTENT_BYTES) return fail("Uma das slugs passa de 5 MB.");
+    if (typeof html !== "string" || Buffer.byteLength(html, "utf8") > MAX_CONTENT_BYTES) return fail("One of the slugs exceeds 5 MB.");
   }
   try {
     const { data, error } = await supabaseService().rpc("domain_page_add", {
@@ -281,12 +281,12 @@ export async function copyTemplateVariation(
       p_contents: contents,
     });
     if (error) {
-      if (error.code === "P0002") return fail("Template ou domínio não encontrado.");
+      if (error.code === "P0002") return fail("Template or domain not found.");
       throw new Error(error.message);
     }
     revalidateDomain(domainId);
     const domain = await domainName(domainId);
-    const purged = domain ? await purgeAfterWrite(domain, "Variação copiada") : { ok: true as const };
+    const purged = domain ? await purgeAfterWrite(domain, "Variation copied") : { ok: true as const };
     return purged.ok ? { ok: true, pageId: String(data) } : purged;
   } catch (cause) {
     return fail(errorReason(cause));
@@ -299,16 +299,16 @@ export async function copyTemplateVariation(
  * mantém o status; as edições feitas nela se perdem.
  */
 export async function replaceDomainPage(domainId: string, pageId: string, templateId: string): Promise<ActionResult> {
-  if (!UUID_RE.test(templateId)) return fail("Escolha um template.");
+  if (!UUID_RE.test(templateId)) return fail("Choose a template.");
   try {
     const { error } = await supabaseService().rpc("domain_page_replace", { p_domain: domainId, p_page: pageId, p_template: templateId });
     if (error) {
-      if (error.code === "P0002") return fail("Página ou template não encontrado.");
+      if (error.code === "P0002") return fail("Page or template not found.");
       throw new Error(error.message);
     }
     revalidateDomain(domainId);
     const domain = await domainName(domainId);
-    return domain ? purgeAfterWrite(domain, "Template trocado") : { ok: true };
+    return domain ? purgeAfterWrite(domain, "Template replaced") : { ok: true };
   } catch (cause) {
     return fail(errorReason(cause));
   }
@@ -324,15 +324,15 @@ export async function removeDomainPage(domainId: string, pageId: string): Promis
     ]);
     if (dom.error) throw new Error(dom.error.message);
     const d = dom.data as { default_page_id: string | null; filter_pass_page_id: string | null; filter_fail_page_id: string | null } | null;
-    if (!d) return fail("Domínio não encontrado.");
-    if (d.default_page_id === pageId) return fail("Esta é a página padrão. Escolha outra como padrão antes de remover.");
-    if (d.filter_pass_page_id === pageId || d.filter_fail_page_id === pageId) return fail("O filtro do domínio usa esta página. Troque ou limpe o filtro antes.");
-    if ((routes.count ?? 0) > 0) return fail(`Há ${routes.count} rota(s) servindo esta página. Ajuste as rotas antes.`);
+    if (!d) return fail("Domain not found.");
+    if (d.default_page_id === pageId) return fail("This is the default page. Choose another one as default before removing it.");
+    if (d.filter_pass_page_id === pageId || d.filter_fail_page_id === pageId) return fail("The domain filter uses this page. Change or clear the filter first.");
+    if ((routes.count ?? 0) > 0) return fail(`${routes.count} ${routes.count === 1 ? "route serves" : "routes serve"} this page. Adjust the routes first.`);
 
     const { error } = await db.rpc("domain_page_remove", { p_domain: domainId, p_page: pageId });
     if (error) {
       const own = ownPageError(error);
-      if (own) return fail("A página ainda está em uso. Recarregue a tela.");
+      if (own) return fail("The page is still in use. Reload the page.");
       throw new Error(error.message);
     }
     revalidateDomain(domainId);
@@ -356,18 +356,18 @@ export async function savePlaceholders(domainId: string, prev: PlaceholdersFormS
   const values: Record<string, string> = {};
   for (const f of PLACEHOLDER_FIELDS) {
     const v = String(fd.get(f.key) ?? "").trim();
-    if (v.length > f.max) return { error: `${f.label}: no máximo ${f.max} caracteres.`, attempt };
+    if (v.length > f.max) return { error: `${f.label}: at most ${f.max} characters.`, attempt };
     values[f.key] = v;
   }
   const email = values["company.email"];
-  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { error: "E-mail inválido.", attempt };
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { error: "Invalid email.", attempt };
 
   try {
     const { data, error } = await supabaseService().from("domains").update({ placeholders: values }).eq("id", domainId).select("domain").single();
     if (error) throw new Error(error.message);
     revalidateDomain(domainId);
-    const purged = await purgeAfterWrite((data as { domain: string }).domain, "Dados salvos");
-    return purged.ok ? { success: "Dados salvos. As páginas do domínio já usam os valores novos.", attempt } : { error: purged.reason, attempt };
+    const purged = await purgeAfterWrite((data as { domain: string }).domain, "Details saved");
+    return purged.ok ? { success: "Details saved. The domain's pages already use the new values.", attempt } : { error: purged.reason, attempt };
   } catch (cause) {
     return { error: errorReason(cause), attempt };
   }
@@ -405,15 +405,15 @@ export async function saveFilter(prev: FilterFormState, fd: FormData): Promise<F
   const passPageId = str(fd, "filter_pass_page_id") || null;
   const failPageId = str(fd, "filter_fail_page_id") || null;
 
-  if (!domainId) return { error: "Domínio ausente.", attempt };
-  if (!passPageId) return { error: "Escolha a página para quem PASSA no filtro.", attempt };
-  if (!failPageId) return { error: "Escolha a página para quem NÃO passa no filtro.", attempt };
+  if (!domainId) return { error: "Missing domain.", attempt };
+  if (!passPageId) return { error: "Choose the page for visitors who PASS the filter.", attempt };
+  if (!failPageId) return { error: "Choose the page for visitors who DON'T pass the filter.", attempt };
 
   const conditions = parseConditionsForm(fd);
   if (!conditions.ok) return { error: conditions.reason, attempt };
-  if (conditions.value.bot) return { error: 'A condição "só bots" não vale no filtro; use uma rota de bloqueio.', attempt };
+  if (conditions.value.bot) return { error: 'The "bots only" condition does not apply to the filter; use a block route.', attempt };
   if (Object.keys(conditions.value).length === 0) {
-    return { error: "Defina ao menos uma condição, senão todo visitante passa e a página de reprovação nunca aparece.", attempt };
+    return { error: "Set at least one condition, otherwise every visitor passes and the fail page never shows.", attempt };
   }
 
   try {
@@ -427,7 +427,7 @@ export async function saveFilter(prev: FilterFormState, fd: FormData): Promise<F
       throw new Error(error.message);
     }
     revalidateDomain(domainId);
-    return { success: "Filtro salvo. Entra no ar em até 30 s (ou use Limpar cache).", attempt };
+    return { success: "Filter saved. It goes live within 30 s (or use Clear cache).", attempt };
   } catch (cause) {
     return { error: errorReason(cause), attempt };
   }
@@ -449,12 +449,12 @@ export async function clearFilter(domainId: string): Promise<ActionResult> {
 }
 
 export async function setDomainStatus(id: string, status: DomainStatus): Promise<ActionResult> {
-  if (status !== "ACTIVE" && status !== "PAUSED") return fail("Status inválido.");
+  if (status !== "ACTIVE" && status !== "PAUSED") return fail("Invalid status.");
   try {
     const { data, error } = await supabaseService().from("domains").update({ status }).eq("id", id).select("domain").single();
     if (error) throw new Error(error.message);
     revalidateDomain(id);
-    return purgeAfterWrite(data.domain, status === "ACTIVE" ? "Domínio ativado" : "Domínio pausado");
+    return purgeAfterWrite(data.domain, status === "ACTIVE" ? "Domain activated" : "Domain paused");
   } catch (cause) {
     return fail(errorReason(cause));
   }
@@ -507,27 +507,27 @@ export async function saveRoute(prev: RouteFormState, fd: FormData): Promise<Rou
   const statusRaw = str(fd, "status_code");
   const preserveQuery = fd.get("preserve_query") === "on";
 
-  if (!domainId) return { error: "Domínio ausente.", attempt };
-  if (!Number.isInteger(priority) || priority < 0 || priority > 100000) return { error: "Prioridade deve ser um inteiro entre 0 e 100000.", attempt };
-  if (!isMatchType(matchType)) return { error: "Tipo de casamento inválido.", attempt };
-  if (!isRouteAction(action)) return { error: "Ação inválida.", attempt };
+  if (!domainId) return { error: "Missing domain.", attempt };
+  if (!Number.isInteger(priority) || priority < 0 || priority > 100000) return { error: "Priority must be an integer between 0 and 100000.", attempt };
+  if (!isMatchType(matchType)) return { error: "Invalid match type.", attempt };
+  if (!isRouteAction(action)) return { error: "Invalid action.", attempt };
 
   // Path
   let pathPattern: string | null = null;
   if (matchType === "ANY") {
     pathPattern = null;
   } else {
-    if (!rawPattern) return { error: "Informe o path (ex.: /promo).", attempt };
+    if (!rawPattern) return { error: "Enter the path (e.g. /promo).", attempt };
     if (matchType === "REGEX") {
       try {
         new RegExp(rawPattern);
       } catch {
-        return { error: "Regex inválida.", attempt };
+        return { error: "Invalid regex.", attempt };
       }
       pathPattern = rawPattern;
     } else {
       pathPattern = normalizePath(rawPattern);
-      if (!isValidSlug(pathPattern)) return { error: "Path inválido. Use letras minúsculas, números, `-`, `_`, `.` e `/`.", attempt };
+      if (!isValidSlug(pathPattern)) return { error: "Invalid path. Use lowercase letters, numbers, `-`, `_`, `.` and `/`.", attempt };
     }
   }
 
@@ -538,27 +538,27 @@ export async function saveRoute(prev: RouteFormState, fd: FormData): Promise<Rou
   let finalRedirect: string | null = null;
 
   if (action === "SERVE") {
-    if (!pageId) return { error: "Escolha a página a servir.", attempt };
+    if (!pageId) return { error: "Choose the page to serve.", attempt };
     finalPageId = pageId;
     if (rawSlug) {
       slug = normalizePath(rawSlug);
-      if (!isValidSlug(slug)) return { error: "Slug inválida.", attempt };
+      if (!isValidSlug(slug)) return { error: "Invalid slug.", attempt };
     }
   } else if (action === "REDIRECT") {
-    if (!redirectUrl || !/^https?:\/\/\S+$/i.test(redirectUrl)) return { error: "Informe a URL de destino completa (https://...).", attempt };
+    if (!redirectUrl || !/^https?:\/\/\S+$/i.test(redirectUrl)) return { error: "Enter the full destination URL (https://...).", attempt };
     finalRedirect = redirectUrl;
     statusCode = Number.parseInt(statusRaw || "302", 10);
-    if (!(REDIRECT_CODES as readonly number[]).includes(statusCode)) return { error: "Código de redirect deve ser 301, 302, 307 ou 308.", attempt };
+    if (!(REDIRECT_CODES as readonly number[]).includes(statusCode)) return { error: "Redirect code must be 301, 302, 307 or 308.", attempt };
   } else {
     statusCode = Number.parseInt(statusRaw || "404", 10);
-    if (!(BLOCK_CODES as readonly number[]).includes(statusCode)) return { error: "Código de bloqueio deve ser 403, 404, 410 ou 451.", attempt };
+    if (!(BLOCK_CODES as readonly number[]).includes(statusCode)) return { error: "Block code must be 403, 404, 410 or 451.", attempt };
   }
 
   // Condições
   const conditions = parseConditionsForm(fd);
   if (!conditions.ok) return { error: conditions.reason, attempt };
   if (conditions.value.bot && action !== "BLOCK") {
-    return { error: "A condição \"só bots\" só pode ser usada com a ação Bloquear.", attempt };
+    return { error: "The \"bots only\" condition can only be used with the Block action.", attempt };
   }
 
   const db = supabaseService();
@@ -584,14 +584,14 @@ export async function saveRoute(prev: RouteFormState, fd: FormData): Promise<Rou
       : db.from("domain_routes").insert(row).select("id").single();
     const { data, error } = await query;
     if (error) {
-      if (error.code === UNIQUE_VIOLATION) return { error: `Já existe uma rota com prioridade ${priority} neste domínio.`, attempt };
+      if (error.code === UNIQUE_VIOLATION) return { error: `A route with priority ${priority} already exists on this domain.`, attempt };
       const own = ownPageError(error);
       if (own) return { error: own, attempt };
       // Regex que o JS aceita e o Postgres (POSIX) recusa: o trigger devolve check_violation citando path_pattern.
-      if (error.code === "23514" && error.message.includes("path_pattern")) return { error: "Regex inválida para o banco (POSIX).", attempt };
+      if (error.code === "23514" && error.message.includes("path_pattern")) return { error: "Invalid regex for the database (POSIX).", attempt };
       throw new Error(error.message);
     }
-    if (!data) return { error: "Rota não encontrada.", attempt };
+    if (!data) return { error: "Route not found.", attempt };
     revalidateDomain(domainId);
     return { savedId: (data as { id: string }).id, attempt };
   } catch (cause) {
@@ -629,7 +629,7 @@ export async function moveRoute(id: string, domainId: string, direction: "up" | 
     if (error) throw new Error(error.message);
     const list = (data ?? []) as { id: string; priority: number }[];
     const index = list.findIndex((r) => r.id === id);
-    if (index < 0) return fail("Rota não encontrada.");
+    if (index < 0) return fail("Route not found.");
     const neighbor = list[direction === "up" ? index - 1 : index + 1];
     if (!neighbor) return { ok: true };
 

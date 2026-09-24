@@ -300,16 +300,17 @@ export function applyVariation(html: string, p: VariationParams, o: VariationOpt
 /** Resumo legível do que a variação fez. */
 export function describeVariation(p: VariationParams, o: VariationOptions, stats: VariationStats): string[] {
   const lines: string[] = [];
-  if (o.colors) lines.push(`Cores: tom girado ${p.hue > 0 ? "+" : ""}${p.hue}° em ${stats.colors} ${stats.colors === 1 ? "cor" : "cores"} (cinzas, preto e branco ficam).`);
+  const adjustments = (n: number) => `${n} ${n === 1 ? "adjustment" : "adjustments"}`;
+  if (o.colors) lines.push(`Colors: hue shifted ${p.hue > 0 ? "+" : ""}${p.hue}° in ${stats.colors} ${stats.colors === 1 ? "color" : "colors"} (grays, black and white stay the same).`);
   if (o.fonts) {
-    const f = [stats.families.sans && `${stats.families.sans} (sem serifa)`, stats.families.serif && `${stats.families.serif} (serifa)`].filter(Boolean);
-    lines.push(`Fontes: ${f.join(" e ")}.`);
+    const f = [stats.families.sans && `${stats.families.sans} (sans-serif)`, stats.families.serif && `${stats.families.serif} (serif)`].filter(Boolean);
+    lines.push(`Fonts: ${f.join(" and ")}.`);
   }
   if (o.shape) {
     lines.push(
-      `Cantos ${p.radius > 1 ? "mais arredondados" : "mais retos"} (×${p.radius}) e sombras ${p.shadow > 1 ? "mais fortes" : "mais leves"} (×${p.shadow}): ${stats.radii + stats.shadows} ajustes.`,
+      `${p.radius > 1 ? "Rounder" : "Sharper"} corners (×${p.radius}) and ${p.shadow > 1 ? "stronger" : "softer"} shadows (×${p.shadow}): ${adjustments(stats.radii + stats.shadows)}.`,
     );
   }
-  if (o.spacing) lines.push(`Espaçamentos ${p.spacing > 1 ? "mais folgados" : "mais apertados"} (×${p.spacing}): ${stats.spacings} ajustes.`);
+  if (o.spacing) lines.push(`${p.spacing > 1 ? "Looser" : "Tighter"} spacing (×${p.spacing}): ${adjustments(stats.spacings)}.`);
   return lines;
 }
