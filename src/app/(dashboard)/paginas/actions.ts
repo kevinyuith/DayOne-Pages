@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { errorReason, fail, type ActionResult } from "@/lib/action-result";
+import { fetchPublicHtml } from "@/lib/pages/fetch-page";
 import { isValidSlug, normalizePath } from "@/lib/pages/normalize";
 import { STARTER_HTML } from "@/lib/pages/starter-template";
 import { refreshPageIds } from "@/lib/pages/subpages";
@@ -39,29 +40,67 @@ function optionalId(v: unknown): string | null | undefined {
 
 export type CreatePageState = { error?: string; attempt: number };
 
+/** De onde vem o conteúdo de um template novo. `html` cobre o HTML colado e o trazido por link. */
+const SOURCES = ["blank", "template", "html"] as const;
+type CreateSource = (typeof SOURCES)[number];
+
+/**
+ * Cria um template, como rascunho, na pasta aberta:
+ * - `blank`: do zero (modelo inicial, slug `/`);
+ * - `template`: copia outro template com todas as slugs (ids novos para as
+ *   sub-páginas do funil, como em Duplicar);
+ * - `html`: o HTML colado, ou o que "copiar de um link" trouxe (já com os
+ *   endereços absolutos; `source_url` vai para as notas).
+ */
 export async function createPage(prev: CreatePageState, fd: FormData): Promise<CreatePageState> {
   const attempt = prev.attempt + 1;
   const name = String(fd.get("name") ?? "").trim();
   const kind = String(fd.get("kind") ?? "OTHER");
   const folderId = optionalId(fd.get("folder_id"));
+  const source = String(fd.get("source") ?? "blank") as CreateSource;
 
   if (name.length < NAME_MIN || name.length > NAME_MAX) {
     return { error: `Dê um nome com ${NAME_MIN} a ${NAME_MAX} caracteres.`, attempt };
   }
   if (!isPageKind(kind)) return { error: "Tipo inválido.", attempt };
   if (folderId === undefined) return { error: "Pasta inválida.", attempt };
+  if (!(SOURCES as readonly string[]).includes(source)) return { error: "Origem inválida.", attempt };
 
   const db = supabaseService();
 
+  // O conteúdo, antes de criar qualquer linha.
+  let slugs: { slug: string; title: string | null; content: string; content_type?: string; is_active?: boolean }[];
+  let notes: string | null = null;
+  if (source === "template") {
+    const templateId = optionalId(fd.get("template_id"));
+    if (!templateId) return { error: "Escolha o template a copiar.", attempt };
+    const src = await db.from("page_slugs").select("slug, title, content, content_type, is_active").eq("page_id", templateId);
+    if (src.error) return { error: src.error.message, attempt };
+    if (!src.data || src.data.length === 0) return { error: "Template não encontrado.", attempt };
+    slugs = (src.data as { slug: string; title: string | null; content: string; content_type: string; is_active: boolean }[]).map((s) => ({
+      ...s,
+      content: refreshPageIds(s.content ?? ""),
+    }));
+  } else if (source === "html") {
+    const content = String(fd.get("content") ?? "");
+    if (!content.trim()) return { error: "Cole o HTML (ou busque a página pelo link) antes de criar.", attempt };
+    if (Buffer.byteLength(content, "utf8") > MAX_CONTENT_BYTES) {
+      return { error: "O HTML passa de 5 MB. Hospede imagens e vídeos fora e referencie por URL.", attempt };
+    }
+    slugs = [{ slug: "/", title: name, content }];
+    const sourceUrl = String(fd.get("source_url") ?? "").trim();
+    if (/^https?:\/\//i.test(sourceUrl)) notes = `Copiado de ${sourceUrl.slice(0, 500)}`;
+  } else {
+    slugs = [{ slug: "/", title: name, content: STARTER_HTML }];
+  }
+
   let pageId: string;
   try {
-    const { data, error } = await db.from("pages").insert({ name, kind, status: "DRAFT", folder_id: folderId }).select("id").single();
+    const { data, error } = await db.from("pages").insert({ name, kind, status: "DRAFT", folder_id: folderId, notes }).select("id").single();
     if (error) throw new Error(error.message);
     pageId = (data as { id: string }).id;
 
-    const { error: slugError } = await db
-      .from("page_slugs")
-      .insert({ page_id: pageId, slug: "/", title: name, content: STARTER_HTML });
+    const { error: slugError } = await db.from("page_slugs").insert(slugs.map((s) => ({ ...s, page_id: pageId })));
     if (slugError) {
       await db.from("pages").delete().eq("id", pageId);
       throw new Error(slugError.message);
@@ -72,6 +111,16 @@ export async function createPage(prev: CreatePageState, fd: FormData): Promise<C
 
   revalidatePath("/paginas");
   redirect(`/paginas/${pageId}`);
+}
+
+/**
+ * "Criar template → copiar de um link": busca o HTML da página (só endereço
+ * público; ver fetch-page.ts). O formulário ajusta os endereços relativos e
+ * mostra o preview antes de criar.
+ */
+export async function fetchTemplateFromUrl(url: string): Promise<ActionResult<{ html: string; finalUrl: string }>> {
+  const r = await fetchPublicHtml(url);
+  return r.ok ? { ok: true, html: r.html, finalUrl: r.finalUrl } : fail(r.reason);
 }
 
 export type SaveEditorInput = {

@@ -40,7 +40,7 @@ import { CreatePageForm } from "./create-page-form";
  * manter estado próprio além do que está sendo arrastado/editado.
  */
 
-const ROOT_LABEL = "Páginas";
+const ROOT_LABEL = "Templates";
 
 const FOLDER_COLOR_CLASS: Record<FolderColor, string> = {
   blue: "text-blue-500",
@@ -185,15 +185,15 @@ export function PagesBrowser({ folders, pages, currentFolderId }: { folders: Fol
 
   // ── Ações dos menus ────────────────────────────────────────────────────────
   const onDeletePage = (p: PageListItem) => {
-    if (!window.confirm(`Excluir a página "${p.name}" e todas as slugs dela? Isso não tem volta.`)) return;
-    run(() => deletePage(p.id), () => setNotice("Página excluída."));
+    if (!window.confirm(`Excluir o template "${p.name}" e todas as slugs dele? As cópias que os domínios já têm não mudam.`)) return;
+    run(() => deletePage(p.id), () => setNotice("Template excluído."));
   };
   const onDeleteFolder = (f: Folder) => {
     const dest = f.parent_id ? `"${map.get(f.parent_id)?.name ?? "pasta acima"}"` : "a raiz";
-    if (!window.confirm(`Excluir a pasta "${f.name}"? As páginas e subpastas dentro dela vão para ${dest}.`)) return;
+    if (!window.confirm(`Excluir a pasta "${f.name}"? Os templates e subpastas dentro dela vão para ${dest}.`)) return;
     run(() => deleteFolder(f.id), () => setNotice("Pasta excluída."));
   };
-  const onDuplicate = (p: PageListItem) => run(() => duplicatePage(p.id), () => setNotice(`"${p.name}" duplicada como rascunho.`));
+  const onDuplicate = (p: PageListItem) => run(() => duplicatePage(p.id), () => setNotice(`"${p.name}" duplicado como rascunho.`));
 
   const closeDialog = useCallback(() => setDialog(null), []);
 
@@ -223,7 +223,7 @@ export function PagesBrowser({ folders, pages, currentFolderId }: { folders: Fol
               type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Buscar página ou pasta…"
+              placeholder="Buscar template ou pasta…"
               aria-label="Buscar"
               className={`${INPUT_CLASS} pl-8`}
             />
@@ -258,7 +258,7 @@ export function PagesBrowser({ folders, pages, currentFolderId }: { folders: Fol
             className="flex min-h-56 flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-accent/50 bg-accent/5 p-4 text-accent transition-colors hover:border-accent hover:bg-accent/10"
           >
             <FilePlusIcon className="size-12" strokeWidth={1.25} />
-            <span className="text-sm font-semibold">Criar página</span>
+            <span className="text-sm font-semibold">Criar template</span>
           </button>
         ) : null}
 
@@ -301,14 +301,20 @@ export function PagesBrowser({ folders, pages, currentFolderId }: { folders: Fol
 
       {empty ? (
         <p className="mt-4 text-sm text-muted">
-          {current ? "Esta pasta está vazia. Crie uma página aqui ou arraste páginas e pastas para dentro dela." : "Nenhuma página ainda. Crie a primeira: ela nasce como rascunho com a slug /."}
+          {current ? "Esta pasta está vazia. Crie um template aqui ou arraste templates e pastas para dentro dela." : "Nenhum template ainda. Crie o primeiro: ele nasce como rascunho com a slug /."}
         </p>
       ) : null}
       {searching && shownFolders.length + shownPages.length === 0 ? <p className="mt-4 text-sm text-muted">Nada com esse nome.</p> : null}
 
       {/* ── Diálogos ─────────────────────────────────────────────────────── */}
-      <Dialog open={dialog?.kind === "create-page"} title="Nova página" description={current ? `Será criada em "${current.name}".` : "Será criada na raiz."} onClose={closeDialog}>
-        <CreatePageForm folderId={currentId} onCancel={closeDialog} />
+      <Dialog
+        open={dialog?.kind === "create-page"}
+        title="Novo template"
+        description={current ? `Será criado em "${current.name}".` : "Será criado na raiz."}
+        onClose={closeDialog}
+        className="sm:max-w-2xl"
+      >
+        <CreatePageForm folderId={currentId} templates={pages} onCancel={closeDialog} />
       </Dialog>
 
       <NameDialog
@@ -335,7 +341,7 @@ export function PagesBrowser({ folders, pages, currentFolderId }: { folders: Fol
 
       <NameDialog
         open={dialog?.kind === "rename-page"}
-        title="Renomear página"
+        title="Renomear template"
         label="Nome"
         submitLabel="Renomear"
         minLength={2}
