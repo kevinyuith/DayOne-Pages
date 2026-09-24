@@ -1,8 +1,11 @@
 "use client";
 
+import { pickedCompletion, type CompletionContext, type CompletionResult } from "@codemirror/autocomplete";
 import { html } from "@codemirror/lang-html";
+import { EditorState } from "@codemirror/state";
 import dynamic from "next/dynamic";
 import { useMemo, useSyncExternalStore } from "react";
+import { openPlaceholderAt, placeholderToken, suggestPlaceholders } from "@/lib/pages/placeholders";
 
 /**
  * CodeMirror 6 só no cliente: o componente toca o DOM ao montar, e o
@@ -29,9 +32,58 @@ function usePrefersDark(): boolean {
   );
 }
 
-export function CodeEditor({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+/**
+ * Autocompletar dos marcadores: escrever "{{" (em texto, atributo, script ou
+ * style) abre a lista. O "}}" que o fechamento automático de chaves põe
+ * depois do cursor é absorvido ao escolher.
+ */
+function placeholderCompletions(values: Record<string, string> | null) {
+  return (ctx: CompletionContext): CompletionResult | null => {
+    const line = ctx.state.doc.lineAt(ctx.pos);
+    const at = openPlaceholderAt(line.text.slice(0, ctx.pos - line.from));
+    const items = at ? suggestPlaceholders(at.query) : [];
+    if (!at || !items.length) return null;
+    return {
+      from: line.from + at.from,
+      filter: false,
+      options: items.map((o) => {
+        const token = placeholderToken(o.key);
+        return {
+          label: token,
+          detail: values ? values[o.key] || "(vazio)" : o.label,
+          type: "variable",
+          apply: (view, completion, from, to) => {
+            const after = view.state.sliceDoc(to, to + 2);
+            const extra = after.startsWith("}}") ? 2 : after.startsWith("}") ? 1 : 0;
+            view.dispatch({
+              changes: { from, to: to + extra, insert: token },
+              selection: { anchor: from + token.length },
+              annotations: pickedCompletion.of(completion),
+              userEvent: "input.complete",
+            });
+          },
+        };
+      }),
+    };
+  };
+}
+
+export function CodeEditor({
+  value,
+  onChange,
+  placeholderValues = null,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  /** Valores dos marcadores (página de domínio), mostrados na lista do "{{". Template: null. */
+  placeholderValues?: Record<string, string> | null;
+}) {
   const dark = usePrefersDark();
-  const extensions = useMemo(() => [html({ autoCloseTags: true, matchClosingTags: true })], []);
+  const extensions = useMemo(() => {
+    // A MESMA função a cada chamada: o CodeMirror reconhece a fonte pela referência.
+    const placeholders = [{ autocomplete: placeholderCompletions(placeholderValues) }];
+    return [html({ autoCloseTags: true, matchClosingTags: true }), EditorState.languageData.of(() => placeholders)];
+  }, [placeholderValues]);
 
   return (
     <CodeMirror

@@ -86,6 +86,43 @@ const DATE_FORMATS: Record<string, { months: string[]; format: (d: number, month
 
 export const placeholderToken = (key: string) => `{{${key}}}`;
 
+// ── Autocompletar no editor: escrever "{{" abre a lista dos marcadores ──────
+export type PlaceholderOption = { key: string; label: string; hint: string };
+
+/** Todos os marcadores, na ordem do menu: campos da empresa, depois os automáticos. */
+export const PLACEHOLDER_OPTIONS: PlaceholderOption[] = [
+  ...PLACEHOLDER_FIELDS.map((f) => ({ key: f.key, label: f.label, hint: f.example })),
+  ...AUTO_PLACEHOLDERS.map((f) => ({ key: f.key, label: f.label, hint: f.note })),
+];
+
+/** Se o texto antes do cursor termina num "{{" aberto, onde ele começa e o que já foi digitado da chave. */
+export function openPlaceholderAt(before: string): { from: number; query: string } | null {
+  const m = /\{\{\s*([a-z0-9_.]*)$/i.exec(before);
+  return m ? { from: m.index, query: m[1].toLowerCase() } : null;
+}
+
+const fold = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+
+/** As opções para o que foi digitado: chave (ou a parte depois do ponto) começando com ele; depois chave ou nome contendo. */
+export function suggestPlaceholders(query: string): PlaceholderOption[] {
+  const q = fold(query);
+  if (!q) return PLACEHOLDER_OPTIONS;
+  const starts = PLACEHOLDER_OPTIONS.filter((o) => o.key.startsWith(q) || o.key.slice(o.key.lastIndexOf(".") + 1).startsWith(q));
+  const contains = PLACEHOLDER_OPTIONS.filter((o) => !starts.includes(o) && (o.key.includes(q) || fold(o.label).includes(q)));
+  return [...starts, ...contains];
+}
+
+/**
+ * Troca o "{{…" aberto (de `from` até o cursor) pelo marcador completo. Um "}"
+ * ou "}}" logo depois do cursor (fechamento automático) é absorvido.
+ */
+export function insertPlaceholder(text: string, from: number, caret: number, key: string): { text: string; caret: number } {
+  const token = placeholderToken(key);
+  const rest = text.slice(caret);
+  const after = rest.startsWith("}}") ? rest.slice(2) : rest.startsWith("}") ? rest.slice(1) : rest;
+  return { text: text.slice(0, from) + token + after, caret: from + token.length };
+}
+
 const TOKEN_RE = /\{\{\s*([a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)*)\s*\}\}/g;
 
 /** Um objeto com todos os campos da empresa, vazios: o que um domínio novo grava. */

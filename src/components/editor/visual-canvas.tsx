@@ -1,6 +1,7 @@
 "use client";
 
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { PlaceholderList, suggestKey } from "@/components/editor/placeholder-suggest";
 import { ArrowDownIcon, ArrowUpIcon, DuplicateIcon, LinkIcon, TrashIcon } from "@/components/icons";
 import {
   assignUids,
@@ -17,6 +18,7 @@ import {
   type SelectionStyle,
 } from "@/lib/pages/html-editing";
 import { clearLink, setLink } from "@/lib/pages/links";
+import { insertPlaceholder, openPlaceholderAt, suggestPlaceholders, type PlaceholderOption } from "@/lib/pages/placeholders";
 import { syncRuntime } from "@/lib/pages/runtime";
 import { normalizePages, pageById, pageOf, setCurrent, startPage } from "@/lib/pages/subpages";
 
@@ -64,6 +66,11 @@ export type CanvasHandle = {
 
 type Rect = { uid: string; top: number; left: number; width: number; height: number };
 
+/** Lista de marcadores aberta por "{{" no texto em edição: onde o "{{" está e onde a lista aparece. */
+type Suggest = { el: HTMLElement; node: Text; from: number; caret: number; items: PlaceholderOption[]; index: number; top: number; left: number };
+const SUGGEST_W = 288;
+const SUGGEST_H = 232;
+
 const STYLE_TO_CSS: Record<keyof SelectionStyle, string> = {
   color: "color",
   background: "backgroundColor",
@@ -86,8 +93,10 @@ export const VisualCanvas = forwardRef<
     currentPageId?: string | null;
     /** A canvas trocou de sub-página por conta própria (seleção em outra página, página removida…). */
     onPageChange?: (id: string | null) => void;
+    /** Valores dos marcadores (página de domínio), mostrados na lista do "{{". Template: null. */
+    placeholderValues?: Record<string, string> | null;
   }
->(function VisualCanvas({ html, baseHref, onChange, onSelect, onHiddenCount, showMarkers = false, currentPageId = null, onPageChange }, ref) {
+>(function VisualCanvas({ html, baseHref, onChange, onSelect, onHiddenCount, showMarkers = false, currentPageId = null, onPageChange, placeholderValues = null }, ref) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const selectedRef = useRef<HTMLElement | null>(null);
   const selectedUidRef = useRef<string | null>(null);
@@ -185,6 +194,38 @@ export const VisualCanvas = forwardRef<
     refreshMarkers();
   }, [onChange, onHiddenCount, refreshMarkers]);
 
+  // ── "{{" no texto em edição: lista de marcadores no cursor ─────────────────
+  const suggestRef = useRef<Suggest | null>(null);
+  const [suggest, setSuggestState] = useState<Suggest | null>(null);
+  const setSuggest = useCallback((s: Suggest | null) => {
+    suggestRef.current = s;
+    setSuggestState(s);
+  }, []);
+
+  /** Relê o texto antes do cursor do elemento em edição e abre/fecha/atualiza a lista. */
+  const refreshSuggest = useCallback(
+    (el: HTMLElement) => {
+      const d = el.ownerDocument;
+      const sel = d.getSelection();
+      const r = sel && sel.rangeCount ? sel.getRangeAt(0) : null;
+      const node = r?.startContainer;
+      if (!r || !r.collapsed || !node || node.nodeType !== 3 || !el.contains(node)) return setSuggest(null);
+      const at = openPlaceholderAt((node.nodeValue ?? "").slice(0, r.startOffset));
+      const items = at ? suggestPlaceholders(at.query) : [];
+      if (!at || !items.length) return setSuggest(null);
+      const box = r.getBoundingClientRect();
+      const anchor = box.height ? box : el.getBoundingClientRect();
+      const vw = d.defaultView?.innerWidth ?? 800;
+      const vh = d.defaultView?.innerHeight ?? 600;
+      const top = anchor.bottom + 4 + SUGGEST_H > vh ? Math.max(anchor.top - SUGGEST_H - 4, 4) : anchor.bottom + 4;
+      const left = Math.max(4, Math.min(anchor.left, vw - SUGGEST_W - 4));
+      const prev = suggestRef.current;
+      const index = prev && prev.node === node && prev.from === at.from && prev.items.length === items.length ? Math.min(prev.index, items.length - 1) : 0;
+      setSuggest({ el, node: node as Text, from: at.from, caret: r.startOffset, items, index, top, left });
+    },
+    [setSuggest],
+  );
+
   const select = useCallback(
     (el: HTMLElement | null) => {
       selectedRef.current = el;
@@ -192,6 +233,29 @@ export const VisualCanvas = forwardRef<
       emitSelect();
     },
     [emitSelect],
+  );
+
+  /** Troca o "{{…" digitado pelo marcador escolhido; o cursor fica depois dele. */
+  const pickSuggest = useCallback(
+    (key: string) => {
+      const s = suggestRef.current;
+      if (!s || !s.node.isConnected) return setSuggest(null);
+      const r = insertPlaceholder(s.node.nodeValue ?? "", s.from, s.caret, key);
+      s.node.nodeValue = r.text;
+      setSuggest(null);
+      if (s.el.isContentEditable) {
+        const d = s.node.ownerDocument;
+        const range = d.createRange();
+        range.setStart(s.node, r.caret);
+        range.collapse(true);
+        const sel = d.getSelection();
+        sel?.removeAllRanges();
+        sel?.addRange(range);
+      } else {
+        commit(); // a edição já tinha terminado (blur): grava agora
+      }
+    },
+    [commit, setSuggest],
   );
 
   // ── Carregar/rehidratar o documento no iframe ──────────────────────────────
@@ -217,14 +281,31 @@ export const VisualCanvas = forwardRef<
       e.preventDefault();
       el.setAttribute("contenteditable", "true");
       el.focus();
+      const win = el.ownerDocument.defaultView;
+      const onSel = () => refreshSuggest(el);
+      const closeSuggest = () => setSuggest(null);
       const finish = () => {
         el.removeAttribute("contenteditable");
         el.removeEventListener("blur", finish);
         el.removeEventListener("keydown", onKey);
+        el.removeEventListener("input", onSel);
+        el.ownerDocument.removeEventListener("selectionchange", onSel);
+        win?.removeEventListener("scroll", closeSuggest, true);
+        setSuggest(null);
         commit();
         if (selectedRef.current === el) emitSelect();
       };
       const onKey = (ev: KeyboardEvent) => {
+        // Lista de marcadores aberta: setas, Enter/Tab e Esc são dela.
+        const s = suggestRef.current;
+        const k = s ? suggestKey(ev.key, s.index, s.items.length) : null;
+        if (s && k !== null) {
+          ev.preventDefault();
+          if (k === "pick") pickSuggest(s.items[s.index].key);
+          else if (k === "close") setSuggest(null);
+          else setSuggest({ ...s, index: k });
+          return;
+        }
         if (ev.key === "Enter" && !ev.shiftKey) {
           ev.preventDefault();
           el.blur();
@@ -232,6 +313,9 @@ export const VisualCanvas = forwardRef<
       };
       el.addEventListener("blur", finish);
       el.addEventListener("keydown", onKey);
+      el.addEventListener("input", onSel);
+      el.ownerDocument.addEventListener("selectionchange", onSel);
+      win?.addEventListener("scroll", closeSuggest, true);
       select(el);
     };
     const block = (e: Event) => e.preventDefault();
@@ -244,7 +328,7 @@ export const VisualCanvas = forwardRef<
     // Reencontra a seleção anterior (após recarga externa).
     if (selectedUidRef.current) select(elementByUid(d, selectedUidRef.current));
     else refreshRect();
-  }, [baseHref, commit, emitSelect, ensureCurrent, onHiddenCount, refreshRect, select]);
+  }, [baseHref, commit, emitSelect, ensureCurrent, onHiddenCount, pickSuggest, refreshRect, refreshSuggest, select, setSuggest]);
 
   // Escreve o markup no iframe e hidrata na hora. document.open/write/close é
   // síncrono e não depende do evento load (que, com srcDoc, não é confiável).
@@ -479,6 +563,18 @@ export const VisualCanvas = forwardRef<
             </button>
           ),
         )}
+        {suggest ? (
+          <div className="pointer-events-auto absolute z-20" style={{ top: suggest.top, left: suggest.left, width: SUGGEST_W }}>
+            <PlaceholderList
+              items={suggest.items}
+              index={suggest.index}
+              values={placeholderValues}
+              onPick={pickSuggest}
+              onHover={(i) => suggestRef.current && setSuggest({ ...suggestRef.current, index: i })}
+              className="w-full"
+            />
+          </div>
+        ) : null}
         {rect ? (
           <>
             <div

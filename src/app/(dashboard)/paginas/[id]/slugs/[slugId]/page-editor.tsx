@@ -571,7 +571,7 @@ export function PageEditor({
                 />
               ) : mode === "code" ? (
                 <div className="h-full bg-surface">
-                  <CodeEditor value={content} onChange={updateContent} />
+                  <CodeEditor value={content} onChange={updateContent} placeholderValues={placeholders} />
                 </div>
               ) : fullDoc ? (
                 <VisualCanvas
@@ -584,6 +584,7 @@ export function PageEditor({
                   showMarkers={showMarkers}
                   currentPageId={currentPageId}
                   onPageChange={setCurrentPageId}
+                  placeholderValues={placeholders}
                 />
               ) : (
                 <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
@@ -657,6 +658,7 @@ export function PageEditor({
           selection={previewing ? null : selection}
           callbacks={callbacks}
           destinations={destinations}
+          placeholderValues={placeholders}
           pageSettings={
             <PageSettings
               name={name}

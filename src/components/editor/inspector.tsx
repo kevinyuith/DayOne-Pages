@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
+import { PlaceholderField } from "@/components/editor/placeholder-suggest";
 import { EyeIcon, LinkIcon, UnlinkIcon } from "@/components/icons";
 import { CHECKBOX_CLASS, INPUT_BASE, SELECT_BASE } from "@/components/ui/field";
 import type { LinkSource, SelectionInfo, SelectionStyle } from "@/lib/pages/html-editing";
@@ -31,6 +32,7 @@ export function Inspector({
   callbacks,
   pageSettings,
   destinations = [],
+  placeholderValues = null,
 }: {
   tab: InspectorTab;
   onTab: (t: InspectorTab) => void;
@@ -38,6 +40,8 @@ export function Inspector({
   callbacks: InspectorCallbacks;
   pageSettings: ReactNode;
   destinations?: LinkDestination[];
+  /** Valores dos marcadores (página de domínio), mostrados na lista do "{{". Template: null. */
+  placeholderValues?: Record<string, string> | null;
 }) {
   return (
     <aside className="flex min-h-0 w-72 shrink-0 flex-col rounded-xl border border-border bg-surface">
@@ -59,7 +63,7 @@ export function Inspector({
       <div className="min-h-0 flex-1 overflow-auto p-4">
         {tab === "settings" ? (
           selection ? (
-            <ElementSettings key={selection.uid} selection={selection} callbacks={callbacks} destinations={destinations} />
+            <ElementSettings key={selection.uid} selection={selection} callbacks={callbacks} destinations={destinations} placeholderValues={placeholderValues} />
           ) : (
             pageSettings
           )
@@ -73,7 +77,17 @@ export function Inspector({
   );
 }
 
-function ElementSettings({ selection, callbacks, destinations }: { selection: SelectionInfo; callbacks: InspectorCallbacks; destinations: LinkDestination[] }) {
+function ElementSettings({
+  selection,
+  callbacks,
+  destinations,
+  placeholderValues,
+}: {
+  selection: SelectionInfo;
+  callbacks: InspectorCallbacks;
+  destinations: LinkDestination[];
+  placeholderValues: Record<string, string> | null;
+}) {
   const [text, setText] = useState(selection.text);
 
   return (
@@ -82,10 +96,12 @@ function ElementSettings({ selection, callbacks, destinations }: { selection: Se
 
       {selection.textEditable ? (
         <Group label="Text">
-          <textarea
+          <PlaceholderField
+            as="textarea"
             value={text}
-            onChange={(e) => setText(e.target.value)}
+            onValueChange={setText}
             onBlur={() => text !== selection.text && callbacks.setText(text)}
+            values={placeholderValues}
             rows={3}
             className={`${INPUT_BASE} w-full py-2`}
           />
@@ -93,7 +109,7 @@ function ElementSettings({ selection, callbacks, destinations }: { selection: Se
       ) : null}
 
       {/* Remonta quando o link muda por fora (Remover, troca em massa no painel Links). */}
-      <LinkSettings key={`${selection.href}|${selection.linkTarget}`} selection={selection} callbacks={callbacks} destinations={destinations} />
+      <LinkSettings key={`${selection.href}|${selection.linkTarget}`} selection={selection} callbacks={callbacks} destinations={destinations} placeholderValues={placeholderValues} />
 
       <Group label="Visibility">
         <button
@@ -121,7 +137,17 @@ const LINK_HINT: Record<LinkSource, (tag: string) => string> = {
  * para qualquer outro elemento, atrela um link via data-href. É o "atrelar
  * links a novos elementos sem mudar a slug".
  */
-function LinkSettings({ selection, callbacks, destinations }: { selection: SelectionInfo; callbacks: InspectorCallbacks; destinations: LinkDestination[] }) {
+function LinkSettings({
+  selection,
+  callbacks,
+  destinations,
+  placeholderValues,
+}: {
+  selection: SelectionInfo;
+  callbacks: InspectorCallbacks;
+  destinations: LinkDestination[];
+  placeholderValues: Record<string, string> | null;
+}) {
   const [href, setHref] = useState(selection.href);
   const newTab = selection.linkTarget === "_blank";
   const commit = () => {
@@ -179,11 +205,12 @@ function LinkSettings({ selection, callbacks, destinations }: { selection: Selec
           ))}
         </select>
       ) : null}
-      <input
+      <PlaceholderField
         value={href}
-        onChange={(e) => setHref(e.target.value)}
+        onValueChange={setHref}
         onBlur={commit}
-        onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+        onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+        values={placeholderValues}
         placeholder="https://… ou #secao"
         className={`${INPUT_BASE} w-full font-mono text-xs`}
       />
