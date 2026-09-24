@@ -53,3 +53,15 @@ body {
 .sensitive {
   transition: filter 0.15s ease;
 }
+
+/*
+ * Troca de período/filtro no dashboard: enquanto a navegação corre, os
+ * números, o gráfico e a tabela ficam esmaecidos no lugar (sem esqueleto nem
+ * salto de layout). O atributo é ligado pela barra de controles.
+ */
+[data-dash-content] {
+  transition: opacity 0.15s ease;
+}
+:root[data-dash-pending] [data-dash-content] {
+  opacity: 0.55;
+}

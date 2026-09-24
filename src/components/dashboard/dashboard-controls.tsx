@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useOptimistic, useRef, useState, useTransition } from "react";
 import { OUTCOME_BADGE } from "@/components/dashboard/access-logs";
-import { CalendarIcon, ChevronDownIcon, CloseIcon, EyeOffIcon, FilterIcon, RefreshIcon } from "@/components/icons";
+import { ChevronDownIcon, CloseIcon, EyeIcon, EyeOffIcon, FilterIcon, GlobeIcon, RefreshIcon } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -17,9 +17,14 @@ import {
 } from "@/lib/pages/dashboard-filters";
 
 const btn =
-  "inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-muted transition-colors hover:text-foreground hover:border-foreground/20";
+  "inline-flex h-9 items-center gap-2 rounded-lg border border-border bg-surface px-3 text-sm font-medium text-muted transition-colors hover:text-foreground hover:border-foreground/20";
+const iconBtn =
+  "inline-flex size-9 items-center justify-center rounded-lg border border-border bg-surface text-muted transition-colors hover:text-foreground hover:border-foreground/20";
 const selectCls =
-  "appearance-none rounded-lg border border-border bg-surface py-2 pr-9 text-sm font-medium text-muted transition-colors hover:text-foreground";
+  "h-9 appearance-none rounded-lg border border-border bg-surface pr-9 text-sm font-medium text-foreground transition-colors hover:border-foreground/20";
+
+/** Rótulo curto de cada período, no seletor segmentado (o nome longo vai no title). */
+const RANGE_SHORT: Record<RangeKey, string> = { today: "Today", "24h": "24h", "7d": "7d", "30d": "30d" };
 
 const DEVICE_LABEL: Record<string, string> = { desktop: "Desktop", mobile: "Mobile", tablet: "Tablet" };
 
@@ -64,6 +69,13 @@ export function DashboardControls({
     return () => root.removeAttribute("data-hide-values");
   }, [hidden]);
 
+  // Enquanto os dados novos chegam, o conteúdo fica esmaecido (ver globals.css) em vez de piscar.
+  useEffect(() => {
+    const root = document.documentElement;
+    root.toggleAttribute("data-dash-pending", pending);
+    return () => root.removeAttribute("data-dash-pending");
+  }, [pending]);
+
   const go = (next: DashboardFilters) =>
     start(() => {
       setShown(next);
@@ -76,24 +88,32 @@ export function DashboardControls({
     <div className="mb-6">
       <div className="relative flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          <label className="relative">
-            <span className="sr-only">Period</span>
-            <CalendarIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted" />
-            <select value={shown.range} onChange={(e) => go({ ...shown, range: e.target.value as RangeKey })} className={`${selectCls} pl-9`}>
-              {RANGES.map((r) => (
-                <option key={r.key} value={r.key}>
-                  {r.label}
-                </option>
-              ))}
-            </select>
-            <ChevronDownIcon className="pointer-events-none absolute right-2.5 top-1/2 size-4 -translate-y-1/2 text-muted" />
-          </label>
-          <label className="relative">
+          <div role="group" aria-label="Period" className="inline-flex h-9 items-center rounded-lg border border-border bg-surface p-0.5">
+            {RANGES.map((r) => {
+              const active = shown.range === r.key;
+              return (
+                <button
+                  key={r.key}
+                  type="button"
+                  aria-pressed={active}
+                  title={r.label}
+                  onClick={() => !active && go({ ...shown, range: r.key })}
+                  className={`h-full rounded-md px-3 text-sm font-medium transition-colors ${
+                    active ? "bg-foreground/[0.08] text-foreground" : "text-muted hover:text-foreground"
+                  }`}
+                >
+                  {RANGE_SHORT[r.key]}
+                </button>
+              );
+            })}
+          </div>
+          <label className="relative min-w-0">
             <span className="sr-only">Filter by domain</span>
+            <GlobeIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted" />
             <select
               value={shown.domain ?? ""}
               onChange={(e) => go({ ...shown, domain: e.target.value || null })}
-              className={`${selectCls} pl-3`}
+              className={`${selectCls} max-w-full pl-9`}
             >
               <option value="">All domains</option>
               {domains.map((d) => (
@@ -111,15 +131,22 @@ export function DashboardControls({
           <button
             type="button"
             aria-pressed={hidden}
+            aria-label={hidden ? "Show values" : "Hide values"}
+            title={hidden ? "Show values" : "Hide values"}
             onClick={() => setHidden((v) => !v)}
-            className={`${btn} ${hidden ? "border-accent/40 text-accent" : ""}`}
+            className={`${iconBtn} ${hidden ? "border-accent/40 text-accent" : ""}`}
           >
-            <EyeOffIcon className="size-4" />
-            {hidden ? "Show values" : "Hide values"}
+            {hidden ? <EyeIcon className="size-4" /> : <EyeOffIcon className="size-4" />}
           </button>
-          <button type="button" disabled={pending} onClick={() => start(() => router.refresh())} className={`${btn} disabled:opacity-60`}>
+          <button
+            type="button"
+            aria-label="Refresh"
+            title="Refresh"
+            disabled={pending}
+            onClick={() => start(() => router.refresh())}
+            className={`${iconBtn} disabled:opacity-60`}
+          >
             <RefreshIcon className={`size-4 ${pending ? "animate-spin" : ""}`} />
-            Refresh
           </button>
         </div>
       </div>
