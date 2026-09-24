@@ -13,7 +13,7 @@
  */
 
 /** Sem diferença de maiúsculas. Ponto final é opcional em todos. */
-const SUFFIXES_ANY_CASE = [
+export const SUFFIXES_ANY_CASE = [
   "UG (haftungsbeschränkt)", "S.à r.l", "S.a.r.l", "Incorporated", "Corporation", "Company", "Limited",
   "L.L.L.P", "P.L.L.C", "L.L.C", "L.L.P", "P.L.C", "S.A.S", "S.R.L", "S.r.l", "S.p.A", "S.L.U", "LLLP", "PLLC",
   "EIRELI", "gGmbH", "GmbH", "KGaA", "SARL", "LTDA", "LLC", "LLP", "PLC", "Inc", "Corp", "Ltd", "Pty", "Pte",
@@ -22,7 +22,7 @@ const SUFFIXES_ANY_CASE = [
 ];
 
 /** Só escritas assim (siglas que também são palavras). */
-const SUFFIXES_EXACT = ["Co", "CO", "AG", "KG", "UG", "SE", "SA", "SAS", "AB", "AS", "ASA", "NV", "BV", "LP", "PC", "SL", "SS", "KK", "ME", "MEI", "Oy", "SpA"];
+export const SUFFIXES_EXACT = ["Co", "CO", "AG", "KG", "UG", "SE", "SA", "SAS", "AB", "AS", "ASA", "NV", "BV", "LP", "PC", "SL", "SS", "KK", "ME", "MEI", "Oy", "SpA"];
 
 function escape(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");

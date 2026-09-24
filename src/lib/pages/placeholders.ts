@@ -24,7 +24,7 @@ import { companyName } from "./company-name";
 
 export const PLACEHOLDER_FIELDS = [
   { key: "company.llc", label: "Razão social", example: "Acme Health LLC", max: 150 },
-  { key: "company.number", label: "Número de registro (EIN, CNPJ…)", example: "EIN 12-3456789", max: 60 },
+  { key: "company.number", label: "Número de registro (EIN, CNPJ…), só o número", example: "12-3456789", max: 60 },
   { key: "company.address", label: "Endereço", example: "123 Main St, Austin, TX 78701", max: 250 },
   { key: "company.phone", label: "Telefone", example: "(555) 123-4567", max: 40 },
   { key: "company.email", label: "E-mail", example: "contact@example.com", max: 150 },
