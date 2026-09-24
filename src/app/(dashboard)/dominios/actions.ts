@@ -6,7 +6,9 @@ import { checkDomainHealth } from "@/lib/origin/health";
 import { purgeHost } from "@/lib/origin/purge";
 import { parseConditionsForm } from "@/lib/pages/conditions";
 import { isValidDomain, isValidSlug, normalizeHost, normalizePath } from "@/lib/pages/normalize";
+import { rewriteCopyAngle } from "@/lib/pages/copy-angle";
 import { PLACEHOLDER_FIELDS, emptyPlaceholders } from "@/lib/pages/placeholders";
+import { applyVariation, describeVariation, pickVariation, type VariationOptions, type VariationStats } from "@/lib/pages/variation";
 import {
   BLOCK_CODES,
   REDIRECT_CODES,
@@ -191,6 +193,100 @@ export async function copyTemplateToDomain(domainId: string, templateId: string)
     revalidateDomain(domainId);
     const domain = await domainName(domainId);
     const purged = domain ? await purgeAfterWrite(domain, "Template copiado") : { ok: true as const };
+    return purged.ok ? { ok: true, pageId: String(data) } : purged;
+  } catch (cause) {
+    return fail(errorReason(cause));
+  }
+}
+
+// ── Variação do template (visual e, se pedir, ângulo da copy) ───────────────
+
+const MAX_CONTENT_BYTES = 5 * 1024 * 1024;
+const MAX_ANGLE = 2000;
+
+export type VariationInput = VariationOptions & { templateId: string; angle: string };
+export type VariationPreview = { contents: Record<string, string>; summary: string[]; name: string };
+
+/**
+ * Gera uma variação do template sem gravar nada: visual (cores, fontes,
+ * cantos/sombras, espaçamentos — ver variation.ts) e, com um ângulo
+ * informado, a copy reescrita (copy-angle.ts). Todas as slugs do template
+ * saem com os mesmos parâmetros. A tela mostra o preview e grava com
+ * copyTemplateVariation.
+ */
+export async function previewTemplateVariation(input: VariationInput): Promise<ActionResult<VariationPreview>> {
+  const options: VariationOptions = { colors: !!input.colors, fonts: !!input.fonts, shape: !!input.shape, spacing: !!input.spacing };
+  const angle = (input.angle ?? "").trim();
+  if (!UUID_RE.test(input.templateId)) return fail("Escolha um template.");
+  if (!Object.values(options).some(Boolean) && !angle) return fail("Marque o que variar ou escreva o ângulo da copy.");
+  if (angle.length > MAX_ANGLE) return fail(`O ângulo da copy passa de ${MAX_ANGLE} caracteres.`);
+
+  const db = supabaseService();
+  try {
+    const [page, slugs] = await Promise.all([
+      db.from("pages").select("name").eq("id", input.templateId).maybeSingle(),
+      db.from("page_slugs").select("slug, content").eq("page_id", input.templateId),
+    ]);
+    if (page.error) throw new Error(page.error.message);
+    if (slugs.error) throw new Error(slugs.error.message);
+    if (!page.data || !slugs.data?.length) return fail("Template não encontrado.");
+
+    const params = pickVariation();
+    const stats: VariationStats = { colors: 0, fonts: 0, radii: 0, shadows: 0, spacings: 0, families: {} };
+    let contents: Record<string, string> = {};
+    for (const s of slugs.data as { slug: string; content: string }[]) {
+      const r = applyVariation(s.content ?? "", params, options);
+      contents[s.slug] = r.html;
+      stats.colors += r.stats.colors;
+      stats.fonts += r.stats.fonts;
+      stats.radii += r.stats.radii;
+      stats.shadows += r.stats.shadows;
+      stats.spacings += r.stats.spacings;
+      stats.families = { ...r.stats.families, ...stats.families };
+    }
+    const summary = describeVariation(params, options, stats);
+
+    if (angle) {
+      const r = await rewriteCopyAngle(contents, angle);
+      if (!r.ok) return fail(r.reason);
+      contents = r.pages;
+      summary.push(`Copy: ${r.rewritten} ${r.rewritten === 1 ? "trecho reescrito" : "trechos reescritos"} com o novo ângulo.`);
+    }
+
+    const name = `${(page.data as { name: string }).name} · variação`.slice(0, 120);
+    return { ok: true, contents, summary, name };
+  } catch (cause) {
+    return fail(errorReason(cause));
+  }
+}
+
+/** Grava no domínio a variação que a tela mostrou (uma página nova, publicada). */
+export async function copyTemplateVariation(
+  domainId: string,
+  templateId: string,
+  name: string,
+  contents: Record<string, string>,
+): Promise<ActionResult<{ pageId: string }>> {
+  if (!UUID_RE.test(templateId)) return fail("Escolha um template.");
+  const cleanName = (name ?? "").trim().slice(0, 120);
+  if (cleanName.length < 2) return fail("Dê um nome à página.");
+  for (const html of Object.values(contents ?? {})) {
+    if (typeof html !== "string" || Buffer.byteLength(html, "utf8") > MAX_CONTENT_BYTES) return fail("Uma das slugs passa de 5 MB.");
+  }
+  try {
+    const { data, error } = await supabaseService().rpc("domain_page_add", {
+      p_domain: domainId,
+      p_template: templateId,
+      p_name: cleanName,
+      p_contents: contents,
+    });
+    if (error) {
+      if (error.code === "P0002") return fail("Template ou domínio não encontrado.");
+      throw new Error(error.message);
+    }
+    revalidateDomain(domainId);
+    const domain = await domainName(domainId);
+    const purged = domain ? await purgeAfterWrite(domain, "Variação copiada") : { ok: true as const };
     return purged.ok ? { ok: true, pageId: String(data) } : purged;
   } catch (cause) {
     return fail(errorReason(cause));

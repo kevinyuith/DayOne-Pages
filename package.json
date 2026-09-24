@@ -12,6 +12,7 @@
     "check:company-name": "node --experimental-strip-types --no-warnings scripts/check-company-name.mts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.128.0",
     "@codemirror/lang-html": "^6.4.12",
     "@supabase/supabase-js": "^2.116.0",
     "@uiw/react-codemirror": "^4.25.11",

@@ -6,10 +6,12 @@ import { useState, useTransition } from "react";
 import { RowAction } from "@/components/row-action";
 import { Badge, PAGE_STATUS_TONE } from "@/components/ui/badge";
 import { Button, buttonClass } from "@/components/ui/button";
-import { SELECT_CLASS } from "@/components/ui/field";
+import { SELECT_CLASS, TEXTAREA_CLASS } from "@/components/ui/field";
+import { HtmlPreview } from "@/components/html-preview";
 import type { DomainDetail, DomainPage, TemplateOption } from "@/lib/pages/queries";
 import { PAGE_KIND_LABELS, PAGE_STATUS_LABELS } from "@/lib/pages/types";
-import { copyTemplateToDomain, removeDomainPage, replaceDomainPage, setDefaultPage } from "../actions";
+import type { VariationOptions } from "@/lib/pages/variation";
+import { copyTemplateToDomain, copyTemplateVariation, previewTemplateVariation, removeDomainPage, replaceDomainPage, setDefaultPage, type VariationPreview } from "../actions";
 
 /**
  * As páginas do domínio: cópias de templates que só este domínio serve
@@ -164,9 +166,28 @@ function ReplaceForm({ domainId, page, templates, onDone }: { domainId: string; 
   );
 }
 
+type CopyMode = "original" | "variation";
+
+const VARIATION_OPTIONS: { key: keyof VariationOptions; label: string }[] = [
+  { key: "colors", label: "Cores" },
+  { key: "fonts", label: "Fontes" },
+  { key: "shape", label: "Cantos e sombras" },
+  { key: "spacing", label: "Espaçamentos" },
+];
+
+/**
+ * Copiar um template para o domínio: o original, ou uma variação visual
+ * gerada na hora (e, se pedir, com a copy reescrita num novo ângulo). A
+ * variação passa por um preview antes de ir para o domínio.
+ */
 function CopyTemplateForm({ domainId, templates }: { domainId: string; templates: TemplateOption[] }) {
   const router = useRouter();
   const [templateId, setTemplateId] = useState(templates[0]?.id ?? "");
+  const [mode, setMode] = useState<CopyMode>("original");
+  const [options, setOptions] = useState<VariationOptions>({ colors: true, fonts: true, shape: true, spacing: true });
+  const [angle, setAngle] = useState("");
+  const [preview, setPreview] = useState<VariationPreview | null>(null);
+  const [previewSlug, setPreviewSlug] = useState("/");
   const [pending, start] = useTransition();
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -182,30 +203,157 @@ function CopyTemplateForm({ domainId, templates }: { domainId: string; templates
     );
   }
 
-  const submit = () =>
+  const done = (text: string) => {
+    setMessage({ ok: true, text });
+    setPreview(null);
+    router.refresh();
+  };
+
+  const copyOriginal = () =>
     start(async () => {
       const r = await copyTemplateToDomain(domainId, templateId);
-      setMessage(r.ok ? { ok: true, text: "Copiado. Clique em Editar para personalizar a página deste domínio." } : { ok: false, text: r.reason });
-      if (r.ok) router.refresh();
+      if (r.ok) done("Copiado. Clique em Editar para personalizar a página deste domínio.");
+      else setMessage({ ok: false, text: r.reason });
     });
 
+  const generate = () => {
+    setMessage(null);
+    start(async () => {
+      const r = await previewTemplateVariation({ templateId, ...options, angle });
+      if (!r.ok) return setMessage({ ok: false, text: r.reason });
+      setPreview({ contents: r.contents, summary: r.summary, name: r.name });
+      setPreviewSlug("/" in r.contents ? "/" : Object.keys(r.contents)[0]);
+    });
+  };
+
+  const copyVariation = () => {
+    if (!preview) return;
+    start(async () => {
+      const r = await copyTemplateVariation(domainId, templateId, preview.name, preview.contents);
+      if (r.ok) done(`"${preview.name}" copiada para o domínio.`);
+      else setMessage({ ok: false, text: r.reason });
+    });
+  };
+
+  const nothingToVary = !Object.values(options).some(Boolean) && !angle.trim();
+
   return (
-    <div className="mt-4 border-t border-border pt-4">
+    <div className="mt-4 flex flex-col gap-3 border-t border-border pt-4">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
         <span className="text-xs font-medium sm:shrink-0">Copiar template para o domínio:</span>
-        <select value={templateId} onChange={(e) => setTemplateId(e.target.value)} disabled={pending} className={`${SELECT_CLASS} sm:max-w-xs`}>
+        <select
+          value={templateId}
+          onChange={(e) => {
+            setTemplateId(e.target.value);
+            setPreview(null);
+          }}
+          disabled={pending}
+          className={`${SELECT_CLASS} sm:max-w-xs`}
+        >
           {templates.map((t) => (
             <option key={t.id} value={t.id}>
               {t.name} · {PAGE_KIND_LABELS[t.kind]} · {t.slugs_count} {t.slugs_count === 1 ? "slug" : "slugs"}
             </option>
           ))}
         </select>
-        <Button size="sm" onClick={submit} disabled={pending || !templateId}>
-          {pending ? "Copiando…" : "Copiar"}
-        </Button>
+        <div className="flex gap-1 rounded-lg border border-border p-0.5 text-xs">
+          {(["original", "variation"] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => {
+                setMode(m);
+                setMessage(null);
+              }}
+              disabled={pending}
+              aria-pressed={mode === m}
+              className={`rounded-md px-3 py-1.5 ${mode === m ? "bg-accent/15 text-accent" : "text-muted hover:text-foreground"}`}
+            >
+              {m === "original" ? "Original" : "Variação visual"}
+            </button>
+          ))}
+        </div>
+        {mode === "original" ? (
+          <Button size="sm" onClick={copyOriginal} disabled={pending || !templateId}>
+            {pending ? "Copiando…" : "Copiar"}
+          </Button>
+        ) : null}
       </div>
+
+      {mode === "variation" ? (
+        <div className="flex flex-col gap-3 rounded-lg border border-border bg-foreground/[0.02] p-3">
+          <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm">
+            {VARIATION_OPTIONS.map((o) => (
+              <label key={o.key} className="flex cursor-pointer items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={options[o.key]}
+                  onChange={(e) => setOptions((prev) => ({ ...prev, [o.key]: e.target.checked }))}
+                  disabled={pending}
+                  className="size-4 accent-accent"
+                />
+                {o.label}
+              </label>
+            ))}
+          </div>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-muted">Ângulo da copy (opcional)</span>
+            <textarea
+              value={angle}
+              onChange={(e) => setAngle(e.target.value)}
+              rows={3}
+              maxLength={2000}
+              disabled={pending}
+              placeholder="Mande informações para reescrever os textos com outro ângulo. Ex.: público de mães que trabalham fora; foco em praticidade e economia de tempo; tom próximo e acolhedor."
+              className={TEXTAREA_CLASS}
+            />
+            <span className="text-[11px] text-muted">
+              Em branco, só o visual muda. Com texto, a copy é reescrita por IA (Kimi) mantendo marcas, preços, números, {"{{marcadores}}"} e textos legais —
+              sem inventar fatos ou promessas.
+            </span>
+          </label>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" onClick={generate} disabled={pending || !templateId || nothingToVary}>
+              {pending && !preview ? (angle.trim() ? "Gerando e reescrevendo a copy…" : "Gerando…") : preview ? "Gerar outra" : "Gerar variação"}
+            </Button>
+            {preview ? (
+              <Button size="sm" variant="secondary" onClick={copyVariation} disabled={pending}>
+                {pending ? "Aguarde…" : "Copiar esta variação"}
+              </Button>
+            ) : null}
+            {pending && angle.trim() ? <span className="text-xs text-muted">Reescrever a copy pode levar até um minuto.</span> : null}
+          </div>
+
+          {preview ? (
+            <div className="flex flex-col gap-2">
+              <ul className="list-disc pl-5 text-xs text-muted">
+                {preview.summary.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+              {Object.keys(preview.contents).length > 1 ? (
+                <div className="flex flex-wrap gap-1 text-xs">
+                  {Object.keys(preview.contents).map((slug) => (
+                    <button
+                      key={slug}
+                      type="button"
+                      onClick={() => setPreviewSlug(slug)}
+                      className={`rounded-md border px-2 py-1 font-mono ${slug === previewSlug ? "border-accent text-accent" : "border-border text-muted"}`}
+                    >
+                      {slug}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              <HtmlPreview html={preview.contents[previewSlug] ?? ""} className="h-96 w-full bg-white" />
+              <p className="text-[11px] text-muted">Nada foi gravado ainda. Estilos de arquivos CSS externos não mudam (só a fonte do corpo).</p>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
       {message ? (
-        <p role={message.ok ? "status" : "alert"} className={`mt-2 text-xs ${message.ok ? "text-emerald-700 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>
+        <p role={message.ok ? "status" : "alert"} className={`text-xs ${message.ok ? "text-emerald-700 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>
           {message.text}
         </p>
       ) : null}
