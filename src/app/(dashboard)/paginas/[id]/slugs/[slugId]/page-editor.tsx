@@ -34,18 +34,14 @@ import { extractLinks, mutateHtml, replaceAll, replaceDestination, type LinkEntr
 import { NEXT_STEP } from "@/lib/pages/runtime";
 import { isFullDocument, wrapFragment } from "@/lib/pages/starter-template";
 import {
-  addPage,
-  duplicatePage,
+  activateStep,
+  deactivateStep,
   getFunnelMode,
   listPages,
-  movePage,
   pageById,
   pageHref,
-  removePage,
-  renamePage,
+  previewFrom,
   setFunnelMode,
-  setPageKind,
-  setStart,
   setTriggers,
   startPage,
   type FunnelMode,
@@ -379,9 +375,9 @@ export function PageEditor({
     if (on) {
       canvasRef.current?.clearSelection();
       setSelection(null);
-      // O preview começa na sub-página que está na canvas (só no preview; nada é gravado).
+      // O preview começa na etapa que está na canvas (só no preview; nada é gravado).
       const c = contentRef.current;
-      setPreviewDoc(currentPageId && isFullDocument(c) ? mutateHtml(c, (d) => setStart(d, currentPageId)) : c);
+      setPreviewDoc(currentPageId && isFullDocument(c) ? mutateHtml(c, (d) => previewFrom(d, currentPageId)) : c);
     }
     setPreviewing(on);
   };
@@ -445,37 +441,29 @@ export function PageEditor({
 
   const togglePanel = (p: RailPanel) => setPanel((cur) => (cur === p ? null : p));
 
-  // ── Funil (sub-páginas) ────────────────────────────────────────────────────
-  // Toda ação muda a estrutura do body → reindexa uids. Quem escolhe a
-  // sub-página mostrada é `currentPageId`; a canvas cai na inicial se ela sumir.
+  // ── Funil (Pre Lander → Lander → Backredirect) ─────────────────────────────
+  // Ativar/desativar muda a estrutura do body → reindexa uids. Quem escolhe a
+  // etapa mostrada é `currentPageId`; a canvas cai na inicial se ela sumir.
   const subPages: SubPagesActions = {
     select: (id) => {
       setCurrentPageId(id);
       canvasRef.current?.clearSelection();
       setSelection(null);
     },
-    add: (kind, name) => {
+    activate: (kind) => {
       let created = "";
-      applyDocChange((d) => void (created = addPage(d, { kind, name, after: currentPageId ?? undefined })), { reindex: true });
+      applyDocChange((d) => void (created = activateStep(d, kind)), { reindex: true });
       if (created) setCurrentPageId(created);
     },
-    rename: (id, name) => applyDocChange((d) => renamePage(d, id, name)),
-    setStart: (id) => applyDocChange((d) => setStart(d, id)),
-    setKind: (id, kind) => applyDocChange((d) => setPageKind(d, id, kind)),
+    deactivate: (kind) => applyDocChange((d) => deactivateStep(d, kind), { reindex: true }),
     setTriggers: (id, t) => applyDocChange((d) => setTriggers(d, id, t)),
-    move: (id, dir) => applyDocChange((d) => movePage(d, id, dir), { reindex: true }),
-    duplicate: (id) => {
-      let created = "";
-      applyDocChange((d) => void (created = duplicatePage(d, id)), { reindex: true });
-      if (created) setCurrentPageId(created);
-    },
-    remove: (id) => applyDocChange((d) => removePage(d, id), { reindex: true }),
     setMode: (m) => applyDocChange((d) => setFunnelMode(d, m)),
   };
 
+  const activeSteps = outline.pages.filter((p) => p.active);
   const destinations: LinkDestination[] = [
-    ...(outline.pages.length > 1 ? [{ label: "Próxima sub-página (#next-step)", href: NEXT_STEP, group: "Funil desta slug (mesma URL)" }] : []),
-    ...outline.pages.filter((p) => p.id !== currentPageId).map((p) => ({ label: `${p.name} (${p.kind === "backredirect" ? "back redirect" : "sub-página"})`, href: pageHref(p.id), group: "Funil desta slug (mesma URL)" })),
+    ...(activeSteps.length > 1 ? [{ label: "Próxima etapa (#next-step)", href: NEXT_STEP, group: "Funil desta slug (mesma URL)" }] : []),
+    ...activeSteps.filter((p) => p.id !== currentPageId).map((p) => ({ label: p.name, href: pageHref(p.id), group: "Funil desta slug (mesma URL)" })),
     ...slugs.filter((s) => s.id !== slug.id && s.is_active).map((s) => ({ label: s.slug, href: s.slug, group: "Slugs desta página (muda a URL)" })),
   ];
 
@@ -533,7 +521,7 @@ export function PageEditor({
       {/* Corpo: rail + painel | canvas | inspetor */}
       <div className="flex min-h-0 flex-1 gap-2">
         <div className="hidden shrink-0 gap-2 md:flex">
-          <Rail active={panel} onSelect={togglePanel} badges={{ links: outline.links.length, funnel: outline.pages.length > 1 ? outline.pages.length : 0 }} />
+          <Rail active={panel} onSelect={togglePanel} badges={{ links: outline.links.length, funnel: activeSteps.length > 1 ? activeSteps.length : 0 }} />
           {panel ? (
             <aside className="flex w-64 shrink-0 flex-col rounded-xl border border-border bg-surface">
               {panel === "pages" ? (

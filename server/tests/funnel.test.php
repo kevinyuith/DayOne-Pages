@@ -11,7 +11,28 @@ $browser = $doc('', $sections);
 $server = $doc(' data-dop-funnel="server"', $sections);
 
 check('modo navegador: não mexe', funnel_apply($browser, []) === null);
-check('uma etapa só: não mexe', funnel_apply($doc(' data-dop-funnel="server"', '<section data-dop-page="p_a" data-dop-start>a</section>'), []) === null);
+same('uma etapa só (sem tipo = Lander): serve ela', 'p_a', funnel_apply($doc(' data-dop-funnel="server"', '<section data-dop-page="p_a" data-dop-start>a</section>'), [])['step'] ?? null);
+check('nenhuma etapa com código: não mexe', funnel_apply($doc(' data-dop-funnel="server"', '<section data-dop-page="p_a" data-dop-kind="presell"> </section><section data-dop-page="p_b"><!-- nada --></section>'), []) === null);
+
+// ── Etapas fixas: sem código = inativa; inicial = Pre Lander ativo, senão Lander ──
+$emptyPre = $doc(' data-dop-funnel="server"', '<section data-dop-page="p_pre" data-dop-kind="presell" data-dop-start> <!-- vazio --> &nbsp; </section>'
+    . '<section data-dop-page="p_lan" data-dop-kind="main" hidden><h1>Lander</h1></section>'
+    . '<section data-dop-page="p_br" data-dop-kind="backredirect" data-dop-trigger="back">' . "\n\t" . '</section>');
+$r = funnel_apply($emptyPre, []);
+same('pre lander sem código: serve o lander', 'p_lan', $r['step'] ?? null);
+check('pre lander inativo não sai no HTML', $r !== null && !str_contains($r['html'], 'data-dop-page="p_pre"'));
+check('backredirect sem código: sem data-dop-br', $r !== null && !str_contains($r['html'], 'data-dop-br='));
+check('lander é a última: sem next', $r !== null && !str_contains($r['html'], 'data-dop-next='));
+same('cookie numa etapa inativa: cai na inicial', 'p_lan', funnel_apply($emptyPre, ['dop_step' => 'p_pre'])['step'] ?? null);
+same('cookie na backredirect inativa: cai na inicial', 'p_lan', funnel_apply($emptyPre, ['dop_step' => 'p_br'])['step'] ?? null);
+
+$startOnLander = $doc(' data-dop-funnel="server"', '<section data-dop-page="p_lan" data-dop-kind="main" data-dop-start><h1>L</h1></section>'
+    . '<section data-dop-page="p_pre" data-dop-kind="presell" hidden><h1>P</h1></section>');
+$r = funnel_apply($startOnLander, []);
+same('prioridade: Pre Lander ativo vem primeiro, mesmo com o start marcado no Lander', 'p_pre', $r['step'] ?? null);
+check('do Pre Lander, next é o Lander', $r !== null && str_contains($r['html'], 'data-dop-next="p_lan"') && str_contains($r['html'], 'data-dop-start="p_pre"'));
+same('tipo desconhecido (upsell antigo) conta como Lander', 'main', funnel_sections($doc(' data-dop-funnel="server"', '<section data-dop-page="p_u" data-dop-kind="upsell">u</section>'))[0]['kind'] ?? null);
+check('funnel_has_code: espaço, comentário e nbsp não contam', !funnel_has_code(" \n<!-- x --> &nbsp;\xC2\xA0 ") && funnel_has_code('<img src="a.png">') && funnel_has_code('texto'));
 
 $secs = funnel_sections($server);
 same('acha 3 seções de etapa (ignora a aninhada)', ['p_pre', 'p_vsl', 'p_br'], array_column($secs, 'id'));

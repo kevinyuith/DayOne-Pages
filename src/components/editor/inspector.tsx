@@ -21,7 +21,7 @@ export type InspectorCallbacks = {
  * (conteúdo/link/visibilidade do elemento, ou os ajustes da página quando nada
  * está selecionado) e Style (cor, fundo, tamanho, alinhamento, espaçamento).
  */
-/** Um destino pronto para o seletor de link (sub-página do funil, outra slug…). */
+/** Um destino pronto para o seletor de link (etapa do funil, outra slug…). */
 export type LinkDestination = { label: string; href: string; group: string };
 
 export function Inspector({
@@ -199,7 +199,7 @@ function LinkSettings({ selection, callbacks, destinations }: { selection: Selec
       </label>
       <p className="text-[11px] leading-snug text-muted">
         {selection.href === "#next-step" || selection.href.startsWith("#page:")
-          ? "Troca a sub-página do funil no navegador — a URL não muda."
+          ? "Troca a etapa do funil (Pre Lander → Lander) — a URL não muda."
           : LINK_HINT[selection.linkSource](selection.tag)}
       </p>
     </div>

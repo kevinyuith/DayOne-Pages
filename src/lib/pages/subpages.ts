@@ -1,24 +1,32 @@
 /**
- * Sub-páginas de uma slug — o "sem mudar a slug" do builder de referência.
+ * O funil de uma slug — o "sem mudar a slug" do builder de referência.
+ *
+ * O funil tem SEMPRE as mesmas três etapas, nesta ordem: Pre Lander → Lander
+ * → Backredirect. Uma etapa sem código (sem seção, ou seção vazia/só
+ * comentário) fica INATIVA e é pulada. Quem o visitante vê primeiro:
+ * 1) o Pre Lander, se ativo; 2) senão, o Lander. O Backredirect só aparece
+ * pelo botão voltar (ou exit intent). Uma slug sem seções é só o Lander.
  *
  * Uma slug continua sendo UM documento HTML (o servidor serve como está). As
- * sub-páginas são seções irmãs no body:
+ * etapas são seções irmãs no body:
  *
- *   <section data-dop-page="p_ab12" data-dop-name="Presell" data-dop-kind="presell" data-dop-start>…</section>
- *   <section data-dop-page="p_cd34" data-dop-name="VSL" data-dop-kind="main" hidden>…</section>
- *   <section data-dop-page="p_ef56" data-dop-name="Volta" data-dop-kind="backredirect" data-dop-trigger="back exit" hidden>…</section>
+ *   <section data-dop-page="p_ab12" data-dop-name="Pre Lander" data-dop-kind="presell" data-dop-start>…</section>
+ *   <section data-dop-page="p_cd34" data-dop-name="Lander" data-dop-kind="main" hidden>…</section>
+ *   <section data-dop-page="p_ef56" data-dop-name="Backredirect" data-dop-kind="backredirect" data-dop-trigger="back exit" hidden>…</section>
  *   <script data-dop-runtime>…</script>
  *
  * O `hidden` das não-iniciais é o fallback sem JS. Com JS, o runtime mostra a
- * inicial e troca as outras no clique (`#next-step`, `#page:<id>`), sem mudar
- * a URL. O <head> (estilos) é compartilhado — páginas clonadas de sites
- * diferentes podem conflitar no CSS; prefira classes com prefixo.
+ * inicial e troca no clique (`#next-step`: do Pre Lander para o Lander;
+ * `#page:<id>`), sem mudar a URL. O <head> (estilos) é compartilhado — páginas
+ * clonadas de sites diferentes podem conflitar no CSS; prefira classes com
+ * prefixo. As mesmas regras (ativa = tem código, prioridade da inicial) valem
+ * em `runtime.ts` e em `server/src/funnel.php`.
  *
  * Dois modos de troca, gravados em `<body data-dop-funnel>` (ver FunnelMode):
  *  - browser (padrão): o HTML inteiro vai para o visitante; a troca é só JS.
  *  - server: o servidor PHP corta o HTML e entrega SÓ a etapa atual, escolhida
  *    pelo cookie `dop_step`; o runtime grava o cookie e recarrega a mesma URL.
- *    O fonte da presell não contém a principal. Só faz diferença no servidor —
+ *    O fonte do pre lander não contém o lander. Só faz diferença no servidor —
  *    canvas e preview continuam mostrando tudo.
  *
  * Tudo aqui opera num Document (canvas ao vivo ou parseado do HTML) e devolve
@@ -29,14 +37,13 @@
 import { FUNNEL_MODE_ATTR, PAGE_ATTR, PAGE_CURRENT_ATTR, PAGE_KIND_ATTR, PAGE_NAME_ATTR, PAGE_START_ATTR, PAGE_TRIGGER_ATTR, RUNTIME_ATTR, UID_ATTR } from "./html-editing";
 import { NEXT_STEP, PAGE_HREF_PREFIX } from "./runtime";
 
-export const PAGE_KINDS_SUB = ["main", "presell", "upsell", "downsell", "backredirect"] as const;
+/** As etapas, na ordem fixa do funil. Um tipo que não está aqui (HTML antigo) é lido como "main". */
+export const PAGE_KINDS_SUB = ["presell", "main", "backredirect"] as const;
 export type SubPageKind = (typeof PAGE_KINDS_SUB)[number];
 export const SUB_KIND_LABELS: Record<SubPageKind, string> = {
-  main: "Principal",
-  presell: "Presell",
-  upsell: "Upsell",
-  downsell: "Downsell",
-  backredirect: "Back redirect",
+  presell: "Pre Lander",
+  main: "Lander",
+  backredirect: "Backredirect",
 };
 
 export type BackTrigger = "back" | "exit";
@@ -62,6 +69,9 @@ export type SubPage = {
   uid: string;
   name: string;
   kind: SubPageKind;
+  /** Tem código? Sem código a etapa fica inativa: o visitante nunca a vê. */
+  active: boolean;
+  /** É a que o visitante vê primeiro (Pre Lander ativo, senão Lander). */
   isStart: boolean;
   triggers: BackTrigger[];
 };
@@ -85,31 +95,70 @@ export function hasPages(doc: Document): boolean {
   return pageElements(doc).length > 0;
 }
 
-function isKind(v: string | null): v is SubPageKind {
-  return (PAGE_KINDS_SUB as readonly string[]).includes(v ?? "");
+function kindOf(el: Element): SubPageKind {
+  const k = el.getAttribute(PAGE_KIND_ATTR);
+  return k === "presell" || k === "backredirect" ? k : "main";
 }
 
-export function describePage(el: HTMLElement): SubPage {
-  const kind = el.getAttribute(PAGE_KIND_ATTR);
+/** A etapa tem código: algum elemento, ou texto que não seja só espaço. Comentário não conta. */
+export function hasCode(el: Element): boolean {
+  return Array.from(el.childNodes).some((n) => n.nodeType === 1 || (n.nodeType === 3 && /\S/.test(n.nodeValue ?? "")));
+}
+
+function describePage(el: HTMLElement, isStart: boolean): SubPage {
+  const kind = kindOf(el);
   const trig = (el.getAttribute(PAGE_TRIGGER_ATTR) ?? "").split(/\s+/).filter((t): t is BackTrigger => t === "back" || t === "exit");
   return {
     id: el.getAttribute(PAGE_ATTR) ?? "",
     uid: el.getAttribute(UID_ATTR) ?? "",
-    name: el.getAttribute(PAGE_NAME_ATTR) || "Sem nome",
-    kind: isKind(kind) ? kind : "main",
-    isStart: el.hasAttribute(PAGE_START_ATTR),
+    name: SUB_KIND_LABELS[kind],
+    kind,
+    active: hasCode(el),
+    isStart,
     triggers: trig,
   };
 }
 
 export function listPages(doc: Document): SubPage[] {
-  return pageElements(doc).map(describePage);
+  const start = startPage(doc);
+  return pageElements(doc).map((el) => describePage(el, el === start));
 }
 
-/** A inicial: a marcada, senão a primeira que não é back redirect, senão a primeira. */
+/**
+ * A inicial, por prioridade: 1) o Pre Lander, se ativo; 2) o Lander, se ativo.
+ * Sem nenhum dos dois ativo (só no editor), a primeira que não é Backredirect.
+ */
 export function startPage(doc: Document): HTMLElement | null {
   const els = pageElements(doc);
-  return els.find((el) => el.hasAttribute(PAGE_START_ATTR)) ?? els.find((el) => el.getAttribute(PAGE_KIND_ATTR) !== "backredirect") ?? els[0] ?? null;
+  const active = els.filter(hasCode);
+  return (
+    active.find((el) => kindOf(el) === "presell") ??
+    active.find((el) => kindOf(el) === "main") ??
+    els.find((el) => kindOf(el) !== "backredirect") ??
+    els[0] ??
+    null
+  );
+}
+
+export type FunnelSlot = {
+  kind: SubPageKind;
+  label: string;
+  /** A seção da etapa (null: não existe; ou é o Lander de uma slug sem seções). */
+  page: SubPage | null;
+  active: boolean;
+  isStart: boolean;
+};
+
+/**
+ * As três etapas, sempre nesta ordem, a partir da lista do documento. Numa
+ * slug sem seções o documento inteiro é o Lander (ativo, sem seção).
+ */
+export function funnelSlots(pages: SubPage[]): FunnelSlot[] {
+  return PAGE_KINDS_SUB.map((kind) => {
+    const page = pages.find((p) => p.kind === kind && p.active) ?? pages.find((p) => p.kind === kind) ?? null;
+    const plainLander = kind === "main" && pages.length === 0;
+    return { kind, label: SUB_KIND_LABELS[kind], page, active: plainLander || !!page?.active, isStart: plainLander || !!page?.isStart };
+  });
 }
 
 function newId(doc: Document): string {
@@ -120,15 +169,18 @@ function newId(doc: Document): string {
 }
 
 /**
- * Deixa o documento consistente: exatamente uma inicial, `hidden` nas outras
- * (fallback sem JS) e nenhum `hidden` na inicial. Idempotente; roda antes de
- * cada serialize.
+ * Deixa o documento consistente: tipo e nome fixos por etapa, exatamente uma
+ * inicial (pela prioridade), `hidden` nas outras (fallback sem JS) e trigger
+ * só na Backredirect. Idempotente; roda antes de cada serialize.
  */
 export function normalizePages(doc: Document): void {
   const els = pageElements(doc);
   if (!els.length) return;
   const start = startPage(doc);
   for (const el of els) {
+    const kind = kindOf(el);
+    el.setAttribute(PAGE_KIND_ATTR, kind);
+    el.setAttribute(PAGE_NAME_ATTR, SUB_KIND_LABELS[kind]);
     if (el === start) {
       el.setAttribute(PAGE_START_ATTR, "");
       el.removeAttribute("hidden");
@@ -136,15 +188,15 @@ export function normalizePages(doc: Document): void {
       el.removeAttribute(PAGE_START_ATTR);
       el.setAttribute("hidden", "");
     }
-    if (el.getAttribute(PAGE_KIND_ATTR) !== "backredirect") el.removeAttribute(PAGE_TRIGGER_ATTR);
+    if (kind !== "backredirect") el.removeAttribute(PAGE_TRIGGER_ATTR);
   }
 }
 
 /**
- * Converte uma slug de página única na primeira sub-página: tudo que está no
- * body (menos o runtime) vai para dentro de uma <section>. Devolve o id.
+ * Converte uma slug de página única no Lander: tudo que está no body (menos o
+ * runtime) vai para dentro de uma <section>. Devolve o id.
  */
-export function wrapAsFirstPage(doc: Document, name = "Principal", kind: SubPageKind = "main"): string {
+export function wrapAsFirstPage(doc: Document): string {
   const body = doc.body;
   if (!body) return "";
   const existing = pageElements(doc);
@@ -152,8 +204,8 @@ export function wrapAsFirstPage(doc: Document, name = "Principal", kind: SubPage
   const section = doc.createElement("section");
   const id = newId(doc);
   section.setAttribute(PAGE_ATTR, id);
-  section.setAttribute(PAGE_NAME_ATTR, name);
-  section.setAttribute(PAGE_KIND_ATTR, kind);
+  section.setAttribute(PAGE_NAME_ATTR, SUB_KIND_LABELS.main);
+  section.setAttribute(PAGE_KIND_ATTR, "main");
   section.setAttribute(PAGE_START_ATTR, "");
   const nodes = Array.from(body.childNodes).filter((n) => !(n instanceof Element && n.matches(`script[${RUNTIME_ATTR}]`)));
   body.prepend(section);
@@ -161,12 +213,10 @@ export function wrapAsFirstPage(doc: Document, name = "Principal", kind: SubPage
   return id;
 }
 
-const STARTER: Record<SubPageKind, (name: string) => string> = {
-  main: (n) => block(n, "Esta é a página principal (a oferta). Coloque aqui a VSL ou a carta de vendas.", "Quero a oferta", "#"),
-  presell: (n) => block(n, "Esta é uma presell. Aqueça o visitante e mande para o próximo passo.", "Continuar", NEXT_STEP),
-  upsell: (n) => block(n, "Oferta adicional depois da compra.", "Sim, quero adicionar", "#"),
-  downsell: (n) => block(n, "Alternativa mais barata para quem recusou o upsell.", "Aceitar esta oferta", "#"),
-  backredirect: (n) => block(n, "Esta página aparece quando o visitante aperta voltar (ou tenta sair). Segure-o com uma última oferta.", "Ver a oferta", NEXT_STEP),
+const STARTER: Record<SubPageKind, () => string> = {
+  presell: () => block("Pre Lander", "Este é o pre lander. Aqueça o visitante e mande para o lander.", "Continuar", NEXT_STEP),
+  main: () => block("Lander", "Este é o lander (a oferta). Coloque aqui a VSL ou a carta de vendas.", "Quero a oferta", "#"),
+  backredirect: () => block("Backredirect", "Esta página aparece quando o visitante aperta voltar (ou tenta sair). Segure-o com uma última oferta.", "Ver a oferta", NEXT_STEP),
 };
 
 function esc(s: string): string {
@@ -183,70 +233,64 @@ function block(title: string, text: string, cta: string, href: string): string {
   );
 }
 
-/** Adiciona uma sub-página (embrulhando a página única antes, se preciso). Devolve o id. */
-export function addPage(doc: Document, opts: { name: string; kind: SubPageKind; html?: string; after?: string }): string {
-  const body = doc.body;
-  if (!body) return "";
-  if (!hasPages(doc)) wrapAsFirstPage(doc);
+/**
+ * Ativa uma etapa com um código inicial para editar (a seção vazia ganha o
+ * código; sem seção, uma nova entra na posição da ordem fixa). Numa slug de
+ * página única, o documento vira o Lander antes. Devolve o id da etapa.
+ */
+export function activateStep(doc: Document, kind: SubPageKind): string {
+  if (!doc.body) return "";
+  if (!hasPages(doc)) {
+    const lander = wrapAsFirstPage(doc);
+    if (kind === "main") return lander;
+  }
+  const els = pageElements(doc);
+  const existing = els.find((el) => kindOf(el) === kind && hasCode(el)) ?? els.find((el) => kindOf(el) === kind);
+  if (existing) {
+    if (!hasCode(existing)) existing.innerHTML = STARTER[kind]();
+    normalizePages(doc);
+    return existing.getAttribute(PAGE_ATTR) ?? "";
+  }
   const section = doc.createElement("section");
   const id = newId(doc);
   section.setAttribute(PAGE_ATTR, id);
-  section.setAttribute(PAGE_NAME_ATTR, opts.name);
-  section.setAttribute(PAGE_KIND_ATTR, opts.kind);
-  if (opts.kind === "backredirect") section.setAttribute(PAGE_TRIGGER_ATTR, "back");
-  section.innerHTML = opts.html ?? STARTER[opts.kind](opts.name);
-  // Onde entra: a ordem no body É a ordem do funil (`#next-step` avança para a
-  // próxima). Presell vai ANTES da inicial; back redirect vai para o fim; o
-  // resto entra depois da sub-página atual (ou no fim).
-  const els = pageElements(doc);
-  const anchor = opts.after ? pageById(doc, opts.after) : null;
-  const first = startPage(doc) ?? els[0];
-  if (opts.kind === "presell" && first) first.before(section);
-  else if (opts.kind === "backredirect" && els.length) els[els.length - 1].after(section);
-  else if (anchor) anchor.after(section);
-  else if (els.length) els[els.length - 1].after(section);
-  else body.prepend(section);
+  section.setAttribute(PAGE_NAME_ATTR, SUB_KIND_LABELS[kind]);
+  section.setAttribute(PAGE_KIND_ATTR, kind);
+  if (kind === "backredirect") section.setAttribute(PAGE_TRIGGER_ATTR, "back");
+  section.innerHTML = STARTER[kind]();
+  // Entra antes da primeira etapa que vem depois dela na ordem fixa (senão no fim).
+  const order = PAGE_KINDS_SUB.indexOf(kind);
+  const later = els.find((el) => PAGE_KINDS_SUB.indexOf(kindOf(el)) > order);
+  if (later) later.before(section);
+  else els[els.length - 1].after(section);
   normalizePages(doc);
   return id;
 }
 
-export function removePage(doc: Document, id: string): void {
-  const el = pageById(doc, id);
-  if (!el) return;
-  const others = pageElements(doc).filter((p) => p !== el);
-  el.remove();
-  // Sobrou uma só: volta a ser página única (desembrulha).
-  if (others.length === 1) unwrapSingle(doc, others[0]);
+/**
+ * Desativa uma etapa: apaga a seção (e o código). A última etapa ativa que o
+ * visitante pode ver (Pre Lander ou Lander) não sai — sem ela a página ficaria
+ * em branco. Se sobrar só o Lander, a slug volta a ser página única.
+ */
+export function deactivateStep(doc: Document, kind: SubPageKind): void {
+  const els = pageElements(doc);
+  const mine = els.filter((el) => kindOf(el) === kind);
+  if (!mine.length) return;
+  const flowLeft = els.some((el) => kindOf(el) !== kind && kindOf(el) !== "backredirect" && hasCode(el));
+  if (kind !== "backredirect" && mine.some(hasCode) && !flowLeft) return;
+  mine.forEach((el) => el.remove());
+  const rest = pageElements(doc);
+  const active = rest.filter(hasCode);
+  if (active.length === 1 && kindOf(active[0]) === "main") {
+    rest.filter((el) => el !== active[0]).forEach((el) => el.remove());
+    unwrapSingle(doc, active[0]);
+  }
   normalizePages(doc);
 }
 
 function unwrapSingle(doc: Document, section: HTMLElement): void {
   section.replaceWith(...Array.from(section.childNodes));
   doc.body?.removeAttribute(FUNNEL_MODE_ATTR);
-}
-
-export function renamePage(doc: Document, id: string, name: string): void {
-  pageById(doc, id)?.setAttribute(PAGE_NAME_ATTR, name.trim() || "Sem nome");
-}
-
-export function setPageKind(doc: Document, id: string, kind: SubPageKind): void {
-  const el = pageById(doc, id);
-  if (!el) return;
-  el.setAttribute(PAGE_KIND_ATTR, kind);
-  if (kind === "backredirect") {
-    if (!el.hasAttribute(PAGE_TRIGGER_ATTR)) el.setAttribute(PAGE_TRIGGER_ATTR, "back");
-    // Uma back redirect não pode ser a inicial.
-    if (el.hasAttribute(PAGE_START_ATTR)) el.removeAttribute(PAGE_START_ATTR);
-  }
-  normalizePages(doc);
-}
-
-export function setStart(doc: Document, id: string): void {
-  const el = pageById(doc, id);
-  if (!el || el.getAttribute(PAGE_KIND_ATTR) === "backredirect") return;
-  pageElements(doc).forEach((p) => p.removeAttribute(PAGE_START_ATTR));
-  el.setAttribute(PAGE_START_ATTR, "");
-  normalizePages(doc);
 }
 
 export function setTriggers(doc: Document, id: string, triggers: BackTrigger[]): void {
@@ -256,29 +300,17 @@ export function setTriggers(doc: Document, id: string, triggers: BackTrigger[]):
   else el.removeAttribute(PAGE_TRIGGER_ATTR);
 }
 
-export function movePage(doc: Document, id: string, dir: "up" | "down"): void {
+/**
+ * Só para o preview: começa na etapa `id`. Se ela é o Lander, o Pre Lander sai
+ * do documento do preview (a prioridade então cai no Lander). O Backredirect
+ * nunca é inicial: o preview começa normal e ele aparece ao voltar.
+ */
+export function previewFrom(doc: Document, id: string): void {
   const el = pageById(doc, id);
-  if (!el) return;
-  const els = pageElements(doc);
-  const i = els.indexOf(el);
-  const j = dir === "up" ? i - 1 : i + 1;
-  if (j < 0 || j >= els.length) return;
-  if (dir === "up") els[j].before(el);
-  else els[j].after(el);
-}
-
-export function duplicatePage(doc: Document, id: string): string {
-  const el = pageById(doc, id);
-  if (!el) return "";
-  const clone = el.cloneNode(true) as HTMLElement;
-  const nid = newId(doc);
-  clone.setAttribute(PAGE_ATTR, nid);
-  clone.setAttribute(PAGE_NAME_ATTR, `${el.getAttribute(PAGE_NAME_ATTR) ?? "Página"} (cópia)`);
-  clone.removeAttribute(PAGE_START_ATTR);
-  clone.removeAttribute(PAGE_CURRENT_ATTR);
-  el.after(clone);
-  normalizePages(doc);
-  return nid;
+  if (!el || kindOf(el) !== "main") return;
+  pageElements(doc)
+    .filter((p) => kindOf(p) === "presell")
+    .forEach((p) => p.remove());
 }
 
 /** Marca (só no editor) a sub-página que a canvas mostra. */

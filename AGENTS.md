@@ -33,6 +33,12 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - Dados da empresa em `pages.domains.placeholders`, com chaves `company.*` (`llc` = razão social, `number`, `address`, `phone`, `email`; lista em `src/lib/pages/placeholders.ts`). `{{company.name}}` não é guardado: é a razão social sem o sufixo jurídico (LLC, Inc., Ltda, GmbH…), por `companyName()` / `company_name()` — mesma lista de sufixos nos dois lados, testada pelos mesmos casos (`server/tests/company-names.json`; `npm run check:company-name` e a suíte PHP). Automáticos, a cada visita: `url`, `domain`, `slug`, `date`, `year`, `lang`, `language` — idioma pelo Accept-Language do visitante (sem ele, `en`), data de hoje em Nova York por extenso nesse idioma.
 - Quem troca é o servidor de entrega, ao servir (`server/src/placeholders.php`); o painel faz a mesma troca só no preview (em `en`). As regras e as tabelas de idiomas/meses dos dois lados são iguais — mudou uma, mude a outra: só chave conhecida, valor vazio vira texto vazio, valor escapado em HTML.
 
+## Funil (etapas de uma slug)
+
+- Sempre as mesmas três etapas, nesta ordem: **Pre Lander** (`presell`) → **Lander** (`main`) → **Backredirect**. Não há outros tipos, nomes livres nem etapas extras. Uma slug sem seções é só o Lander.
+- Etapa **sem código** (sem seção, ou seção vazia/só comentário) é **inativa** e nunca aparece. O visitante vê primeiro: 1) o Pre Lander, se ativo; 2) senão, o Lander. `#next-step` leva do Pre Lander ao Lander; o Backredirect só aparece pelo voltar/exit intent.
+- A regra vale igual em três lugares — mudou um, mude os outros: `src/lib/pages/subpages.ts` (editor), `src/lib/pages/runtime.ts` (modo navegador) e `server/src/funnel.php` (modo servidor, com testes em `server/tests/funnel.test.php`).
+
 ## Frontend
 
 - **Fuso de exibição: Nova York** (`America/New_York`), pela constante `APP_TZ` de `src/lib/time-zone.ts`. Todo `Intl.DateTimeFormat`/`toLocale*` que mostra data ou hora passa `timeZone: APP_TZ`; nunca depender do fuso do servidor nem do navegador.

@@ -207,7 +207,7 @@ function DestinationGroup({
               >
                 <code className="shrink-0 rounded bg-foreground/5 px-1 text-[10px] text-muted">{KIND_LABEL[e.kind] === "a" ? `<${e.tag}>` : KIND_LABEL[e.kind]}</code>
                 <span className="truncate">{e.label}</span>
-                {e.page ? <span className="ml-auto shrink-0 rounded bg-foreground/5 px-1 text-[9px] text-muted" title={`Sub-página: ${e.page}`}>{e.page}</span> : null}
+                {e.page ? <span className="ml-auto shrink-0 rounded bg-foreground/5 px-1 text-[9px] text-muted" title={`Etapa do funil: ${e.page}`}>{e.page}</span> : null}
                 {e.target === "_blank" ? <ExternalIcon className={`size-3 shrink-0 text-muted ${e.page ? "" : "ml-auto"}`} aria-label="Abre em nova aba" /> : null}
               </button>
             </li>

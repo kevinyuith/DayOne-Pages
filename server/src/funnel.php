@@ -9,8 +9,13 @@
  * recarregando a mesma URL. A URL nunca muda; o fonte da presell não contém a
  * página principal.
  *
- * Etapa atual: o cookie, se apontar para uma etapa que existe; senão a
- * inicial (data-dop-start), senão a primeira que não é back redirect.
+ * Etapas: sempre Pre Lander (presell) → Lander (main) → Backredirect; tipo
+ * desconhecido conta como Lander. Etapa sem código (seção vazia, só espaço ou
+ * comentário) está INATIVA: nunca é servida. Mesmas regras do editor
+ * (src/lib/pages/subpages.ts) e do runtime.
+ *
+ * Etapa atual: o cookie, se apontar para uma etapa ativa; senão a inicial —
+ * 1) o Pre Lander, se ativo; 2) o Lander. O data-dop-start do HTML não manda.
  *
  * O que o runtime precisa saber sobre as etapas que não vieram vai como
  * atributos no <body>: data-dop-cur, data-dop-next, data-dop-main,
@@ -25,9 +30,9 @@
  * ela fecha quando a profundidade volta à de abertura. O conteúdo de cada
  * etapa fica intacto.
  *
- * Sem modo servidor, devolve null e o HTML vai como está. Modo servidor com
- * menos de duas etapas encontradas também devolve null, mas registra no log:
- * é sinal de HTML que o tokenizador não entendeu.
+ * Sem modo servidor, devolve null e o HTML vai como está. Modo servidor sem
+ * nenhuma etapa encontrada também devolve null, mas registra no log: é sinal
+ * de HTML que o tokenizador não entendeu. Sem etapa ativa, null (nada a cortar).
  */
 declare(strict_types=1);
 
@@ -50,55 +55,44 @@ function funnel_apply(string $html, array $cookies): ?array
         return null;
     }
     $pages = funnel_sections($html);
-    if (count($pages) < 2) {
-        error_log('[dayone-pages] funil em modo servidor com ' . count($pages) . ' etapa(s) reconhecida(s); servindo o HTML inteiro');
+    if ($pages === []) {
+        error_log('[dayone-pages] funil em modo servidor sem etapa reconhecida; servindo o HTML inteiro');
         return null;
     }
 
-    $flow = array_values(array_filter($pages, fn ($p) => $p['kind'] !== 'backredirect'));
+    $first = static function (string $kind) use ($pages): ?array {
+        foreach ($pages as $p) {
+            if ($p['kind'] === $kind && $p['active']) {
+                return $p;
+            }
+        }
+        return null;
+    };
+    $pre = $first('presell');
+    $main = $first('main');
+    $br = $first('backredirect');
+    $start = $pre ?? $main;
+    if ($start === null) {
+        return null;
+    }
     $byId = [];
     foreach ($pages as $p) {
-        $byId[$p['id']] = $p;
-    }
-    $start = null;
-    foreach ($pages as $p) {
-        if ($p['start']) {
-            $start = $p;
-            break;
-        }
-    }
-    $start ??= $flow[0] ?? $pages[0];
-    $main = null;
-    foreach ($flow as $p) {
-        if ($p['kind'] === 'main') {
-            $main = $p;
-            break;
-        }
-    }
-    $br = null;
-    foreach ($pages as $p) {
-        if ($p['kind'] === 'backredirect') {
-            $br = $p;
-            break;
+        if ($p['active']) {
+            $byId[$p['id']] = $p;
         }
     }
 
     $want = (string) ($cookies[FUNNEL_COOKIE] ?? '');
     $cur = (preg_match('/^p_[a-z0-9]{1,16}$/', $want) === 1 && isset($byId[$want])) ? $byId[$want] : $start;
 
-    // "Próxima": a seguinte no fluxo; fora do fluxo (back redirect), a principal ou a inicial.
-    $next = null;
-    $idx = null;
-    foreach ($flow as $i => $p) {
-        if ($p['id'] === $cur['id']) {
-            $idx = $i;
-            break;
-        }
-    }
-    if ($idx === null) {
+    // "Próxima": do Pre Lander, o Lander; do Lander, nenhuma; da Backredirect
+    // (ou de uma seção fora do fluxo), o Lander — ou a inicial.
+    if ($pre !== null && $cur['id'] === $pre['id']) {
+        $next = $main;
+    } elseif ($main !== null && $cur['id'] === $main['id']) {
+        $next = null;
+    } else {
         $next = $main ?? $start;
-    } elseif (isset($flow[$idx + 1])) {
-        $next = $flow[$idx + 1];
     }
 
     // Remove as outras seções, do fim para o início (os offsets continuam válidos).
@@ -133,7 +127,7 @@ function funnel_apply(string $html, array $cookies): ?array
 /**
  * As seções de etapa, na ordem do documento, com os offsets no HTML ORIGINAL.
  *
- * @return list<array{id: string, kind: string, start: bool, trigger: string, from: int, to: int}>
+ * @return list<array{id: string, kind: string, start: bool, trigger: string, active: bool, from: int, to: int}>
  */
 function funnel_sections(string $html): array
 {
@@ -152,11 +146,13 @@ function funnel_sections(string $html): array
         if (!$closing) {
             if ($open === null && preg_match('/\bdata-dop-page\s*=\s*"([^"]+)"/i', $tok[2][0], $id) === 1) {
                 $attrs = $tok[2][0];
+                $kind = preg_match('/\bdata-dop-kind\s*=\s*"([^"]*)"/i', $attrs, $k) === 1 ? strtolower($k[1]) : '';
                 $open = [
                     'id' => $id[1],
-                    'kind' => preg_match('/\bdata-dop-kind\s*=\s*"([^"]*)"/i', $attrs, $k) === 1 ? strtolower($k[1]) : 'main',
+                    'kind' => in_array($kind, ['presell', 'backredirect'], true) ? $kind : 'main',
                     'start' => preg_match('/\bdata-dop-start\b/i', $attrs) === 1,
                     'trigger' => preg_match('/\bdata-dop-trigger\s*=\s*"([^"]*)"/i', $attrs, $t) === 1 ? $t[1] : '',
+                    'active' => false,
                     'from' => $offset,
                     'to' => $offset + $len,
                 ];
@@ -167,6 +163,7 @@ function funnel_sections(string $html): array
         }
         $depth = max(0, $depth - 1);
         if ($open !== null && $depth === $openDepth) {
+            $open['active'] = funnel_has_code(substr($html, $open['to'], $offset - $open['to']));
             $open['to'] = $offset + $len;
             $out[] = $open;
             $open = null;
@@ -174,6 +171,15 @@ function funnel_sections(string $html): array
         }
     }
     return $out;
+}
+
+/**
+ * O miolo de uma etapa tem código? Comentário, espaço e &nbsp; não contam (no
+ * editor e no runtime, um nó de texto só com espaço/NBSP também não).
+ */
+function funnel_has_code(string $inner): bool
+{
+    return trim((string) preg_replace('/<!--.*?-->|&nbsp;|&#160;|&#xa0;|\xC2\xA0/is', '', $inner)) !== '';
 }
 
 /**

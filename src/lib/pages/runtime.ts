@@ -10,8 +10,9 @@
  *     Em dois modos, decididos pelo que veio do servidor:
  *
  *     - MODO NAVEGADOR (padrão; também preview e HTML estático): todas as
- *       seções estão no HTML. Mostra a inicial (`data-dop-start`), esconde as
- *       outras e troca com `hidden` + history.pushState.
+ *       seções estão no HTML. Mostra a inicial — o Pre Lander se ativo, senão
+ *       o Lander; etapa sem código é pulada (mesmas regras de `subpages.ts`) —,
+ *       esconde as outras e troca com `hidden` + history.pushState.
  *     - MODO SERVIDOR (`<body data-dop-funnel="server">`, cortado pelo PHP):
  *       veio SÓ a etapa atual, e o <body> traz `data-dop-cur`, `-next`,
  *       `-start`, `-main`, `-br`, `-br-trigger`. Trocar de etapa = gravar o
@@ -29,7 +30,6 @@ import {
   HREF_ATTR,
   PAGE_ATTR,
   PAGE_KIND_ATTR,
-  PAGE_START_ATTR,
   PAGE_TRIGGER_ATTR,
   RUNTIME_ATTR,
   TARGET_ATTR,
@@ -40,7 +40,7 @@ export const PAGE_HREF_PREFIX = "#page:";
 
 export const RUNTIME_JS = [
   "(function(){",
-  `var A="${HREF_ATTR}",T="${TARGET_ATTR}",P="${PAGE_ATTR}",K="${PAGE_KIND_ATTR}",S="${PAGE_START_ATTR}",G="${PAGE_TRIGGER_ATTR}",NX="${NEXT_STEP}",PP="${PAGE_HREF_PREFIX}",CK="${FUNNEL_COOKIE}";`,
+  `var A="${HREF_ATTR}",T="${TARGET_ATTR}",P="${PAGE_ATTR}",K="${PAGE_KIND_ATTR}",G="${PAGE_TRIGGER_ATTR}",NX="${NEXT_STEP}",PP="${PAGE_HREF_PREFIX}",CK="${FUNNEL_COOKIE}";`,
   // history pode recusar em contextos estranhos (iframe srcdoc sem origem); nunca derruba o resto.
   'function hs(f,st){try{history[f](st,"")}catch(e){}}',
   "var B=document.body,cur0=B.getAttribute(\"data-dop-cur\"),resolve,open;",
@@ -64,21 +64,23 @@ export const RUNTIME_JS = [
   "if(fired||e.relatedTarget||e.clientY>0)return;fired=true;go(brId)})}",
   "}else{",
   // ---- MODO NAVEGADOR: todas as seções vieram; troca com hidden + history.
-  'var pages=[].slice.call(document.querySelectorAll("["+P+"]")),cur=null,start=null;',
+  'var pages=[].slice.call(document.querySelectorAll("["+P+"]")),cur=null;',
   "function pid(el){return el.getAttribute(P)}",
   "function byId(i){for(var k=0;k<pages.length;k++)if(pid(pages[k])===i)return pages[k];return null}",
-  'function flow(){return pages.filter(function(p){return p.getAttribute(K)!=="backredirect"})}',
+  // Tipo (desconhecido = Lander) e se a etapa tem código: sem código fica inativa e é pulada.
+  'function kd(p){var k=p.getAttribute(K);return k==="presell"||k==="backredirect"?k:"main"}',
+  "function on(p){for(var n=p.firstChild;n;n=n.nextSibling)if(n.nodeType===1||(n.nodeType===3&&/\\S/.test(n.nodeValue)))return true;return false}",
+  "function first(k){for(var i=0;i<pages.length;i++)if(kd(pages[i])===k&&on(pages[i]))return pages[i];return null}",
+  // Inicial: 1) Pre Lander ativo; 2) Lander ativo.
+  'var pre=first("presell"),lan=first("main"),br=first("backredirect"),start=pre||lan,trig=(br&&br.getAttribute(G))||"";',
   "function show(el,push){if(!el||el===cur)return;pages.forEach(function(p){p.hidden=p!==el});cur=el;",
   'if(push)hs("pushState",{dop:pid(el)});window.scrollTo(0,0);',
   'try{el.dispatchEvent(new CustomEvent("dop:pageshow",{bubbles:true}))}catch(e){}}',
-  // Fora do fluxo (back redirect), "próxima" é a principal — ou a inicial.
-  'function nextOf(el){var f=flow(),i=f.indexOf(el);if(i<0){for(var k=0;k<f.length;k++)if(f[k].getAttribute(K)==="main")return f[k];return start||f[0]||null}return i<f.length-1?f[i+1]:null}',
-  "resolve=function(h){if(!h)return null;if(h===NX)return nextOf(cur);if(h.indexOf(PP)===0)return byId(h.slice(PP.length));return null};",
+  // "Próxima": do Pre Lander, o Lander; do Lander, nenhuma; da Backredirect, o Lander (ou a inicial).
+  "function nextOf(el){return el===pre?lan:el===lan?null:lan||start}",
+  "resolve=function(h){if(!h)return null;if(h===NX)return nextOf(cur);if(h.indexOf(PP)===0){var el=byId(h.slice(PP.length));return el&&on(el)?el:null}return null};",
   "open=function(el){show(el,true)};",
-  "var br=null,trig=\"\";",
-  "if(pages.length){",
-  'start=document.querySelector("["+P+"]["+S+"]")||flow()[0]||pages[0];',
-  'br=document.querySelector("["+P+"]["+K+"=\\"backredirect\\"]");trig=(br&&br.getAttribute(G))||"";',
+  "if(start){",
   'hs("replaceState",{dop:pid(start),root:true});show(start,false);',
   'if(br&&trig.indexOf("back")>=0)hs("pushState",{dop:pid(start)});',
   'window.addEventListener("popstate",function(e){var s=e.state||{};',
