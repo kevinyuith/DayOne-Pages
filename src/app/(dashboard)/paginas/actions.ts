@@ -122,17 +122,18 @@ export async function createPage(prev: CreatePageState, fd: FormData): Promise<C
 export type CreateFunnelState = { error?: string; attempt: number };
 
 /**
- * Cria um funil (template com kind FUNNEL, tela Funil), como rascunho, na
- * pasta aberta, com a slug `/`: Pre Lander e Lander com o código inicial —
- * ou, com `template_id`, o Lander vem da slug `/` desse template.
+ * Cria uma página de funil (template com kind FUNNEL), como rascunho, com a
+ * slug `/`: Pre Lander e Lander com o código inicial — ou, com `template_id`,
+ * o Lander vem da slug `/` desse template. Com `funnel_id`, já nasce ligada ao
+ * funil do dayone-main (F1, F2…). Em sucesso abre o editor.
  */
 export async function createFunnel(prev: CreateFunnelState, fd: FormData): Promise<CreateFunnelState> {
   const attempt = prev.attempt + 1;
   const name = String(fd.get("name") ?? "").trim();
-  const folderId = optionalId(fd.get("folder_id"));
+  const funnelId = optionalId(fd.get("funnel_id"));
   const templateId = optionalId(fd.get("template_id"));
   if (name.length < NAME_MIN || name.length > NAME_MAX) return { error: `Enter a name of ${NAME_MIN} to ${NAME_MAX} characters.`, attempt };
-  if (folderId === undefined) return { error: "Invalid folder.", attempt };
+  if (funnelId === undefined) return { error: "Invalid funnel.", attempt };
   if (templateId === undefined) return { error: "Invalid template.", attempt };
 
   const db = supabaseService();
@@ -145,8 +146,11 @@ export async function createFunnel(prev: CreateFunnelState, fd: FormData): Promi
 
   let pageId: string;
   try {
-    const { data, error } = await db.from("pages").insert({ name, kind: "FUNNEL", status: "DRAFT", folder_id: folderId }).select("id").single();
-    if (error) throw new Error(error.message);
+    const { data, error } = await db.from("pages").insert({ name, kind: "FUNNEL", status: "DRAFT", funnel_id: funnelId }).select("id").single();
+    if (error) {
+      if (error.code === "23503") return { error: "This funnel no longer exists.", attempt };
+      throw new Error(error.message);
+    }
     pageId = (data as { id: string }).id;
     const { error: slugError } = await db.from("page_slugs").insert({ page_id: pageId, slug: "/", title: name, content: funnelStarterHtml(name, lander) });
     if (slugError) {
@@ -158,7 +162,7 @@ export async function createFunnel(prev: CreateFunnelState, fd: FormData): Promi
   }
 
   revalidateLibrary();
-  redirect(`/funil/${pageId}`);
+  redirect(`/paginas/${pageId}`);
 }
 
 /** O HTML da slug `/` de um template (ou da primeira), para virar Lander ou amostra de um funil. */

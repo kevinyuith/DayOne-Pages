@@ -66,6 +66,8 @@ export type Page = {
   notes: string | null;
   /** Pasta na tela de páginas; null = raiz. */
   folder_id: string | null;
+  /** O funil do dayone-main (F1, F2…) a que a página pertence; null = nenhum. */
+  funnel_id: string | null;
   created_at: string;
   updated_at: string;
 };

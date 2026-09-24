@@ -13,8 +13,8 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
 }
 
 /** O editor aberto num template. A página de um domínio usa o mesmo editor em /dominios/[id]/paginas/[pageId]. */
-export default async function SlugEditorPage({ params }: { params: Params }) {
-  const { id, slugId } = await params;
+export default async function SlugEditorPage({ params, searchParams }: { params: Params; searchParams: Promise<{ sample?: string }> }) {
+  const [{ id, slugId }, { sample }] = await Promise.all([params, searchParams]);
   const [page, slug, templates] = await Promise.all([getPageWithSlugs(id), getSlug(slugId), listTemplates()]);
   if (!page || !slug || slug.page_id !== page.id) notFound();
   // Funil: o editor volta para a tela do funil (etapas, amostras e o teste A/B).
@@ -28,6 +28,8 @@ export default async function SlugEditorPage({ params }: { params: Params }) {
       domains={[]}
       scope="template"
       placeholders={null}
+      // A tela Funil abre o editor já na amostra clicada.
+      initialSampleId={typeof sample === "string" && /^p_[a-z0-9]{1,16}$/.test(sample) ? sample : null}
       templates={templates.filter((t) => t.kind !== "FUNNEL" && t.id !== page.id).map((t) => ({ id: t.id, name: t.name }))}
       actions={{
         save: saveEditor,
@@ -39,7 +41,7 @@ export default async function SlugEditorPage({ params }: { params: Params }) {
       }}
       nav={{
         // Volta para a pasta onde o template está, não para a raiz.
-        backHref: funnel ? `/funil/${page.id}` : page.folder_id ? `/paginas?pasta=${page.folder_id}` : "/paginas",
+        backHref: funnel ? (page.funnel_id ? `/funil?f=${page.funnel_id}` : `/funil?f=unlinked`) : page.folder_id ? `/paginas?pasta=${page.folder_id}` : "/paginas",
         backTitle: funnel ? "Back to the funnel" : "Back to templates",
         slugHref: `/paginas/${page.id}/slugs/{slug}`,
         afterDeleteHref: funnel ? "/funil" : "/paginas",

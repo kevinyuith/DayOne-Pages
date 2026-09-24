@@ -25,16 +25,14 @@ import { INPUT_CLASS, SELECT_CLASS } from "@/components/ui/field";
 import type { ActionResult } from "@/lib/action-result";
 import { childFolders, folderMap, folderOptions, folderPath, folderPathLabel, isInside } from "@/lib/pages/folders";
 import type { PageListItem } from "@/lib/pages/queries";
-import { SUB_KIND_LABELS, PAGE_KINDS_SUB } from "@/lib/pages/subpages";
-import { FOLDER_COLORS, FOLDER_COLOR_LABELS, PAGE_KIND_LABELS, PAGE_STATUS_LABELS, type Folder, type FolderColor, type FolderScope } from "@/lib/pages/types";
+import { FOLDER_COLORS, FOLDER_COLOR_LABELS, PAGE_KIND_LABELS, PAGE_STATUS_LABELS, type Folder, type FolderColor } from "@/lib/pages/types";
 import { createFolder, deleteFolder, deletePage, duplicatePage, moveFolder, movePage, renameFolder, renamePage, setFolderColor } from "./actions";
-import { CreateFunnelForm } from "./create-funnel-form";
 import { CreatePageForm } from "./create-page-form";
 
 /**
  * A tela /paginas no modelo do hidepages: cards, pastas aninhadas, breadcrumb,
  * busca, menu "…" em cada card e arrastar-e-soltar para mover. A tela /funil
- * é a mesma, com `scope="FUNNEL"`: só funis, com a árvore de pastas dela.
+ * mostra os funis do dayone-main em lista (ver funil/page.tsx).
  *
  * A pasta aberta vem da URL (`?pasta=<id>`), então cada pasta tem link. O
  * servidor manda TODAS as pastas e páginas (são poucas centenas no máximo) e
@@ -43,35 +41,16 @@ import { CreatePageForm } from "./create-page-form";
  * manter estado próprio além do que está sendo arrastado/editado.
  */
 
-/** O que muda entre as duas telas da biblioteca. */
-const SCOPE_TEXT: Record<
-  FolderScope,
-  { base: string; root: string; create: string; search: string; one: string; many: string; newTitle: string; emptyRoot: string; emptyFolder: string; deleteQ: (name: string) => string }
-> = {
-  TEMPLATE: {
-    base: "/paginas",
-    root: "Templates",
-    create: "Create template",
-    search: "Search templates or folders…",
-    one: "template",
-    many: "templates",
-    newTitle: "New template",
-    emptyRoot: "No templates yet. Create the first one: it starts as a draft with the slug /.",
-    emptyFolder: "This folder is empty. Create a template here or drag templates and folders into it.",
-    deleteQ: (name) => `Delete the template "${name}" and all its slugs? The copies domains already have won't change.`,
-  },
-  FUNNEL: {
-    base: "/funil",
-    root: "Funnels",
-    create: "Create funnel",
-    search: "Search funnels or folders…",
-    one: "funnel",
-    many: "funnels",
-    newTitle: "New funnel",
-    emptyRoot: "No funnels yet. Create the first one: Pre Lander → Lander → Backredirect, with samples for A/B tests.",
-    emptyFolder: "This folder is empty. Create a funnel here or drag funnels and folders into it.",
-    deleteQ: (name) => `Delete the funnel "${name}"? The copies domains already have (and their A/B tests) won't change.`,
-  },
+const TEXT = {
+  base: "/paginas",
+  root: "Templates",
+  create: "Create template",
+  search: "Search templates or folders…",
+  many: "templates",
+  newTitle: "New template",
+  emptyRoot: "No templates yet. Create the first one: it starts as a draft with the slug /.",
+  emptyFolder: "This folder is empty. Create a template here or drag templates and folders into it.",
+  deleteQ: (name: string) => `Delete the template "${name}" and all its slugs? The copies domains already have won't change.`,
 };
 
 const FOLDER_COLOR_CLASS: Record<FolderColor, string> = {
@@ -105,21 +84,8 @@ type DialogState =
 
 const DRAG_MIME = "application/x-dayone-item";
 
-export function PagesBrowser({
-  folders,
-  pages,
-  currentFolderId,
-  scope = "TEMPLATE",
-  templates = [],
-}: {
-  folders: Folder[];
-  pages: PageListItem[];
-  currentFolderId: string | null;
-  scope?: FolderScope;
-  /** Funil: os templates que podem virar o Lander de um funil novo. */
-  templates?: { id: string; name: string }[];
-}) {
-  const T = SCOPE_TEXT[scope];
+export function PagesBrowser({ folders, pages, currentFolderId }: { folders: Folder[]; pages: PageListItem[]; currentFolderId: string | null }) {
+  const T = TEXT;
   const ROOT_LABEL = T.root;
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -233,7 +199,7 @@ export function PagesBrowser({
   // ── Ações dos menus ────────────────────────────────────────────────────────
   const onDeletePage = (p: PageListItem) => {
     if (!window.confirm(T.deleteQ(p.name))) return;
-    run(() => deletePage(p.id), () => setNotice(scope === "FUNNEL" ? "Funnel deleted." : "Template deleted."));
+    run(() => deletePage(p.id), () => setNotice("Template deleted."));
   };
   const onDeleteFolder = (f: Folder) => {
     const dest = f.parent_id ? `"${map.get(f.parent_id)?.name ?? "parent folder"}"` : "the root";
@@ -363,11 +329,7 @@ export function PagesBrowser({
         onClose={closeDialog}
         className="sm:max-w-2xl"
       >
-        {scope === "FUNNEL" ? (
-          <CreateFunnelForm folderId={currentId} templates={templates} onCancel={closeDialog} />
-        ) : (
-          <CreatePageForm folderId={currentId} templates={pages} onCancel={closeDialog} />
-        )}
+        <CreatePageForm folderId={currentId} templates={pages} onCancel={closeDialog} />
       </Dialog>
 
       <NameDialog
@@ -378,7 +340,7 @@ export function PagesBrowser({
         submitLabel="Create folder"
         maxLength={80}
         onClose={closeDialog}
-        onSubmit={(name) => run(() => createFolder(currentId, name, scope), () => setNotice(`Folder "${name}" created.`))}
+        onSubmit={(name) => run(() => createFolder(currentId, name), () => setNotice(`Folder "${name}" created.`))}
       />
 
       <NameDialog
@@ -394,7 +356,7 @@ export function PagesBrowser({
 
       <NameDialog
         open={dialog?.kind === "rename-page"}
-        title={scope === "FUNNEL" ? "Rename funnel" : "Rename template"}
+        title="Rename template"
         label="Name"
         submitLabel="Rename"
         minLength={2}
@@ -527,7 +489,6 @@ function PageCard({
         <span className="text-muted/60">·</span>
         {PAGE_KIND_LABELS[page.kind]}
       </span>
-      {page.versions ? <span className="text-[11px] text-muted">{funnelSummary(page.versions)}</span> : null}
       <span className="text-[11px] text-muted/70">
         {page.copies_count === 0 ? "no copies on domains" : `copied to ${page.copies_count} ${page.copies_count === 1 ? "domain" : "domains"}`}
       </span>
@@ -716,11 +677,3 @@ function MoveDialog({
   );
 }
 
-/** "Pre Lander · Lander ×2 · Backredirect": as etapas ativas do funil, com quantas amostras cada uma tem. */
-function funnelSummary(versions: NonNullable<PageListItem["versions"]>): string {
-  const parts = PAGE_KINDS_SUB.map((k) => {
-    const n = versions.filter((v) => v.kind === k && v.active).length;
-    return n === 0 ? null : n === 1 ? SUB_KIND_LABELS[k] : `${SUB_KIND_LABELS[k]} ×${n}`;
-  }).filter(Boolean);
-  return parts.length ? parts.join(" · ") : "no steps";
-}

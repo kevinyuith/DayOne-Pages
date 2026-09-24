@@ -44,7 +44,7 @@ export default async function FunnelPage({ params, searchParams }: { params: Par
     <>
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <Link href={page.folder_id ? `/funil?pasta=${page.folder_id}` : "/funil"} className="text-sm text-muted hover:text-foreground">
+          <Link href={page.funnel_id ? `/funil?f=${page.funnel_id}` : "/funil"} className="text-sm text-muted hover:text-foreground">
             ← Funnels
           </Link>
           <h1 className="mt-1 flex items-center gap-2 text-2xl font-semibold tracking-tight">
