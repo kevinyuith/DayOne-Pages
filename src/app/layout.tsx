@@ -19,12 +19,17 @@ export const metadata: Metadata = {
   },
   description: "Painel de gerenciamento do DayOne Pages",
   robots: { index: false, follow: false },
+  // O Chrome também lê esta meta; o translate="no" abaixo cobre os outros navegadores.
+  other: { google: "notranslate" },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
+    // translate="no": o painel tem textos em inglês de propósito; sem isto o navegador
+    // em português traduz a tela sozinho (e traduz até nomes de domínio e caminhos).
     <html
       lang="pt-BR"
+      translate="no"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       {/* Extensões (ColorZilla etc.) injetam atributos no <body> antes da hidratação. Só vale para os atributos do body, não para os filhos. */}
