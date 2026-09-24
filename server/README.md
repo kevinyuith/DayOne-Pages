@@ -122,17 +122,23 @@ uma pessoa.
 
 ### Marcadores `{{chave}}` (`src/placeholders.php`)
 
-Cada domínio guarda os próprios dados (nome da empresa, telefone, e-mail,
-endereço…) em `pages.domains.placeholders`, e o `resolve` devolve esses
-valores (mais `domain`) em toda rota. Ao servir, `{{chave}}` vira o valor;
-`{{year}}` é o ano corrente (UTC).
+Cada domínio guarda os dados da empresa em `pages.domains.placeholders`
+(`company.llc` = razão social, `company.number`, `company.address`,
+`company.phone`, `company.email`), e o `resolve` devolve esses valores (mais
+`domain`) em toda rota. `company.name` é calculado: a razão social sem o
+sufixo jurídico ("Acme Health LLC" → "Acme Health"; lista em
+`company_name()`, casos em `tests/company-names.json`). A cada visita entram os automáticos: `url`
+(`https://domínio` + path, sem query), `slug` (path servido), `lang` e
+`language` (primeiro idioma do Accept-Language; sem ele, inglês), `date`
+(hoje em Nova York, por extenso nesse idioma: "September 23, 2026", "23 de
+setembro de 2026"…) e `year`. Ao servir, `{{chave}}` vira o valor.
 
-- só chave conhecida é trocada (espaços dentro valem: `{{ phone }}`);
+- só chave conhecida é trocada (espaços dentro valem: `{{ company.phone }}`);
   `{{ qualquer_outra }}` fica intacta, então página com Vue/Alpine não quebra;
 - valor vazio vira texto vazio;
 - HTML/XML: valor escapado; `text/plain`: cru; CSS/JS/JSON: nada muda;
-- o ETag ganha `-p<8 hex>` (hash dos valores): mudou um dado do domínio, a
-  cópia do navegador deixa de valer. Rota sem `placeholders` (cache de antes,
+- o ETag ganha `-p<8 hex>` (hash dos valores): muda por idioma, por dia e
+  quando um dado do domínio muda (a resposta já varia por Accept-Language). Rota sem `placeholders` (cache de antes,
   `resolve` antigo) não troca nada e não mexe no ETag.
 
 A lista de campos do painel e o preview do editor ficam em

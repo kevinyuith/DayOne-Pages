@@ -25,8 +25,8 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 ## Marcadores `{{chave}}`
 
-- Valores em `pages.domains.placeholders` (campos em `src/lib/pages/placeholders.ts`); `{{domain}}` e `{{year}}` são automáticos. Chaves em inglês, `snake_case`.
-- Quem troca é o servidor de entrega, ao servir (`server/src/placeholders.php`); o painel faz a mesma troca só no preview. As regras dos dois lados são iguais — mudou uma, mude a outra: só chave conhecida, valor vazio vira texto vazio, valor escapado em HTML.
+- Dados da empresa em `pages.domains.placeholders`, com chaves `company.*` (`llc` = razão social, `number`, `address`, `phone`, `email`; lista em `src/lib/pages/placeholders.ts`). `{{company.name}}` não é guardado: é a razão social sem o sufixo jurídico (LLC, Inc., Ltda, GmbH…), por `companyName()` / `company_name()` — mesma lista de sufixos nos dois lados, testada pelos mesmos casos (`server/tests/company-names.json`; `npm run check:company-name` e a suíte PHP). Automáticos, a cada visita: `url`, `domain`, `slug`, `date`, `year`, `lang`, `language` — idioma pelo Accept-Language do visitante (sem ele, `en`), data de hoje em Nova York por extenso nesse idioma.
+- Quem troca é o servidor de entrega, ao servir (`server/src/placeholders.php`); o painel faz a mesma troca só no preview (em `en`). As regras e as tabelas de idiomas/meses dos dois lados são iguais — mudou uma, mude a outra: só chave conhecida, valor vazio vira texto vazio, valor escapado em HTML.
 
 ## Frontend
 

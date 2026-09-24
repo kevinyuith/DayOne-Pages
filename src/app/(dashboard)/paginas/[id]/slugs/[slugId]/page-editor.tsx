@@ -763,7 +763,8 @@ function PlaceholdersMenu({ values }: { values: Record<string, string> | null })
       </summary>
       <div className="absolute right-0 z-20 mt-1 w-80 rounded-xl border border-border bg-surface p-2 text-xs shadow-lg">
         <p className="px-1 pb-2 text-muted">
-          Escreva o marcador no texto ou num link (ex.: <code>mailto:{"{{email}}"}</code>). Ao servir, o domínio troca pelo valor dele.
+          Escreva o marcador no texto ou num link (ex.: <code>mailto:{"{{company.email}}"}</code>). Ao servir, o domínio troca pelo valor dele;
+          idioma e data seguem o navegador de quem visita (o preview mostra em inglês).
         </p>
         <ul className="max-h-72 overflow-auto">
           {rows.map((r) => {

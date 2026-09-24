@@ -263,7 +263,8 @@ export async function savePlaceholders(domainId: string, prev: PlaceholdersFormS
     if (v.length > f.max) return { error: `${f.label}: no máximo ${f.max} caracteres.`, attempt };
     values[f.key] = v;
   }
-  if (values.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email)) return { error: "E-mail inválido.", attempt };
+  const email = values["company.email"];
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { error: "E-mail inválido.", attempt };
 
   try {
     const { data, error } = await supabaseService().from("domains").update({ placeholders: values }).eq("id", domainId).select("domain").single();

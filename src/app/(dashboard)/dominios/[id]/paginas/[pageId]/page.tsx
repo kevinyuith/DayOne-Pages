@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { PageEditor } from "@/app/(dashboard)/paginas/[id]/slugs/[slugId]/page-editor";
-import { domainPlaceholderValues } from "@/lib/pages/placeholders";
+import { placeholderValues } from "@/lib/pages/placeholders";
 import { getDomainPageForEditor } from "@/lib/pages/queries";
 import { removeDomainPage } from "../../../actions";
 import { createDomainSlug, deleteDomainSlug, renameDomainSlug, saveDomainPage, toggleDomainSlug } from "../actions";
@@ -34,7 +34,8 @@ export default async function DomainPageEditorPage({ params, searchParams }: { p
       slug={data.slug}
       domains={[data.domain.domain]}
       scope="domain"
-      placeholders={domainPlaceholderValues(data.domain.domain, data.domain.placeholders)}
+      // Preview como um visitante de língua inglesa; no ar, lang/language/date seguem o navegador de quem visita.
+      placeholders={placeholderValues({ domain: data.domain.domain, stored: data.domain.placeholders, path: data.slug.slug, lang: "en" })}
       actions={{
         save: saveDomainPage.bind(null, id),
         createSlug: createDomainSlug.bind(null, id, pageId),

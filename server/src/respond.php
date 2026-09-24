@@ -107,7 +107,7 @@ function serve_slug(array $route, Request $req): array
     $tag = $beacon ? BEACON_ETAG : '';
 
     // Marcadores {{chave}}: o hash dos valores entra no ETag (placeholders.php).
-    $values = placeholder_values($route);
+    $values = placeholder_values($route, $req);
     $ptag = placeholders_etag($values);
 
     // Slug que o cache já marcou como "não é funil em modo servidor": o ETag é

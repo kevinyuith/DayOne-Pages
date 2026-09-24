@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "check:secrets": "node scripts/check-secrets.mjs"
+    "check:secrets": "node scripts/check-secrets.mjs",
+    "check:company-name": "node --experimental-strip-types --no-warnings scripts/check-company-name.mts"
   },
   "dependencies": {
     "@codemirror/lang-html": "^6.4.12",
