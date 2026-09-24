@@ -221,8 +221,8 @@ function VturbTest({
     <div className="flex flex-col gap-3">
       <div className="overflow-hidden rounded-lg border border-border bg-surface">
         <table className="w-full text-sm">
-          <thead className="border-b border-border text-left text-xs text-muted">
-            <tr>
+          <thead className="text-left text-xs text-muted">
+            <tr className="border-b border-border">
               <th className="w-px px-3 py-2 font-medium">Traffic</th>
               <th className="px-3 py-2 font-medium">Video</th>
               <th className="px-3 py-2 font-medium">Video ID</th>
@@ -231,6 +231,13 @@ function VturbTest({
               <th className="px-3 py-2 text-right font-medium">Pitch</th>
               <th className="px-3 py-2 font-medium">Copy</th>
               <th className="px-3 py-2 font-medium">Editor</th>
+              <th className="px-3 py-2 text-right">
+                {all.length > 1 ? (
+                  <button type="button" onClick={onEven} disabled={pending} className="text-xs font-medium text-muted hover:text-foreground">
+                    Split evenly
+                  </button>
+                ) : null}
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -238,7 +245,7 @@ function VturbTest({
               const isNew = added.includes(v);
               const edited = !isNew && num(v.id) !== v.weight;
               return (
-                <tr key={v.id} className={`border-b border-border last:border-0 ${isNew ? "bg-accent/5" : ""}`}>
+                <tr key={v.id} className={`border-b border-border last:border-0 hover:bg-foreground/[0.03] ${isNew ? "bg-accent/5" : ""}`}>
                   <td className="whitespace-nowrap px-3 py-2">
                     <span className="inline-flex items-center gap-1">
                       <input
@@ -247,7 +254,7 @@ function VturbTest({
                         value={weights[v.id] ?? ""}
                         onChange={(e) => setWeights((cur) => ({ ...cur, [v.id]: e.target.value }))}
                         aria-label={`Traffic of ${v.name ?? v.id}`}
-                        className={`${INPUT_BASE} h-8 w-16 px-2 text-right tabular-nums ${edited ? "border-accent/60" : ""}`}
+                        className={`h-7 w-14 rounded-md border bg-transparent px-1.5 text-right text-xs tabular-nums ${edited ? "border-accent/60" : "border-border"}`}
                       />
                       <span className="text-xs text-muted">%</span>
                     </span>
@@ -258,12 +265,13 @@ function VturbTest({
                   </td>
                   <td className="px-3 py-2 font-mono text-xs text-muted">{v.id}</td>
                   <VslCells vsl={v.vsl} />
+                  <td />
                 </tr>
               );
             })}
             {visible.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-3 py-3 text-sm text-muted">
+                <td colSpan={9} className="px-3 py-3 text-sm text-muted">
                   No video with traffic.
                 </td>
               </tr>
@@ -283,9 +291,6 @@ function VturbTest({
         </button>
         <div className="flex flex-wrap items-center gap-2">
           <span className={`text-xs tabular-nums ${Math.abs(total - 100) < 0.001 ? "text-muted" : "font-semibold text-red-600 dark:text-red-400"}`}>Total {pct(total)}</span>
-          <Button type="button" size="sm" variant="ghost" onClick={onEven} disabled={pending}>
-            Split evenly
-          </Button>
           <Button type="button" size="sm" variant="ghost" onClick={onReset} disabled={pending || !changed}>
             Reset
           </Button>
