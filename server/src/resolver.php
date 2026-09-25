@@ -17,19 +17,19 @@ declare(strict_types=1);
 defined('DAYONE_ENTRY') || (http_response_code(404) && exit);
 
 /**
- * @return array{routes: array, xcache: string, refresh: bool}|null
+ * @return array{routes: array, platform: ?array, xcache: string, refresh: bool}|null
  */
 function resolve_routes(string $host, string $path): ?array
 {
     ['state' => $state, 'entry' => $entry] = cache_get_routes($host, $path);
 
     if ($state === 'FRESH' && cache_has_all_content($entry['routes'])) {
-        return ['routes' => $entry['routes'], 'xcache' => 'HIT', 'refresh' => false];
+        return ['routes' => $entry['routes'], 'gate' => $entry['gate'] ?? null, 'xcache' => 'HIT', 'refresh' => false];
     }
 
     $cfg = config();
     if ($state === 'STALE' && $cfg['swr'] && function_exists('fastcgi_finish_request')) {
-        return ['routes' => $entry['routes'], 'xcache' => 'STALE', 'refresh' => true];
+        return ['routes' => $entry['routes'], 'gate' => $entry['gate'] ?? null, 'xcache' => 'STALE', 'refresh' => true];
     }
 
     $lock = try_lock("$host|$path");
@@ -37,10 +37,10 @@ function resolve_routes(string $host, string $path): ?array
         try {
             $fresh = refresh_routes($host, $path);
             if ($fresh !== null) {
-                return ['routes' => $fresh, 'xcache' => 'MISS', 'refresh' => false];
+                return ['routes' => $fresh, 'gate' => gate_last_refresh_data(), 'xcache' => 'MISS', 'refresh' => false];
             }
             if ($entry !== null) {
-                return ['routes' => $entry['routes'], 'xcache' => 'STALE', 'refresh' => false];
+                return ['routes' => $entry['routes'], 'gate' => $entry['gate'] ?? null, 'xcache' => 'STALE', 'refresh' => false];
             }
             return null;
         } finally {
@@ -50,13 +50,13 @@ function resolve_routes(string $host, string $path): ?array
 
     // Another worker is at Supabase.
     if ($entry !== null) {
-        return ['routes' => $entry['routes'], 'xcache' => 'UPDATING', 'refresh' => false];
+        return ['routes' => $entry['routes'], 'gate' => $entry['gate'] ?? null, 'xcache' => 'UPDATING', 'refresh' => false];
     }
     for ($i = 0; $i < 20; $i++) {
         usleep(100_000);
         ['state' => $s, 'entry' => $e] = cache_get_routes($host, $path);
         if ($s === 'FRESH' && cache_has_all_content($e['routes'])) {
-            return ['routes' => $e['routes'], 'xcache' => 'HIT', 'refresh' => false];
+            return ['routes' => $e['routes'], 'gate' => $e['gate'] ?? null, 'xcache' => 'HIT', 'refresh' => false];
         }
     }
     return null;
@@ -82,6 +82,18 @@ function refresh_routes(string $host, string $path): ?array
     }
     $routes = $r['routes'];
 
+    // The gate's data comes fused in the resolve's `gate` column (same on every row).
+    $rulesData = null;
+    foreach ($routes as $row) {
+        if (is_array($row['gate'] ?? null)) {
+            $rulesData = $row['gate'];
+            break;
+        }
+    }
+    if ($rulesData !== null) {
+        gate_last_refresh_data($rulesData);
+    }
+
     // HTML that comes along (a resolve that still sends the content) goes straight to disk.
     foreach ($routes as $row) {
         foreach (array_merge([$row], is_array($row['split'] ?? null) ? $row['split'] : []) as $c) {
@@ -91,7 +103,8 @@ function refresh_routes(string $host, string $path): ?array
         }
     }
 
-    // The HTML missing on disk: one (page, slug) request per missing hash.
+    // The HTML missing on disk: one (page, slug) request per missing hash —
+    // the routes' and the gate's (the funnel pages it may serve).
     $refs = [];
     foreach ($routes as $row) {
         if (($row['action'] ?? '') !== 'SERVE' || empty($row['slug_id'])) {
@@ -101,6 +114,13 @@ function refresh_routes(string $host, string $path): ?array
             $hash = is_array($c) ? (string) ($c['content_hash'] ?? '') : '';
             if ($hash !== '' && !empty($c['page_id']) && !cache_has_content($hash)) {
                 $refs[$c['page_id'] . '|' . $row['slug']] = ['page_id' => (string) $c['page_id'], 'slug' => (string) $row['slug']];
+            }
+        }
+    }
+    if (is_array($rulesData)) {
+        foreach (gate_content_refs($rulesData) as $ref) {
+            if (!cache_has_content(gate_ref_hash($rulesData, $ref['page_id']))) {
+                $refs[$ref['page_id'] . '|/'] = $ref;
             }
         }
     }
@@ -132,8 +152,8 @@ function refresh_routes(string $host, string $path): ?array
         }
         unset($row);
     }
-    // In use: the cleanup leaves them alone.
-    foreach (route_content_ids($routes) as $id) {
+    // In use: the cleanup leaves them alone (the routes' and the gate's).
+    foreach (array_merge(route_content_ids($routes), is_array($rulesData) ? gate_content_ids($rulesData) : []) as $id) {
         cache_touch_content($id);
     }
 
@@ -157,7 +177,7 @@ function refresh_routes(string $host, string $path): ?array
 
     $routes = strip_content($routes);
     if (!host_over_cap($host)) {
-        cache_put_routes($host, $path, $routes);
+        cache_put_routes($host, $path, $routes, $rulesData);
     }
     if (random_int(1, CONTENT_GC_EVERY) === 1) {
         // One day beyond the max age of an expired copy: nothing that could still be served is removed.

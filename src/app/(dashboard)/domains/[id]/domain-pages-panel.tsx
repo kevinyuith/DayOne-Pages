@@ -11,52 +11,34 @@ import { HtmlPreview } from "@/components/html-preview";
 import type { DomainDetail, DomainPage, TemplateOption } from "@/lib/pages/queries";
 import { PAGE_KIND_LABELS, PAGE_STATUS_LABELS } from "@/lib/pages/types";
 import type { VariationOptions } from "@/lib/pages/variation";
-import { copyTemplateToDomain, copyTemplateVariation, previewTemplateVariation, removeDomainPage, replaceDomainPage, setDefaultPage, type VariationPreview } from "../actions";
+import { copyTemplateToDomain, copyTemplateVariation, previewTemplateVariation, removeDomainPage, replaceDomainPage, type VariationPreview } from "../actions";
 
 /**
  * The domain's pages: template copies that only this domain serves
  * (domains.site). Editing one doesn't change the template, and changing the
  * template doesn't change the copy. From here: copy a template, open it in the
- * editor, change the template (replaces the copy), pick the default and remove
- * one that isn't in use.
+ * editor, change the template (replaces the copy) and remove one.
  */
 export function DomainPagesPanel({ domain, templates }: { domain: DomainDetail; templates: TemplateOption[] }) {
-  const usage = (p: DomainPage): string[] => {
-    const uses: string[] = [];
-    if (domain.default_page_id === p.id) uses.push("Default");
-    if (domain.filter && domain.filter_pass_page_id === p.id) uses.push("Filter: pass");
-    if (domain.filter && domain.filter_fail_page_id === p.id) uses.push("Filter: fail");
-    return uses;
-  };
-
   return (
     <section className="rounded-xl border border-border bg-surface p-5">
       <h2 className="text-sm font-semibold">Domain pages</h2>
       <p className="mt-1 text-xs text-muted">
-        Template copies that only this domain serves. Editing here doesn&apos;t change the template, and changing the template doesn&apos;t change these pages.
+        Template copies that only this domain serves, at their slugs. Editing here doesn&apos;t change the template, and changing the template
+        doesn&apos;t change these pages.
       </p>
 
       {domain.pages.length === 0 ? (
         <p className="mt-4 rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted">
-          This domain has no pages yet. Copy a template below: the first copy becomes the default page.
+          This domain has no pages yet. Copy a template below.
         </p>
       ) : (
         <ul className="mt-4 divide-y divide-border/60">
           {domain.pages.map((p) => (
-            <PageRow key={p.id} domainId={domain.id} page={p} uses={usage(p)} isDefault={domain.default_page_id === p.id} templates={templates} />
+            <PageRow key={p.id} domainId={domain.id} page={p} templates={templates} />
           ))}
         </ul>
       )}
-
-      {!domain.default_page_id && domain.pages.length > 0 ? (
-        <p className="mt-3 text-xs text-amber-700 dark:text-amber-400">No default page: paths without a route respond 404.</p>
-      ) : null}
-      {domain.default_page && domain.default_page.status !== "PUBLISHED" ? (
-        <p className="mt-3 text-xs text-amber-700 dark:text-amber-400">The default page isn&apos;t published and won&apos;t be served.</p>
-      ) : null}
-      {domain.filter && domain.filter_fail_page_id ? (
-        <p className="mt-3 text-xs text-muted">A filter is active: visitors who fail it see the fail page, not the default.</p>
-      ) : null}
 
       <CopyTemplateForm domainId={domain.id} templates={templates} />
     </section>
@@ -66,14 +48,10 @@ export function DomainPagesPanel({ domain, templates }: { domain: DomainDetail; 
 function PageRow({
   domainId,
   page,
-  uses,
-  isDefault,
   templates,
 }: {
   domainId: string;
   page: DomainPage;
-  uses: string[];
-  isDefault: boolean;
   templates: TemplateOption[];
 }) {
   const [replacing, setReplacing] = useState(false);
@@ -88,11 +66,6 @@ function PageRow({
               {page.name}
             </Link>
             <Badge tone={PAGE_STATUS_TONE[page.status]}>{PAGE_STATUS_LABELS[page.status]}</Badge>
-            {uses.map((u) => (
-              <Badge key={u} tone="info">
-                {u}
-              </Badge>
-            ))}
           </div>
           <p className="mt-1 text-xs text-muted">
             {PAGE_KIND_LABELS[page.kind]} · {page.slugs.length} {page.slugs.length === 1 ? "slug" : "slugs"} · copied from template{" "}
@@ -103,18 +76,15 @@ function PageRow({
           <Link href={editHref} className={buttonClass("primary", "sm")}>
             Edit
           </Link>
-          {!isDefault ? <RowAction action={setDefaultPage.bind(null, domainId, page.id)} label="Make default" pendingLabel="Saving…" /> : null}
           <Button size="sm" variant="ghost" onClick={() => setReplacing((v) => !v)}>
             Change template
           </Button>
-          {uses.length === 0 ? (
-            <RowAction
-              action={removeDomainPage.bind(null, domainId, page.id)}
-              label="Remove"
-              variant="danger"
-              confirm={`Remove "${page.name}" from this domain? Its HTML will be lost.`}
-            />
-          ) : null}
+          <RowAction
+            action={removeDomainPage.bind(null, domainId, page.id)}
+            label="Remove"
+            variant="danger"
+            confirm={`Remove "${page.name}" from this domain? Its HTML will be lost.`}
+          />
         </div>
       </div>
       {replacing ? <ReplaceForm domainId={domainId} page={page} templates={templates} onDone={() => setReplacing(false)} /> : null}

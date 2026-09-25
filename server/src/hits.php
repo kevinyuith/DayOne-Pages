@@ -18,7 +18,7 @@ declare(strict_types=1);
 
 defined('DAYONE_ENTRY') || (http_response_code(404) && exit);
 
-function log_hit(Request $req, int $status, string $outcome, ?string $domainId, ?array $route = null, ?string $redirectUrl = null, ?string $visitId = null): void
+function log_hit(Request $req, int $status, string $outcome, ?string $domainId, ?array $route = null, ?string $redirectUrl = null, ?string $visitId = null, string $rawQuery = ''): void
 {
     if (!config()['log_hits'] || !is_logged_path($req->path)) {
         return;
@@ -40,7 +40,8 @@ function log_hit(Request $req, int $status, string $outcome, ?string $domainId, 
         'p_status'        => $status,
         'p_country'       => $req->country,
         'p_device'        => device_from_ua($req->userAgent),
-        'p_is_bot'        => is_bot_ua($req->userAgent),
+        // Nothing is detected in code: a click is "bot" only when a rule labeled Bot caught it.
+        'p_is_bot'        => strcasecmp((string) ($route['_rule_label'] ?? ''), 'Bot') === 0,
         'p_referrer_host' => $referrerHost,
         'p_ip'            => $req->ip,
         'p_hostname'      => reverse_dns($req->ip),
@@ -57,6 +58,11 @@ function log_hit(Request $req, int $status, string $outcome, ?string $domainId, 
         'p_decision'      => hit_decision($route),
         'p_redirect_url'  => $redirectUrl,
         'p_visit_id'      => $visitId,
+        // The gate: the detection (label, rule, tags) and the funnel the clean click went to (tracker data).
+        'p_rule_label'    => is_string($route['_rule_label'] ?? null) ? $route['_rule_label'] : null,
+        'p_rule'          => is_string($route['_rule'] ?? null) ? $route['_rule'] : null,
+        'p_rule_tags'     => is_array($route['_rule_tags'] ?? null) ? array_values($route['_rule_tags']) : null,
+        'p_funnel'        => is_string($route['_funnel'] ?? null) ? $route['_funnel'] : null,
     ]);
 }
 

@@ -146,9 +146,9 @@ function strip_content(array $routes): array
     return $routes;
 }
 
-function cache_put_routes(string $host, string $path, array $routes): bool
+function cache_put_routes(string $host, string $path, array $routes, ?array $gate = null): bool
 {
-    $entry = ['v' => 1, 'stored_at' => time(), 'host' => $host, 'path' => $path, 'routes' => strip_content($routes)];
+    $entry = ['v' => 1, 'stored_at' => time(), 'host' => $host, 'path' => $path, 'routes' => strip_content($routes), 'gate' => $gate];
     $json = json_encode($entry, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     if ($json === false) {
         return false;

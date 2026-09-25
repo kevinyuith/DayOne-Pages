@@ -24,7 +24,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  * (domain_pages_summary). Never `select("*")` on domains.
  */
 const DOMAIN_COLUMNS =
-  "id,domain,type,status,default_page_id,filter,filter_pass_page_id,filter_fail_page_id,block_bots,placeholders,settings,notes," +
+  "id,domain,type,status,gate_slugs,placeholders,settings,notes," +
   "last_checked_at,last_check_ok,last_check_error,created_at,updated_at";
 
 /** A domain page's slug, without the HTML. */
@@ -81,9 +81,6 @@ export type DomainPage = PageOption & {
 };
 
 export type DomainDetail = Domain & {
-  default_page: PageRef | null;
-  filter_pass_page: PageRef | null;
-  filter_fail_page: PageRef | null;
   /** The domain's pages, in the order they were copied. */
   pages: DomainPage[];
 };
@@ -120,17 +117,7 @@ export async function getDomainDetail(id: string): Promise<DomainDetail | null> 
   if (!domain.data) return null;
   const rest = domain.data as unknown as Domain;
   const pages = await toDomainPages(rows);
-  const ref = (pageId: string | null): PageRef | null => {
-    const p = pageId ? pages.find((x) => x.id === pageId) : undefined;
-    return p ? { id: p.id, name: p.name, kind: p.kind, status: p.status } : null;
-  };
-  return {
-    ...rest,
-    default_page: ref(rest.default_page_id),
-    filter_pass_page: ref(rest.filter_pass_page_id),
-    filter_fail_page: ref(rest.filter_fail_page_id),
-    pages,
-  };
+  return { ...rest, gate_slugs: (rest.gate_slugs as string[] | null) ?? [], pages };
 }
 
 export type PageListItem = Page & {

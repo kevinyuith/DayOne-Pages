@@ -4,7 +4,6 @@ import { revalidatePath } from "next/cache";
 import { errorReason, fail, type ActionResult } from "@/lib/action-result";
 import { checkDomainHealth } from "@/lib/origin/health";
 import { purgeHost } from "@/lib/origin/purge";
-import { parseConditionsForm } from "@/lib/pages/conditions";
 import { isValidDomain, normalizeHost } from "@/lib/pages/normalize";
 import { rewriteCopyAngle } from "@/lib/pages/copy-angle";
 import { PLACEHOLDER_FIELDS, emptyPlaceholders } from "@/lib/pages/placeholders";
@@ -157,21 +156,6 @@ export async function verifyDomain(id: string): Promise<VerifyResult> {
 }
 
 /** The domain's default page: one of its pages (domains.site), or none (404). */
-export async function setDefaultPage(id: string, pageId: string | null): Promise<ActionResult> {
-  try {
-    const { data, error } = await supabaseService().from("domains").update({ default_page_id: pageId || null }).eq("id", id).select("domain").single();
-    if (error) {
-      const own = ownPageError(error);
-      if (own) return fail(own);
-      throw new Error(error.message);
-    }
-    revalidateDomain(id);
-    return purgeAfterWrite((data as { domain: string }).domain, "Default page changed");
-  } catch (cause) {
-    return fail(errorReason(cause));
-  }
-}
-
 // ── Domain pages (domains.site) ────────────────────────────────────────────
 
 /**
@@ -363,81 +347,21 @@ export async function savePlaceholders(domainId: string, prev: PlaceholdersFormS
   }
 }
 
-/**
- * Turns the domain's bot blocking (block_bots) on/off. When on,
- * match_routes emits a BLOCK 403 at the top that only matches bot User-Agents;
- * it doesn't change the page served to the real visitor.
- */
-export async function setBotBlock(id: string, value: boolean): Promise<ActionResult> {
+const SLUG_RE = /^\/([a-z0-9._~-]+(\/[a-z0-9._~-]+)*)?$/;
+
+/** The domain's allowed slugs (gate_slugs): besides "/", the paths where a clean click goes to the funnel of its sub1. */
+export async function saveGateSlugs(domainId: string, slugs: string[]): Promise<ActionResult<{ slugs: string[] }>> {
+  if (!UUID_RE.test(domainId)) return fail("Invalid domain.");
+  const clean = Array.from(new Set(slugs.map((s) => s.trim()).filter(Boolean))).filter((s) => s !== "/");
+  const bad = clean.find((s) => !SLUG_RE.test(s));
+  if (bad) return fail(`Invalid slug "${bad}". Use the format /oferta (lowercase, no trailing slash).`);
   try {
-    const { error } = await supabaseService().from("domains").update({ block_bots: value }).eq("id", id);
-    if (error) throw new Error(error.message);
-    revalidateDomain(id);
-    return { ok: true };
-  } catch (cause) {
-    return fail(errorReason(cause));
-  }
-}
-
-function str(fd: FormData, key: string): string {
-  const v = fd.get(key);
-  return typeof v === "string" ? v.trim() : "";
-}
-
-// ── Domain filter ────────────────────────────────────────────────────────────
-
-export type FilterFormState = { error?: string; success?: string; attempt: number };
-
-/**
- * Saves the domain filter: the conditions, the page for those who pass and the
- * one for those who don't. The conditions come from conditions.ts, EXCEPT `bot`:
- * bot detection is for blocking (the domain's bot switch), never for swapping the page.
- * The CHECK ck_domains_filter_no_bot is the guarantee in the database.
- */
-export async function saveFilter(prev: FilterFormState, fd: FormData): Promise<FilterFormState> {
-  const attempt = prev.attempt + 1;
-  const domainId = str(fd, "domain_id");
-  const passPageId = str(fd, "filter_pass_page_id") || null;
-  const failPageId = str(fd, "filter_fail_page_id") || null;
-
-  if (!domainId) return { error: "Missing domain.", attempt };
-  if (!passPageId) return { error: "Choose the page for visitors who PASS the filter.", attempt };
-  if (!failPageId) return { error: "Choose the page for visitors who DON'T pass the filter.", attempt };
-
-  const conditions = parseConditionsForm(fd);
-  if (!conditions.ok) return { error: conditions.reason, attempt };
-  if (conditions.value.bot) return { error: 'The "bots only" condition does not apply to the filter; use a block route.', attempt };
-  if (Object.keys(conditions.value).length === 0) {
-    return { error: "Set at least one condition, otherwise every visitor passes and the fail page never shows.", attempt };
-  }
-
-  try {
-    const { error } = await supabaseService()
-      .from("domains")
-      .update({ filter: conditions.value, filter_pass_page_id: passPageId, filter_fail_page_id: failPageId })
-      .eq("id", domainId);
-    if (error) {
-      const own = ownPageError(error);
-      if (own) return { error: own, attempt };
-      throw new Error(error.message);
-    }
-    revalidateDomain(domainId);
-    return { success: "Filter saved. It goes live within 30 s (or use Clear cache).", attempt };
-  } catch (cause) {
-    return { error: errorReason(cause), attempt };
-  }
-}
-
-/** Removes the filter. The domain goes back to serving only the default page. */
-export async function clearFilter(domainId: string): Promise<ActionResult> {
-  try {
-    const { error } = await supabaseService()
-      .from("domains")
-      .update({ filter: null, filter_pass_page_id: null, filter_fail_page_id: null })
-      .eq("id", domainId);
+    const { data, error } = await supabaseService().from("domains").update({ gate_slugs: clean }).eq("id", domainId).select("domain").single();
     if (error) throw new Error(error.message);
     revalidateDomain(domainId);
-    return { ok: true };
+    const purged = await purgeAfterWrite((data as { domain: string }).domain, "Allowed slugs saved");
+    if (!purged.ok) return purged;
+    return { ok: true, slugs: clean };
   } catch (cause) {
     return fail(errorReason(cause));
   }

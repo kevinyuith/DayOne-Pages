@@ -36,10 +36,30 @@ const PRIVATE_NO_CACHE = 'private, no-cache';
  * hit for the traffic log: served | redirect | blocked | bot | notfound |
  * error. `route` is the one that decided (null if none matched), also for the log.
  *
+ * On every path, the traffic gate (rules.php) decides first: the active rules
+ * walk in order and the first whose conditions all match sends the click to
+ * the domain's page at the requested slug; a clean click on an allowed slug
+ * goes to the funnel of its sub1. When the gate's data is present it always
+ * answers (a 404 when no domain page has the slug); the route loop below is
+ * the fallback for hosts without the gate's data (an old cache).
+ *
  * @return array{0: int, 1: array<string,string>, 2: ?string, 3: string, 4: ?array}
  */
-function decide(array $routes, Request $req): array
+function decide(array $routes, Request $req, ?array $gate = null): array
 {
+    if ($gate !== null) {
+        $gateRoute = gate_pick($routes, $gate, $req);
+        // The gate decides everything: its route, or a 404 when it has none
+        // (no domain page at this slug and no funnel to serve).
+        if ($gateRoute !== null) {
+            return decide_route($gateRoute, $req);
+        }
+        if ($req->path === '/robots.txt') {
+            return [...robots_default(), 'served', null];
+        }
+        return [...not_found(), 'notfound', null];
+    }
+
     foreach ($routes as $route) {
         $cond = is_array($route['conditions'] ?? null) ? $route['conditions'] : [];
         $action = (string) ($route['action'] ?? '');
@@ -52,29 +72,9 @@ function decide(array $routes, Request $req): array
             continue;
         }
 
-        switch ($action) {
-            case 'SERVE':
-                // A/B test between the pages of a funnel: the route becomes the drawn page.
-                [$route, $splitCookie] = split_pick($route, $req->cookies);
-                $r = serve_slug($route, $req);
-                if (isset($route['split_count'])) {
-                    if (!str_contains((string) ($r[1]['Vary'] ?? ''), 'Cookie')) {
-                        $r[1]['Vary'] = trim(($r[1]['Vary'] ?? '') . ', Cookie', ', ');
-                    }
-                    if ($splitCookie !== null) {
-                        $r[1]['Set-Cookie'] = [...(array) ($r[1]['Set-Cookie'] ?? []), split_cookie($splitCookie)];
-                    }
-                }
-                return [$r[0], $r[1], $r[2], serve_outcome($r[0]), $route];
-            case 'REDIRECT':
-                $r = redirect_to($route, $req);
-                return [$r[0], $r[1], $r[2], 'redirect', $route];
-            case 'BLOCK':
-                $r = block($route);
-                $bot = ($route['match_type'] ?? '') === 'BOTGATE' || array_key_exists('bot', $cond);
-                return [$r[0], $r[1], $r[2], $bot ? 'bot' : 'blocked', $route];
-            default:
-                continue 2;
+        $hit = decide_route($route, $req, $cond);
+        if ($hit !== null) {
+            return $hit;
         }
     }
 
@@ -82,6 +82,41 @@ function decide(array $routes, Request $req): array
         return [...robots_default(), 'served', null];
     }
     return [...not_found(), 'notfound', null];
+}
+
+/**
+ * Serves one already-matched route (the gate's, or the loop's above). Returns
+ * null when the action is unknown, so the loop can skip to the next route.
+ *
+ * @return array{0: int, 1: array<string,string>, 2: ?string, 3: string, 4: ?array}|null
+ */
+function decide_route(array $route, Request $req, ?array $cond = null): ?array
+{
+    $cond ??= is_array($route['conditions'] ?? null) ? $route['conditions'] : [];
+    switch ((string) ($route['action'] ?? '')) {
+        case 'SERVE':
+            // A/B test between the pages of a funnel: the route becomes the drawn page.
+            [$route, $splitCookie] = split_pick($route, $req->cookies);
+            $r = serve_slug($route, $req);
+            if (isset($route['split_count'])) {
+                if (!str_contains((string) ($r[1]['Vary'] ?? ''), 'Cookie')) {
+                    $r[1]['Vary'] = trim(($r[1]['Vary'] ?? '') . ', Cookie', ', ');
+                }
+                if ($splitCookie !== null) {
+                    $r[1]['Set-Cookie'] = [...(array) ($r[1]['Set-Cookie'] ?? []), split_cookie($splitCookie)];
+                }
+            }
+            return [$r[0], $r[1], $r[2], serve_outcome($r[0]), $route];
+        case 'REDIRECT':
+            $r = redirect_to($route, $req);
+            return [$r[0], $r[1], $r[2], 'redirect', $route];
+        case 'BLOCK':
+            $r = block($route);
+            $bot = ($route['match_type'] ?? '') === 'BOTGATE' || array_key_exists('bot', $cond);
+            return [$r[0], $r[1], $r[2], $bot ? 'bot' : 'blocked', $route];
+        default:
+            return null;
+    }
 }
 
 /** Maps a SERVE route's status to a traffic outcome. */

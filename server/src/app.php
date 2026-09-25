@@ -78,7 +78,7 @@ function dayone_handle(): void
         return;
     }
 
-    [$status, $headers, $body, $outcome, $route] = decide($resolved['routes'], $req);
+    [$status, $headers, $body, $outcome, $route] = decide($resolved['routes'], $req, $resolved['gate'] ?? null);
     $www = www_entry_redirect($req, $outcome, $route);
     if ($www !== null) {
         [$status, $headers, $body] = $www;
@@ -103,7 +103,7 @@ function dayone_handle(): void
     }
 
     $domainId = $resolved['routes'][0]['domain_id'] ?? null;
-    log_hit($req, $status, $outcome, is_string($domainId) ? $domainId : null, $route, $headers['Location'] ?? null, $visitId);
+    log_hit($req, $status, $outcome, is_string($domainId) ? $domainId : null, $route, $headers['Location'] ?? null, $visitId, $req->rawQuery);
 
     if ($resolved['refresh']) {
         // SWR: refresh the cache with nobody waiting.

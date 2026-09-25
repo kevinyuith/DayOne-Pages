@@ -1,10 +1,9 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { RowAction } from "@/components/row-action";
 import { Alert } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Dialog } from "@/components/ui/dialog";
 import { CHECKBOX_CLASS, Field, INPUT_CLASS, SELECT_BASE, SELECT_CLASS } from "@/components/ui/field";
 import {
   DEVICES,
@@ -13,96 +12,112 @@ import {
   LIST_MODE_LABELS,
   QUERY_MODES,
   QUERY_MODE_LABELS,
-  conditionsToForm,
-  summarizeConditions,
+  ruleConditionsToForm,
   type ListMode,
+  type ParamMode,
   type QueryRuleRow,
 } from "@/lib/pages/conditions";
-import type { DomainDetail, PageOption } from "@/lib/pages/queries";
-import { PAGE_KIND_LABELS, PAGE_STATUS_LABELS } from "@/lib/pages/types";
-import { clearFilter, saveFilter, type FilterFormState } from "../actions";
+import type { Rule } from "@/lib/pages/rules-types";
+import { saveRule, type RuleFormState } from "./actions";
+
+const INITIAL: RuleFormState = { attempt: 0 };
+
+const PARAM_MODES: ParamMode[] = ["equals", "contains", "present"];
 
 /**
- * The domain filter: one condition, one page for those who pass, another for
- * those who don't. The dimensions are country, language, device, URL parameters
- * and referrer, without `bot` (bots are only blocked, and that's the domain's
- * bot switch, not the filter). Country and language have an allow-only/block mode.
+ * One traffic rule of the gate. In the table, "Add rule" (no rule) and "Edit"
+ * (with one) open the same form in a dialog.
  */
-export function FilterPanel({ domain, pages }: { domain: DomainDetail; pages: PageOption[] }) {
-  const active = domain.filter != null && domain.filter_pass_page_id != null;
-  const [editing, setEditing] = useState(false);
+export function RuleForm({ rule }: { rule?: Rule }) {
+  const [open, setOpen] = useState(false);
 
-  if (active && !editing) {
-    return (
-      <section className="rounded-xl border border-border bg-surface p-5">
-        <div className="flex items-center justify-between">
-          <h2 className="text-base font-semibold">Domain filter</h2>
-          <div className="flex gap-2">
-            <Button size="sm" variant="secondary" onClick={() => setEditing(true)}>
-              Edit
-            </Button>
-            <RowAction action={clearFilter.bind(null, domain.id)} label="Remove filter" variant="danger" confirm="Remove this domain's filter?" />
-          </div>
-        </div>
-        <div className="mt-3 grid gap-3 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center">
-          <span className="text-xs font-medium text-muted">Condition</span>
-          <span className="text-sm">{summarizeConditions(domain.filter)}</span>
-          <span className="text-xs font-medium text-muted">Passes →</span>
-          <PageLine page={domain.filter_pass_page} />
-          <span className="text-xs font-medium text-muted">Fails →</span>
-          <PageLine page={domain.filter_fail_page} />
-        </div>
-      </section>
-    );
-  }
-
-  return <FilterForm domain={domain} pages={pages} onDone={() => setEditing(false)} showCancel={active} />;
-}
-
-function PageLine({ page }: { page: DomainDetail["filter_pass_page"] }) {
-  if (!page) return <span className="text-sm text-muted">page removed</span>;
   return (
-    <span className="inline-flex flex-wrap items-center gap-1.5 text-sm">
-      {page.name}
-      <span className="text-xs text-muted">{PAGE_KIND_LABELS[page.kind]}</span>
-      {page.status !== "PUBLISHED" ? <Badge tone="warning">not published</Badge> : null}
-    </span>
+    <>
+      {rule ? (
+        <Button size="sm" variant="secondary" onClick={() => setOpen(true)}>
+          Edit
+        </Button>
+      ) : (
+        <div className="mt-3">
+          <Button size="sm" onClick={() => setOpen(true)}>
+            New rule
+          </Button>
+        </div>
+      )}
+      <Dialog
+        open={open}
+        title={rule ? `Edit ${rule.name}` : "New rule"}
+        description="The first rule whose conditions all match marks the click with the label and sends it to the domain's page. Every condition is optional; empty matches everyone."
+        onClose={() => setOpen(false)}
+        className="max-w-2xl"
+      >
+        <FormBody rule={rule} onDone={() => setOpen(false)} />
+      </Dialog>
+    </>
   );
 }
 
-const INITIAL: FilterFormState = { attempt: 0 };
-
-function FilterForm({
-  domain,
-  pages,
-  onDone,
-  showCancel,
-}: {
-  domain: DomainDetail;
-  pages: PageOption[];
-  onDone: () => void;
-  showCancel: boolean;
-}) {
-  const initial = conditionsToForm(domain.filter);
-  const [state, action, pending] = useActionState(saveFilter, INITIAL);
+function FormBody({ rule, onDone }: { rule?: Rule; onDone: () => void }) {
+  const initial = ruleConditionsToForm(rule?.conditions);
+  const [state, action, pending] = useActionState(saveRule, INITIAL);
   const [queryRows, setQueryRows] = useState<QueryRuleRow[]>(initial.query);
+  const [paramMode, setParamMode] = useState<ParamMode>(initial.paramMode);
 
   if (state.success) {
-    // Saved: the server revalidated the page; go back to the read-only view.
+    // Saved: the server revalidated the page; close the dialog.
     queueMicrotask(onDone);
   }
 
   return (
-    <form action={action} className="rounded-xl border border-accent/30 bg-surface p-5">
-      <input type="hidden" name="domain_id" value={domain.id} />
-      <h2 className="text-base font-semibold">Domain filter</h2>
-      <p className="mt-1 text-xs text-muted">
-        Visitors who pass ALL conditions see one page; those who don&apos;t see the other. With no condition, everyone passes.
-      </p>
+    <form action={action}>
+      <input type="hidden" name="rule_id" value={rule?.id ?? ""} />
+
+      <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,10rem)_minmax(0,12rem)]">
+        <Field label="Name" hint="E.g. Datacenter US.">
+          <input name="name" defaultValue={rule?.name ?? ""} required maxLength={120} placeholder="Datacenter US" className={INPUT_CLASS} disabled={pending} />
+        </Field>
+        <Field label="Label" hint="What the log shows.">
+          <input name="label" defaultValue={rule?.label ?? ""} required maxLength={60} placeholder="Bot" className={INPUT_CLASS} disabled={pending} />
+        </Field>
+        <Field label="Tags" hint="Comma-separated.">
+          <input name="tags" defaultValue={(rule?.tags ?? []).join(", ")} maxLength={200} placeholder="Facebook" className={INPUT_CLASS} disabled={pending} />
+        </Field>
+      </div>
 
       <fieldset className="mt-4">
         <legend className="text-xs font-semibold uppercase tracking-wide text-muted">Conditions</legend>
         <div className="mt-2 grid gap-4 md:grid-cols-2">
+          <Field label="sub11 (exact)" hint="The click's platform id, case-insensitive.">
+            <input name="sub11" defaultValue={initial.sub11} maxLength={120} placeholder="facebook" className={`${INPUT_CLASS} font-mono`} disabled={pending} />
+          </Field>
+          <Field label="sub1 (exact)" hint="The click's campaign id, case-insensitive.">
+            <input name="sub1" defaultValue={initial.sub1} maxLength={120} placeholder="campanha-x" className={`${INPUT_CLASS} font-mono`} disabled={pending} />
+          </Field>
+          <div className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-muted">Any URL parameter</span>
+            <div className="flex gap-2">
+              <input name="param_name" defaultValue={initial.paramName} placeholder="net" className={`${INPUT_CLASS} w-28 shrink-0 font-mono`} disabled={pending} aria-label="Parameter name" />
+              <select name="param_mode" value={paramMode} onChange={(e) => setParamMode(e.target.value as ParamMode)} className={`${SELECT_BASE} w-28 shrink-0`} disabled={pending} aria-label="Parameter match">
+                {PARAM_MODES.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+              <input name="param_value" defaultValue={initial.paramValue} placeholder={paramMode === "present" ? "—" : "value"} className={INPUT_CLASS} disabled={pending || paramMode === "present"} aria-label="Parameter value" />
+            </div>
+            <span className="text-xs text-muted">Any parameter of the click (e.g. net = dc), not just sub1/sub11</span>
+          </div>
+          <ListModeField
+            label="User-Agent (regex)"
+            name="user_agent"
+            modeName="user_agent_mode"
+            defaultMode={initial.userAgentMode}
+            defaultValue={initial.userAgent}
+            placeholder="chrome|firefox"
+            hint="Case-insensitive partial match on the UA"
+            disabled={pending}
+          />
           <ListModeField
             label="Countries (ISO-2, comma-separated)"
             name="countries"
@@ -135,7 +150,7 @@ function FilterForm({
               ))}
             </div>
           </div>
-          <Field label="Referrer contains" className="md:col-span-2">
+          <Field label="Referrer contains">
             <input name="referrer" defaultValue={initial.referrer} placeholder="facebook.com" className={INPUT_CLASS} disabled={pending} />
           </Field>
           <div className="md:col-span-2">
@@ -188,18 +203,10 @@ function FilterForm({
         </div>
       </fieldset>
 
-      <fieldset className="mt-5">
-        <legend className="text-xs font-semibold uppercase tracking-wide text-muted">Pages</legend>
-        <p className="mt-1 text-xs text-muted">Only this domain&apos;s pages. To use another template, copy it first under Domain pages.</p>
-        <div className="mt-2 grid gap-4 md:grid-cols-2">
-          <Field label="Visitors who PASS the filter see">
-            <PageSelect name="filter_pass_page_id" pages={pages} value={domain.filter_pass_page_id} disabled={pending} />
-          </Field>
-          <Field label="Visitors who DON'T pass see">
-            <PageSelect name="filter_fail_page_id" pages={pages} value={domain.filter_fail_page_id} disabled={pending} />
-          </Field>
-        </div>
-      </fieldset>
+      <label className="mt-4 flex items-center gap-2 text-sm">
+        <input type="checkbox" name="is_active" defaultChecked={rule?.is_active ?? true} className={CHECKBOX_CLASS} disabled={pending} />
+        Active (a paused rule is skipped in the walk)
+      </label>
 
       {state.error ? (
         <p role="alert" className="mt-4 text-sm text-red-600 dark:text-red-400">
@@ -210,19 +217,17 @@ function FilterForm({
 
       <div className="mt-5 flex gap-2">
         <Button type="submit" disabled={pending}>
-          {pending ? "Saving…" : "Save filter"}
+          {pending ? "Saving…" : rule ? "Save rule" : "Create rule"}
         </Button>
-        {showCancel ? (
-          <Button variant="ghost" onClick={onDone} disabled={pending}>
-            Cancel
-          </Button>
-        ) : null}
+        <Button variant="ghost" onClick={onDone} disabled={pending}>
+          Cancel
+        </Button>
       </div>
     </form>
   );
 }
 
-/** A list (country/language) with the direction selector: allow only the listed ones, or block them. */
+/** A field with a direction selector (allow only / block), for the UA regex and the country/language lists. */
 function ListModeField({
   label,
   name,
@@ -259,19 +264,5 @@ function ListModeField({
       </div>
       <span className="text-xs text-muted">{hint}</span>
     </div>
-  );
-}
-
-function PageSelect({ name, pages, value, disabled }: { name: string; pages: PageOption[]; value: string | null; disabled: boolean }) {
-  return (
-    <select name={name} defaultValue={value ?? ""} className={SELECT_CLASS} disabled={disabled}>
-      <option value="">— choose —</option>
-      {pages.map((p) => (
-        <option key={p.id} value={p.id}>
-          {p.name} · {PAGE_KIND_LABELS[p.kind]}
-          {p.status !== "PUBLISHED" ? ` (${PAGE_STATUS_LABELS[p.status].toLowerCase()})` : ""}
-        </option>
-      ))}
-    </select>
   );
 }

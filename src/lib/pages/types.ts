@@ -1,5 +1,3 @@
-import type { RouteConditions } from "./conditions";
-
 /**
  * Types and vocabularies of the `pages` schema.
  *
@@ -123,11 +121,8 @@ export type Domain = {
   /** null = not chosen yet. */
   type: DomainType | null;
   status: DomainStatus;
-  default_page_id: string | null;
-  filter: RouteConditions | null;
-  filter_pass_page_id: string | null;
-  filter_fail_page_id: string | null;
-  block_bots: boolean;
+  /** The slugs where a clean click goes to the funnel of its sub1 (besides "/"). */
+  gate_slugs: string[];
   /** Values of the {{key}} placeholders of the domain's pages (see placeholders.ts). */
   placeholders: Record<string, unknown>;
   settings: Record<string, unknown>;

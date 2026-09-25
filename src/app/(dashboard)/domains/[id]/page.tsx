@@ -8,10 +8,9 @@ import { getDomainDetail, listTemplates } from "@/lib/pages/queries";
 import { DOMAIN_STATUS_LABELS } from "@/lib/pages/types";
 import { APP_TZ } from "@/lib/time-zone";
 import { removeDomain, setDomainStatus, verifyDomain } from "../actions";
-import { BotBlockToggle } from "./bot-block-toggle";
 import { DomainPagesPanel } from "./domain-pages-panel";
 import { DomainTypeSelect } from "./domain-type-select";
-import { FilterPanel } from "./filter-panel";
+import { GateSlugsForm } from "./gate-slugs-form";
 import { PlaceholdersForm } from "./placeholders-form";
 
 type Params = Promise<{ id: string }>;
@@ -68,15 +67,7 @@ export default async function DomainDetailPage({ params }: { params: Params }) {
           </div>
         </div>
 
-        <div className="rounded-xl border border-border bg-surface p-5">
-          <h2 className="text-sm font-semibold">Security</h2>
-          <p className="mt-1 text-xs text-muted">
-            Blocks crawlers and automated connections (responds 403) before serving any page. Recommended for traffic from Google, Taboola, Outbrain and the like. It doesn&apos;t change the page — it only blocks.
-          </p>
-          <div className="mt-3">
-            <BotBlockToggle domainId={domain.id} value={domain.block_bots} />
-          </div>
-        </div>
+        <GateSlugsForm domainId={domain.id} slugs={domain.gate_slugs} />
       </section>
 
       <div className="mb-6">
@@ -85,10 +76,6 @@ export default async function DomainDetailPage({ params }: { params: Params }) {
 
       <div className="mb-6">
         <PlaceholdersForm domainId={domain.id} domain={domain.domain} values={domain.placeholders} />
-      </div>
-
-      <div className="mb-6">
-        <FilterPanel domain={domain} pages={domain.pages} />
       </div>
 
     </>

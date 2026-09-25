@@ -167,13 +167,31 @@ php server/tests/run.php
 `check:secrets` looks for the values of the sensitive variables inside
 `.next/static/` after the build and fails if it finds any.
 
-## How the server decides what to serve
+## How the server decides what to serve (the traffic gate)
 
-1. Normalizes host (`WWW.Example.COM:80` → `example.com`) and path (`//Promo/` → `/promo`).
-2. Looks up the `routes/<host>/<path>` cache; if fresh (< 30 s) and with the HTML on disk, serves it. Expired: serves it anyway and refreshes after the response (SWR).
-3. Otherwise calls `pages.resolve(host, path, key, p_with_content => false)`: the candidates in order (bot block, filter, default page) with each slug's hash; the HTML of hashes not on disk comes from `pages.content_get`.
-4. The first candidate whose conditions match decides: bot block (403), the filter's pass page, or the default page (the fail page when there is a filter). None → 404.
+A domain is its **pages and their slugs** — there's no filter, no bot block,
+no default page. Every request goes through the **traffic gate**, on every
+path:
+
+1. Normalizes host and path, looks up the `routes/<host>/<path>` cache (< 30 s, SWR); the HTML lives on disk by hash (`pages.content_get` for the missing ones).
+2. The **rules walk** (`position` order): the first rule whose conditions all match marks the click with its **label** and it gets the domain's page **at the requested slug** (the HTML of that slug; 404 when no page has it).
+3. **Clean click** (no rule matched) on an **allowed slug** (`/` or one of the domain's `gate_slugs`) → the funnel named in the **`sub1`**'s `[F…]` token (e.g. `[F23]` → the funnel F23): its A/B test (weights live in `pages.funnels.site`) picks the page, sticky in the `dop_pg` cookie.
+4. Clean click with no `[F…]` token, or on a slug that isn't allowed → the domain's page at the requested slug (404 when no page has it).
 5. Supabase down: serves the expired copy (`X-Cache: STALE`) for up to 7 days; no copy, 503.
 
-Bot detection exists only to **block** (scrapers/crawlers), never to serve
-different content.
+**Rules** (`/rules`) detect bad traffic — they never route to a page directly:
+each has a name, a **label** (what the log shows: Bot, Suspicious… — free
+text), free **tags** to group, and **conditions**. The conditions are the hit
+log's fields, every one optional: the click's **`sub1`** and **`sub11`** (exact,
+case-insensitive), **any URL parameter** (name + equals/contains/present),
+countries, devices, languages (each allow/block), referrer, URL parameters and
+a **regular expression on the User-Agent** (case-insensitive, allow/block).
+`{}` matches everyone. Nothing is detected in code — a "bot" is only a bot
+because a rule says so (e.g. a User-Agent regex).
+
+The gate's data comes fused in `pages.resolve`'s `gate` column (the rules in
+order, the `gate_slugs`, every funnel's code + live split + VSL), cached with
+the routes (30 s, SWR) and decided per request in PHP (`server/src/rules.php`)
+— no Supabase per click. The hit records the detection (`pages.hits.rule_label`
+/ `rule` / `rule_tags`) and, for a clean click, the funnel it went to
+(`pages.hits.funnel`). Migration: `supabase/migrations/20260925_rules.sql`.
