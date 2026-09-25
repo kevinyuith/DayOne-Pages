@@ -98,6 +98,7 @@ export default async function LogsPage({
               <Th>Decision</Th>
               <Th className="text-right">Status</Th>
               <Th>Result</Th>
+              <Th title="The first click with this IP and browser (User-Agent) on this domain in 30 days.">Unique</Th>
               <Th>Rule</Th>
               <Th>Flow</Th>
               <Th>Reason</Th>
@@ -184,6 +185,9 @@ export default async function LogsPage({
                       <Badge tone={o.tone}>{o.label}</Badge>
                       {h.is_bot ? <span className="rounded bg-violet-500/10 px-1.5 py-0.5 text-[10px] font-medium text-violet-600 dark:text-violet-400">bot</span> : null}
                     </span>
+                  </Td>
+                  <Td className="whitespace-nowrap">
+                    {h.is_unique === null ? <span className="text-muted">—</span> : h.is_unique ? <Badge tone="success">unique</Badge> : <span className="text-xs text-muted">repeat</span>}
                   </Td>
                   <Td className="min-w-[140px] max-w-[220px]">
                     {h.rule_label || h.rule ? (

@@ -707,6 +707,8 @@ export type HitLogRow = HitRow & {
   interaction_ms: number | null;
   /** When the visitor first clicked out of the page; null = no click. */
   clicked_at: string | null;
+  /** The first hit with this IP and User-Agent on this domain in 30 days (false = a repeat; null = a redirect). */
+  is_unique: boolean | null;
   /** Registered domain (pages.domains), not the request's host. */
   domain: string | null;
   page_name: string | null;
@@ -727,7 +729,7 @@ export async function listHits(opts: { domainId?: string | null; beforeId?: numb
     .select(
       "id, created_at, domain_id, host, path, outcome, status_code, country, device, is_bot, referrer_host, ip, user_agent, " +
         "hostname, asn, as_name, cookies, region, route_id, page_id, slug, decision, query, redirect_url, visit_id, rule_label, rule, rule_reason, rule_tags, " +
-        "loaded_at, load_ms, accept_language, interaction, interaction_ms, clicked_at, domains(domain)",
+        "loaded_at, load_ms, accept_language, interaction, interaction_ms, clicked_at, is_unique, domains(domain)",
     )
     .order("id", { ascending: false })
     .limit(limit + 1);
