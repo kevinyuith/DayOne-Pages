@@ -135,6 +135,7 @@ set_exception_handler(static function (Throwable $e): void {
 require __DIR__ . '/http.php';
 require __DIR__ . '/normalize.php';
 require __DIR__ . '/cache.php';
+require __DIR__ . '/netinfo.php';
 require __DIR__ . '/supabase.php';
 require __DIR__ . '/conditions.php';
 require __DIR__ . '/funnel.php';

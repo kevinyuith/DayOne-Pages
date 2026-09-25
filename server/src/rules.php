@@ -18,7 +18,10 @@
  *
  * The conditions are the hit log's fields (rule_conditions_match): the click's
  * sub ids (sub1, sub11), ANY URL parameter (param), country, device, language,
- * referrer, URL parameters (via conditions_match) and a regex on the User-Agent.
+ * referrer, URL parameters (via conditions_match), a regex on the User-Agent,
+ * the IP (IPs/CIDR ranges), and — network lookups, checked last and only when
+ * everything else matched — the ASN and a regex on the hostname (netinfo.php:
+ * a short timeout, cached per IP; a lookup that fails never flags a click).
  */
 declare(strict_types=1);
 
@@ -29,13 +32,13 @@ const GATE_MATCH = 'GATE';
 const GATE_SAFE_MATCH = 'GATE-SAFE';
 
 /** The rule-only condition keys (the base ones are conditions_match's). */
-const RULE_OWN_CONDITIONS = ['sub1', 'sub11', 'param', 'user_agent', 'user_agent_mode'];
+const RULE_OWN_CONDITIONS = ['sub1', 'sub11', 'param', 'user_agent', 'user_agent_mode', 'ips', 'ips_mode', 'asns', 'asns_mode', 'hostname', 'hostname_mode'];
 
 /**
  * Builds the SERVE route the gate decides on, or null when the click falls
  * through to the domain's normal flow (only when there are no routes/the host
  * isn't a domain — with routes, the gate always answers: the safe page is the
- * fallback). The route carries `_rule_label`/`_rule`/`_rule_tags`/`_funnel`
+ * fallback). The route carries `_rule_label`/`_rule`/`_rule_reason`/`_rule_tags`/`_funnel`
  * for the traffic log.
  */
 function gate_pick(array $routes, array $gate, Request $req): ?array
@@ -63,6 +66,7 @@ function gate_pick(array $routes, array $gate, Request $req): ?array
         return gate_flag_route($domainPage, GATE_SAFE_MATCH, [
             '_rule_label' => (string) ($rule['label'] ?? ''),
             '_rule' => (string) ($rule['name'] ?? ''),
+            '_rule_reason' => (string) ($rule['reason'] ?? ''),
             '_rule_tags' => is_array($rule['tags'] ?? null) ? array_values(array_filter($rule['tags'], 'is_string')) : [],
         ]);
     }
@@ -213,6 +217,39 @@ function rule_conditions_match(array $cond, Request $req): bool
         $matched = @preg_match('/' . str_replace('/', '\/', $pattern) . '/i', $req->userAgent) === 1;
         $block = ($cond['user_agent_mode'] ?? 'allow') === 'block';
         if ($block ? $matched : !$matched) {
+            return false;
+        }
+    }
+
+    // The click's IP against IPs and CIDR ranges. An invalid IP can't be told: no match.
+    if (isset($cond['ips'])) {
+        $in = ip_in_ranges($req->ip, is_array($cond['ips']) ? $cond['ips'] : []);
+        if ($in === null || $in === (($cond['ips_mode'] ?? 'allow') === 'block')) {
+            return false;
+        }
+    }
+
+    // ASN and hostname are network lookups (netinfo.php): last, so they only
+    // run when everything else matched. Unknown (lookup failed) or none (no
+    // ASN) can't be told: the condition doesn't match — never flag on a guess.
+    if (isset($cond['asns'])) {
+        $asn = netinfo_asn($req->ip, netinfo_rule_timeout());
+        if (!$asn) {
+            return false;
+        }
+        $in = in_array($asn, array_map('intval', is_array($cond['asns']) ? $cond['asns'] : []), true);
+        if ($in === (($cond['asns_mode'] ?? 'allow') === 'block')) {
+            return false;
+        }
+    }
+    if (isset($cond['hostname'])) {
+        // '' = the IP has no hostname: it matches nothing ("doesn't match" is true).
+        $host = netinfo_hostname($req->ip, netinfo_rule_timeout());
+        if ($host === null) {
+            return false;
+        }
+        $matched = @preg_match('/' . str_replace('/', '\/', (string) $cond['hostname']) . '/i', $host) === 1;
+        if ($matched === (($cond['hostname_mode'] ?? 'allow') === 'block')) {
             return false;
         }
     }

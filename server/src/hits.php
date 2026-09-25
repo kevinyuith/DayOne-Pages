@@ -58,9 +58,10 @@ function log_hit(Request $req, int $status, string $outcome, ?string $domainId, 
         'p_decision'      => hit_decision($route),
         'p_redirect_url'  => $redirectUrl,
         'p_visit_id'      => $visitId,
-        // The gate: the detection (label, rule, tags) and the funnel the clean click went to (tracker data).
+        // The gate: the detection (label, rule, reason, tags) and the funnel the clean click went to (tracker data).
         'p_rule_label'    => is_string($route['_rule_label'] ?? null) ? $route['_rule_label'] : null,
         'p_rule'          => is_string($route['_rule'] ?? null) ? $route['_rule'] : null,
+        'p_rule_reason'   => is_string($route['_rule_reason'] ?? null) && $route['_rule_reason'] !== '' ? $route['_rule_reason'] : null,
         'p_rule_tags'     => is_array($route['_rule_tags'] ?? null) ? array_values($route['_rule_tags']) : null,
         'p_funnel'        => is_string($route['_funnel'] ?? null) ? $route['_funnel'] : null,
     ]);
@@ -93,66 +94,23 @@ function is_logged_path(string $path): bool
 }
 
 /**
- * PTR of the IP, or null. gethostbyaddr takes no timeout: a PTR that doesn't
- * answer holds the FPM worker for a few seconds (the visitor doesn't wait, the
- * response is already gone).
+ * PTR of the IP, or null (netinfo.php: a DNS query with a timeout, cached per
+ * IP — a rule may have looked it up already, before the response).
  */
 function reverse_dns(string $ip): ?string
 {
-    if (filter_var($ip, FILTER_VALIDATE_IP) === false) {
-        return null;
-    }
-    $host = @gethostbyaddr($ip);
-    return is_string($host) && $host !== $ip ? $host : null;
+    $host = netinfo_hostname($ip, NETINFO_LOG_TIMEOUT_MS);
+    return $host !== null && $host !== '' ? $host : null;
 }
 
 /**
- * ASN of the IP from Team Cymru, over DNS TXT (no key, no dependency):
+ * ASN of the IP from Team Cymru, over DNS TXT (netinfo.php, cached per IP):
  * origin(6).asn.cymru.com gives the number, AS<n>.asn.cymru.com gives the name.
  *
  * @return array{asn:int, name:?string}|null
  */
 function asn_lookup(string $ip): ?array
 {
-    $zone = cymru_origin_name($ip);
-    $asn = $zone === null ? null : parse_cymru_origin(dns_txt($zone));
-    if ($asn === null) {
-        return null;
-    }
-    return ['asn' => $asn, 'name' => parse_cymru_as_name(dns_txt("AS$asn.asn.cymru.com"))];
-}
-
-/** 8.8.8.8 → 8.8.8.8.origin.asn.cymru.com (reversed octets); IPv6 → reversed nibbles in origin6. Private/reserved IP → null. */
-function cymru_origin_name(string $ip): ?string
-{
-    if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false) {
-        return null;
-    }
-    if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false) {
-        return implode('.', array_reverse(explode('.', $ip))) . '.origin.asn.cymru.com';
-    }
-    return implode('.', str_split(strrev(bin2hex((string) inet_pton($ip))))) . '.origin6.asn.cymru.com';
-}
-
-function dns_txt(string $name): ?string
-{
-    $records = @dns_get_record($name, DNS_TXT);
-    return is_array($records) && isset($records[0]['txt']) ? (string) $records[0]['txt'] : null;
-}
-
-/** "15169 | 8.8.8.0/24 | US | arin | 2023-12-28" → 15169. Prefix with more than one ASN ("15169 36040") → the first. */
-function parse_cymru_origin(?string $txt): ?int
-{
-    if ($txt === null || preg_match('/^\s*(\d+)/', $txt, $m) !== 1) {
-        return null;
-    }
-    $asn = (int) $m[1];
-    return $asn > 0 ? $asn : null;
-}
-
-/** "15169 | US | arin | 2000-03-30 | GOOGLE - Google LLC, US" → "GOOGLE - Google LLC, US". */
-function parse_cymru_as_name(?string $txt): ?string
-{
-    $name = trim(explode('|', (string) $txt)[4] ?? '');
-    return $name !== '' ? $name : null;
+    $asn = netinfo_asn($ip, NETINFO_LOG_TIMEOUT_MS);
+    return $asn ? ['asn' => $asn, 'name' => netinfo_as_name($ip, NETINFO_LOG_TIMEOUT_MS)] : null;
 }

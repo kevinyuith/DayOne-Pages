@@ -182,6 +182,7 @@ function refresh_routes(string $host, string $path): ?array
     if (random_int(1, CONTENT_GC_EVERY) === 1) {
         // One day beyond the max age of an expired copy: nothing that could still be served is removed.
         cache_gc_content(config()['stale_max_age'] + 86400);
+        netinfo_gc();
     }
     return $routes;
 }

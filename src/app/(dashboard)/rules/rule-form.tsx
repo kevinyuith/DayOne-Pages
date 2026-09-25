@@ -1,28 +1,16 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { CHECKBOX_CLASS, Field, INPUT_CLASS, SELECT_BASE, SELECT_CLASS } from "@/components/ui/field";
-import {
-  DEVICES,
-  DEVICE_LABELS,
-  LIST_MODES,
-  LIST_MODE_LABELS,
-  QUERY_MODES,
-  QUERY_MODE_LABELS,
-  ruleConditionsToForm,
-  type ListMode,
-  type ParamMode,
-  type QueryRuleRow,
-} from "@/lib/pages/conditions";
-import type { Rule } from "@/lib/pages/rules-types";
+import { CHECKBOX_CLASS, Field, INPUT_BASE, INPUT_CLASS, SELECT_BASE, SELECT_CLASS } from "@/components/ui/field";
+import { DEVICES, DEVICE_LABELS, ruleConditionsToForm } from "@/lib/pages/conditions";
+import { RULE_LABELS, isRuleLabel, type Rule } from "@/lib/pages/rules-types";
 import { saveRule, type RuleFormState } from "./actions";
 
 const INITIAL: RuleFormState = { attempt: 0 };
 
-const PARAM_MODES: ParamMode[] = ["equals", "contains", "present"];
 
 /**
  * One traffic rule of the gate. In the table, "Add rule" (no rule) and "Edit"
@@ -49,7 +37,7 @@ export function RuleForm({ rule }: { rule?: Rule }) {
         title={rule ? `Edit ${rule.name}` : "New rule"}
         description="The first rule whose conditions all match marks the click with the label and sends it to the domain's page. Every condition is optional; empty matches everyone."
         onClose={() => setOpen(false)}
-        className="max-w-2xl"
+        className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-4xl"
       >
         <FormBody rule={rule} onDone={() => setOpen(false)} />
       </Dialog>
@@ -60,8 +48,6 @@ export function RuleForm({ rule }: { rule?: Rule }) {
 function FormBody({ rule, onDone }: { rule?: Rule; onDone: () => void }) {
   const initial = ruleConditionsToForm(rule?.conditions);
   const [state, action, pending] = useActionState(saveRule, INITIAL);
-  const [queryRows, setQueryRows] = useState<QueryRuleRow[]>(initial.query);
-  const [paramMode, setParamMode] = useState<ParamMode>(initial.paramMode);
 
   if (state.success) {
     // Saved: the server revalidated the page; close the dialog.
@@ -77,131 +63,26 @@ function FormBody({ rule, onDone }: { rule?: Rule; onDone: () => void }) {
           <input name="name" defaultValue={rule?.name ?? ""} required maxLength={120} placeholder="Datacenter US" className={INPUT_CLASS} disabled={pending} />
         </Field>
         <Field label="Label" hint="What the log shows.">
-          <input name="label" defaultValue={rule?.label ?? ""} required maxLength={60} placeholder="Bot" className={INPUT_CLASS} disabled={pending} />
+          <select name="label" defaultValue={rule && isRuleLabel(rule.label) ? rule.label : RULE_LABELS[0]} className={SELECT_CLASS} disabled={pending}>
+            {RULE_LABELS.map((l) => (
+              <option key={l} value={l}>
+                {l}
+              </option>
+            ))}
+          </select>
         </Field>
-        <Field label="Tags" hint="Comma-separated.">
+        <Field label="Flow" hint="Comma-separated.">
           <input name="tags" defaultValue={(rule?.tags ?? []).join(", ")} maxLength={200} placeholder="Facebook" className={INPUT_CLASS} disabled={pending} />
         </Field>
       </div>
 
-      <fieldset className="mt-4">
-        <legend className="text-xs font-semibold uppercase tracking-wide text-muted">Conditions</legend>
-        <div className="mt-2 grid gap-4 md:grid-cols-2">
-          <Field label="sub11 (exact)" hint="The click's platform id, case-insensitive.">
-            <input name="sub11" defaultValue={initial.sub11} maxLength={120} placeholder="facebook" className={`${INPUT_CLASS} font-mono`} disabled={pending} />
-          </Field>
-          <Field label="sub1 (exact)" hint="The click's campaign id, case-insensitive.">
-            <input name="sub1" defaultValue={initial.sub1} maxLength={120} placeholder="campanha-x" className={`${INPUT_CLASS} font-mono`} disabled={pending} />
-          </Field>
-          <div className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-muted">Any URL parameter</span>
-            <div className="flex gap-2">
-              <input name="param_name" defaultValue={initial.paramName} placeholder="net" className={`${INPUT_CLASS} w-28 shrink-0 font-mono`} disabled={pending} aria-label="Parameter name" />
-              <select name="param_mode" value={paramMode} onChange={(e) => setParamMode(e.target.value as ParamMode)} className={`${SELECT_BASE} w-28 shrink-0`} disabled={pending} aria-label="Parameter match">
-                {PARAM_MODES.map((m) => (
-                  <option key={m} value={m}>
-                    {m}
-                  </option>
-                ))}
-              </select>
-              <input name="param_value" defaultValue={initial.paramValue} placeholder={paramMode === "present" ? "—" : "value"} className={INPUT_CLASS} disabled={pending || paramMode === "present"} aria-label="Parameter value" />
-            </div>
-            <span className="text-xs text-muted">Any parameter of the click (e.g. net = dc), not just sub1/sub11</span>
-          </div>
-          <ListModeField
-            label="User-Agent (regex)"
-            name="user_agent"
-            modeName="user_agent_mode"
-            defaultMode={initial.userAgentMode}
-            defaultValue={initial.userAgent}
-            placeholder="chrome|firefox"
-            hint="Case-insensitive partial match on the UA"
-            disabled={pending}
-          />
-          <ListModeField
-            label="Countries (ISO-2, comma-separated)"
-            name="countries"
-            modeName="countries_mode"
-            defaultMode={initial.countriesMode}
-            defaultValue={initial.countries}
-            placeholder="BR, PT"
-            hint="From Cloudflare's CF-IPCountry header"
-            upper
-            disabled={pending}
-          />
-          <ListModeField
-            label="Languages (ISO 639-1, comma-separated)"
-            name="languages"
-            modeName="languages_mode"
-            defaultMode={initial.languagesMode}
-            defaultValue={initial.languages}
-            placeholder="en, es"
-            hint="From the browser's Accept-Language header"
-            disabled={pending}
-          />
-          <div className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-muted">Devices</span>
-            <div className="flex h-10 items-center gap-4">
-              {DEVICES.map((d) => (
-                <label key={d} className="flex items-center gap-1.5 text-sm">
-                  <input type="checkbox" name="devices" value={d} defaultChecked={initial.devices.includes(d)} className={CHECKBOX_CLASS} disabled={pending} />
-                  {DEVICE_LABELS[d]}
-                </label>
-              ))}
-            </div>
-          </div>
-          <Field label="Referrer contains">
-            <input name="referrer" defaultValue={initial.referrer} placeholder="facebook.com" className={INPUT_CLASS} disabled={pending} />
-          </Field>
-          <div className="md:col-span-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-muted">URL parameters</span>
-              <Button size="sm" variant="ghost" onClick={() => setQueryRows([...queryRows, { key: "", mode: "present", value: "" }])} disabled={pending}>
-                + parameter
-              </Button>
-            </div>
-            {queryRows.length === 0 ? <p className="mt-1 text-xs text-muted">E.g. gclid present, or utm_source equals facebook.</p> : null}
-            <div className="mt-1 flex flex-col gap-2">
-              {queryRows.map((row, i) => (
-                <div key={i} className="grid grid-cols-[1fr_8rem_1fr_auto] gap-2">
-                  <input
-                    name="query_key"
-                    value={row.key}
-                    onChange={(e) => setQueryRows(queryRows.map((r, j) => (j === i ? { ...r, key: e.target.value } : r)))}
-                    placeholder="gclid"
-                    className={`${INPUT_CLASS} h-9 font-mono`}
-                    disabled={pending}
-                  />
-                  <select
-                    name="query_mode"
-                    value={row.mode}
-                    onChange={(e) => setQueryRows(queryRows.map((r, j) => (j === i ? { ...r, mode: e.target.value as QueryRuleRow["mode"] } : r)))}
-                    className={`${SELECT_CLASS} h-9`}
-                    disabled={pending}
-                  >
-                    {QUERY_MODES.map((m) => (
-                      <option key={m} value={m}>
-                        {QUERY_MODE_LABELS[m]}
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    name="query_value"
-                    value={row.value}
-                    onChange={(e) => setQueryRows(queryRows.map((r, j) => (j === i ? { ...r, value: e.target.value } : r)))}
-                    placeholder={row.mode === "equals" ? "value" : "—"}
-                    className={`${INPUT_CLASS} h-9`}
-                    disabled={pending || row.mode !== "equals"}
-                  />
-                  <Button size="sm" variant="ghost" onClick={() => setQueryRows(queryRows.filter((_, j) => j !== i))} disabled={pending}>
-                    ×
-                  </Button>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </fieldset>
+      <div className="mt-4">
+        <Field label="Reason" hint="What the log shows when this rule catches a click.">
+          <input name="reason" defaultValue={rule?.reason ?? ""} maxLength={200} placeholder="Datacenter IP range" className={INPUT_CLASS} disabled={pending} />
+        </Field>
+      </div>
+
+      <ConditionsBuilder initial={initial} disabled={pending} />
 
       <label className="mt-4 flex items-center gap-2 text-sm">
         <input type="checkbox" name="is_active" defaultChecked={rule?.is_active ?? true} className={CHECKBOX_CLASS} disabled={pending} />
@@ -227,42 +108,267 @@ function FormBody({ rule, onDone }: { rule?: Rule; onDone: () => void }) {
   );
 }
 
-/** A field with a direction selector (allow only / block), for the UA regex and the country/language lists. */
-function ListModeField({
-  label,
-  name,
-  modeName,
-  defaultMode,
-  defaultValue,
-  placeholder,
-  hint,
-  upper = false,
-  disabled,
-}: {
-  label: string;
-  name: string;
-  modeName: string;
-  defaultMode: ListMode;
-  defaultValue: string;
-  placeholder: string;
-  hint: string;
-  upper?: boolean;
-  disabled: boolean;
-}) {
+/** The kinds of condition a rule can use. "URL parameter" can repeat; the others go once. */
+type CondType = "user_agent" | "ips" | "asns" | "hostname" | "param" | "countries" | "languages" | "devices" | "referrer";
+const COND_TYPES: { type: CondType; label: string; repeat?: true }[] = [
+  { type: "user_agent", label: "User-Agent" },
+  { type: "ips", label: "IP" },
+  { type: "asns", label: "ASN" },
+  { type: "hostname", label: "Hostname" },
+  { type: "param", label: "URL parameter", repeat: true },
+  { type: "countries", label: "Country" },
+  { type: "languages", label: "Language" },
+  { type: "devices", label: "Device" },
+  { type: "referrer", label: "Referrer" },
+];
+const COND_LABEL = Object.fromEntries(COND_TYPES.map((c) => [c.type, c.label])) as Record<CondType, string>;
+
+/** A URL parameter row: "contains" is the rule's `param` (one per rule); the others go into `query`. */
+type ParamRowMode = "present" | "absent" | "equals" | "contains";
+const PARAM_ROW_MODES: ParamRowMode[] = ["present", "absent", "equals", "contains"];
+type Row = { id: number; type: CondType; key?: string; mode?: ParamRowMode; value?: string };
+
+/** A saved rule's rows: one per condition it has (an old sub1/sub11 condition shows as a URL parameter). */
+function initialRows(initial: ReturnType<typeof ruleConditionsToForm>): Row[] {
+  const rows: Omit<Row, "id">[] = [];
+  if (initial.userAgent) rows.push({ type: "user_agent" });
+  if (initial.ips) rows.push({ type: "ips" });
+  if (initial.asns) rows.push({ type: "asns" });
+  if (initial.hostname) rows.push({ type: "hostname" });
+  for (const q of initial.query) rows.push({ type: "param", key: q.key, mode: q.mode, value: q.value });
+  if (initial.paramName) rows.push({ type: "param", key: initial.paramName, mode: initial.paramMode, value: initial.paramValue });
+  if (initial.countries) rows.push({ type: "countries" });
+  if (initial.languages) rows.push({ type: "languages" });
+  if (initial.devices.length) rows.push({ type: "devices" });
+  if (initial.referrer) rows.push({ type: "referrer" });
+  if (initial.sub11) rows.push({ type: "param", key: "sub11", mode: "equals", value: initial.sub11 });
+  if (initial.sub1) rows.push({ type: "param", key: "sub1", mode: "equals", value: initial.sub1 });
+  return rows.map((r, id) => ({ ...r, id }));
+}
+
+/**
+ * The rule's conditions as a list: "+ Add condition" picks a kind (User-Agent,
+ * URL parameter, country…) and each row has its fields and a remove button.
+ * The rows post the same fields as before (parseRuleConditionsForm): a kind
+ * that isn't in the list simply isn't sent. All rows must match (AND).
+ */
+function ConditionsBuilder({ initial, disabled }: { initial: ReturnType<typeof ruleConditionsToForm>; disabled: boolean }) {
+  const [rows, setRows] = useState<Row[]>(() => initialRows(initial));
+  const [menu, setMenu] = useState(false);
+  const nextId = useRef(1000);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!menu) return;
+    const close = (e: MouseEvent) => {
+      if (!menuRef.current?.contains(e.target as Node)) setMenu(false);
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [menu]);
+
+  const used = new Set(rows.map((r) => r.type));
+  const available = COND_TYPES.filter((c) => c.repeat || !used.has(c.type));
+  const add = (type: CondType) => {
+    setRows((cur) => [...cur, type === "param" ? { id: nextId.current++, type, key: "", mode: "present", value: "" } : { id: nextId.current++, type }]);
+    setMenu(false);
+  };
+  const remove = (id: number) => setRows((cur) => cur.filter((r) => r.id !== id));
+  const patch = (id: number, p: Partial<Row>) => setRows((cur) => cur.map((r) => (r.id === id ? { ...r, ...p } : r)));
+  const containsTaken = (id: number) => rows.some((r) => r.id !== id && r.type === "param" && r.mode === "contains");
+
+  const input = `${INPUT_BASE} min-w-0 flex-1`;
+  const op = "shrink-0 text-sm text-muted";
+  const controls = (r: Row) => {
+    switch (r.type) {
+      case "user_agent":
+        return (
+          <>
+            <select name="user_agent_mode" defaultValue={initial.userAgentMode} className={`${SELECT_BASE} w-40 shrink-0`} disabled={disabled} aria-label="User-Agent match">
+              <option value="allow">matches</option>
+              <option value="block">doesn&apos;t match</option>
+            </select>
+            <input name="user_agent" defaultValue={initial.userAgent} required placeholder="headless|python-requests" className={`${input} font-mono`} disabled={disabled} aria-label="User-Agent regex" />
+          </>
+        );
+      case "ips":
+      case "asns":
+        return (
+          <>
+            <select
+              name={`${r.type}_mode`}
+              defaultValue={r.type === "ips" ? initial.ipsMode : initial.asnsMode}
+              className={`${SELECT_BASE} w-40 shrink-0`}
+              disabled={disabled}
+              aria-label={`${COND_LABEL[r.type]} match`}
+            >
+              <option value="allow">is one of</option>
+              <option value="block">is not one of</option>
+            </select>
+            <input
+              name={r.type}
+              defaultValue={r.type === "ips" ? initial.ips : initial.asns}
+              required
+              placeholder={r.type === "ips" ? "203.0.113.7, 10.0.0.0/8" : "16509, 15169"}
+              className={`${input} font-mono`}
+              disabled={disabled}
+              aria-label={r.type === "ips" ? "IPs or CIDR ranges" : "AS numbers"}
+            />
+          </>
+        );
+      case "hostname":
+        return (
+          <>
+            <select name="hostname_mode" defaultValue={initial.hostnameMode} className={`${SELECT_BASE} w-40 shrink-0`} disabled={disabled} aria-label="Hostname match">
+              <option value="allow">matches</option>
+              <option value="block">doesn&apos;t match</option>
+            </select>
+            <input name="hostname" defaultValue={initial.hostname} required placeholder="amazonaws|googleusercontent" className={`${input} font-mono`} disabled={disabled} aria-label="Hostname regex" />
+          </>
+        );
+      case "countries":
+      case "languages": {
+        const isCountry = r.type === "countries";
+        return (
+          <>
+            <select
+              name={`${r.type}_mode`}
+              defaultValue={isCountry ? initial.countriesMode : initial.languagesMode}
+              className={`${SELECT_BASE} w-40 shrink-0`}
+              disabled={disabled}
+              aria-label={`${COND_LABEL[r.type]} match`}
+            >
+              <option value="allow">is one of</option>
+              <option value="block">is not one of</option>
+            </select>
+            <input
+              name={r.type}
+              defaultValue={isCountry ? initial.countries : initial.languages}
+              required
+              placeholder={isCountry ? "US, CA" : "en, es"}
+              className={`${input} ${isCountry ? "uppercase" : ""}`}
+              disabled={disabled}
+              aria-label={isCountry ? "Countries (ISO-2)" : "Languages (ISO 639-1)"}
+            />
+          </>
+        );
+      }
+      case "devices":
+        return (
+          <span className="flex h-10 flex-wrap items-center gap-4">
+            {DEVICES.map((d) => (
+              <label key={d} className="flex items-center gap-1.5 text-sm">
+                <input type="checkbox" name="devices" value={d} defaultChecked={initial.devices.includes(d)} className={CHECKBOX_CLASS} disabled={disabled} />
+                {DEVICE_LABELS[d]}
+              </label>
+            ))}
+          </span>
+        );
+      case "referrer":
+        return (
+          <>
+            <span className={op}>contains</span>
+            <input name="referrer" defaultValue={initial.referrer} required placeholder="facebook.com" className={input} disabled={disabled} aria-label="Referrer contains" />
+          </>
+        );
+      case "param": {
+        // "contains" posts as the rule's `param`, the rest as a `query` row. The value field
+        // stays in the form even when unused (read-only, empty): the query lists are parallel.
+        const contains = r.mode === "contains";
+        const needsValue = r.mode === "equals" || contains;
+        return (
+          <>
+            <input
+              name={contains ? "param_name" : "query_key"}
+              value={r.key ?? ""}
+              onChange={(e) => patch(r.id, { key: e.target.value })}
+              required
+              placeholder="gclid"
+              className={`${INPUT_BASE} w-36 shrink-0 font-mono`}
+              disabled={disabled}
+              aria-label="Parameter name"
+            />
+            <select
+              name={contains ? "param_mode" : "query_mode"}
+              value={r.mode ?? "present"}
+              onChange={(e) => patch(r.id, { mode: e.target.value as ParamRowMode })}
+              className={`${SELECT_BASE} w-32 shrink-0`}
+              disabled={disabled}
+              aria-label="Parameter match"
+            >
+              {PARAM_ROW_MODES.map((m) => (
+                <option key={m} value={m} disabled={m === "contains" && containsTaken(r.id)}>
+                  {m}
+                </option>
+              ))}
+            </select>
+            <input
+              name={contains ? "param_value" : "query_value"}
+              value={needsValue ? (r.value ?? "") : ""}
+              onChange={(e) => patch(r.id, { value: e.target.value })}
+              readOnly={!needsValue}
+              tabIndex={needsValue ? undefined : -1}
+              required={needsValue}
+              placeholder={needsValue ? "value" : "—"}
+              className={`${input} min-w-[7rem] ${needsValue ? "" : "opacity-50"}`}
+              disabled={disabled}
+              aria-label="Parameter value"
+            />
+          </>
+        );
+      }
+    }
+  };
+
   return (
-    <div className="flex flex-col gap-1">
-      <span className="text-xs font-medium text-muted">{label}</span>
-      <div className="flex gap-2">
-        <select name={modeName} defaultValue={defaultMode} className={`${SELECT_BASE} w-32 shrink-0`} disabled={disabled}>
-          {LIST_MODES.map((m) => (
-            <option key={m} value={m}>
-              {LIST_MODE_LABELS[m]}
-            </option>
+    <fieldset className="mt-4 min-w-0">
+      <legend className="text-xs font-semibold uppercase tracking-wide text-muted">Conditions</legend>
+      {rows.length ? (
+        <div className="mt-2 flex flex-col divide-y divide-border rounded-lg border border-border">
+          {rows.map((r) => (
+            <div key={r.id} className="flex flex-col gap-2 p-3 sm:flex-row sm:items-center">
+              <span className="text-sm font-medium sm:w-36 sm:shrink-0">{COND_LABEL[r.type]}</span>
+              <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">{controls(r)}</div>
+              <button
+                type="button"
+                onClick={() => remove(r.id)}
+                disabled={disabled}
+                aria-label={`Remove ${COND_LABEL[r.type]}`}
+                className="self-end rounded px-2 py-1 text-lg leading-none text-muted hover:bg-foreground/5 hover:text-foreground sm:self-center"
+              >
+                ×
+              </button>
+            </div>
           ))}
-        </select>
-        <input name={name} defaultValue={defaultValue} placeholder={placeholder} className={`${INPUT_CLASS} ${upper ? "uppercase" : ""}`} disabled={disabled} />
+        </div>
+      ) : (
+        <p className="mt-2 text-xs text-muted">No condition: this rule catches every click.</p>
+      )}
+      <div ref={menuRef} className="relative mt-2">
+        <Button size="sm" variant="ghost" onClick={() => setMenu((m) => !m)} disabled={disabled} aria-expanded={menu}>
+          + Add condition
+        </Button>
+        {menu ? (
+          <ul
+            role="menu"
+            className="absolute bottom-full left-0 z-10 mb-1 w-56 overflow-hidden rounded-lg border border-border bg-surface py-1 shadow-lg"
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                e.stopPropagation();
+                setMenu(false);
+              }
+            }}
+          >
+            {available.map((c) => (
+              <li key={c.type}>
+                <button type="button" role="menuitem" onClick={() => add(c.type)} className="w-full px-3 py-1.5 text-left text-sm hover:bg-foreground/5">
+                  {c.label}
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
       </div>
-      <span className="text-xs text-muted">{hint}</span>
-    </div>
+    </fieldset>
   );
 }

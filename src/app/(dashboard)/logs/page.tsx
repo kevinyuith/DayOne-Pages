@@ -97,6 +97,7 @@ export default async function LogsPage({
               <Th>Decision</Th>
               <Th className="text-right">Status</Th>
               <Th>Result</Th>
+              <Th>Rule</Th>
               <Th title="The browser reported that the page finished loading (load event). Pings, prefetches, link-preview bots and curl don't report. — = not applicable (redirect, 404, file or old record).">
                 Loaded
               </Th>
@@ -178,6 +179,17 @@ export default async function LogsPage({
                       <Badge tone={o.tone}>{o.label}</Badge>
                       {h.is_bot ? <span className="rounded bg-violet-500/10 px-1.5 py-0.5 text-[10px] font-medium text-violet-600 dark:text-violet-400">bot</span> : null}
                     </span>
+                  </Td>
+                  <Td className="min-w-[180px] max-w-[260px]">
+                    {h.rule_label || h.rule ? (
+                      <span className="flex flex-col items-start gap-0.5">
+                        {h.rule_label ? <Badge tone={h.rule_label.toLowerCase() === "bot" ? "danger" : "warning"}>{h.rule_label}</Badge> : null}
+                        {h.rule ? <span className="text-xs font-medium">{h.rule}</span> : null}
+                        {h.rule_reason ? <span className="text-xs text-muted">{h.rule_reason}</span> : null}
+                      </span>
+                    ) : (
+                      <span className="text-muted">—</span>
+                    )}
                   </Td>
                   <Td className="whitespace-nowrap">
                     {h.load ? (

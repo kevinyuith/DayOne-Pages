@@ -38,7 +38,7 @@ export default async function RulesPage() {
               <Th className="w-px">Order</Th>
               <Th>Rule</Th>
               <Th>Label</Th>
-              <Th>Tags</Th>
+              <Th>Flow</Th>
               <Th>Conditions</Th>
               <Th>Status</Th>
               <Th className="text-right">Actions</Th>
@@ -53,7 +53,10 @@ export default async function RulesPage() {
                     <RowAction action={moveRule.bind(null, r.id, 1)} label="↓" pendingLabel="…" variant="ghost" size="sm" />
                   </span>
                 </Td>
-                <Td className="font-medium">{r.name}</Td>
+                <Td>
+                  <span className="font-medium">{r.name}</span>
+                  {r.reason ? <span className="block text-xs text-muted">{r.reason}</span> : null}
+                </Td>
                 <Td>
                   <Badge tone={r.label.toLowerCase() === "bot" ? "danger" : "warning"}>{r.label}</Badge>
                 </Td>

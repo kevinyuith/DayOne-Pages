@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { errorReason, fail, type ActionResult } from "@/lib/action-result";
 import { parseRuleConditionsForm } from "@/lib/pages/conditions";
+import { RULE_LABELS, isRuleLabel } from "@/lib/pages/rules-types";
 import { supabaseService } from "@/lib/supabase/service";
 
 /**
@@ -31,16 +32,18 @@ export async function saveRule(prev: RuleFormState, fd: FormData): Promise<RuleF
   const id = String(fd.get("rule_id") ?? "").trim() || null;
   const name = String(fd.get("name") ?? "").trim();
   const label = String(fd.get("label") ?? "").trim();
+  const reason = String(fd.get("reason") ?? "").trim();
   const isActive = fd.get("is_active") === "on" || fd.get("is_active") === "true";
 
   if (id && !UUID_RE.test(id)) return { error: "Invalid rule.", attempt };
   if (name.length < 1 || name.length > 120) return { error: "Name is required (up to 120 characters).", attempt };
-  if (label.length < 1 || label.length > 60) return { error: "Label is required (up to 60 characters) — it's what the log shows (Bot, Suspicious…).", attempt };
+  if (!isRuleLabel(label)) return { error: `Choose the label: ${RULE_LABELS.join(" or ")}.`, attempt };
+  if (reason.length > 200) return { error: "The reason goes up to 200 characters.", attempt };
 
   const tags = Array.from(new Set(String(fd.get("tags") ?? "").split(/[\s,;]+/).map((t) => t.trim()).filter(Boolean)));
-  if (tags.length > 10) return { error: "Up to 10 tags.", attempt };
+  if (tags.length > 10) return { error: "Up to 10 flows.", attempt };
   const badTag = tags.find((t) => !TAG_RE.test(t));
-  if (badTag) return { error: `Invalid tag "${badTag}".`, attempt };
+  if (badTag) return { error: `Invalid flow "${badTag}".`, attempt };
 
   const cond = parseRuleConditionsForm(fd);
   if (!cond.ok) return { error: cond.reason, attempt };
@@ -53,6 +56,7 @@ export async function saveRule(prev: RuleFormState, fd: FormData): Promise<RuleF
       p_tags: tags,
       p_conditions: cond.value,
       p_is_active: isActive,
+      p_reason: reason,
     });
     if (error) {
       if (error.code === UNIQUE_VIOLATION) return { error: "A rule with that name already exists.", attempt };

@@ -19,7 +19,7 @@ $routeAt = fn (string $slug, string $hash): array => [
 $gate = [
     'gate_slugs' => ['/oferta'],
     'rules' => [
-        ['name' => 'Datacenter US', 'label' => 'Suspicious', 'tags' => [], 'conditions' => ['param' => ['name' => 'net', 'equals' => 'dc']]],
+        ['name' => 'Datacenter US', 'label' => 'Suspicious', 'reason' => 'Datacenter IP range', 'tags' => [], 'conditions' => ['param' => ['name' => 'net', 'equals' => 'dc']]],
         ['name' => 'Bad UA', 'label' => 'Bot', 'tags' => ['scrape'], 'conditions' => ['user_agent' => 'scraperxyz|evilscraper']],
     ],
     'funnels' => [
@@ -45,6 +45,7 @@ $oferta = [$routeAt('/oferta', 'ofer01')];
 [$st, , $body, $outcome, $route] = decide($root, make_request(['REQUEST_URI' => '/?net=dc']), $gate);
 same('rule match: domain page at /', [200, 'served', 'GATE-SAFE', 'home01'], [$st, $outcome, $route['match_type'], $route['content_hash']]);
 same('rule match: detection logged', ['Suspicious', 'Datacenter US', []], [$route['_rule_label'], $route['_rule'], $route['_rule_tags']]);
+same('rule match: the reason goes to the log', 'Datacenter IP range', $route['_rule_reason']);
 check('rule match: the page HTML', str_contains((string) $body, 'HOME'));
 
 // The first match wins.
@@ -53,6 +54,7 @@ same('first match wins', ['Suspicious', 'Datacenter US'], [$route['_rule_label']
 // Only the UA rule matches (its tags go along).
 [, , , , $route] = decide($root, make_request(['HTTP_USER_AGENT' => 'x EvilScraper']), $gate);
 same('UA rule: label + tags', ['Bot', 'Bad UA', ['scrape']], [$route['_rule_label'], $route['_rule'], $route['_rule_tags']]);
+same('a rule without a reason logs none', '', $route['_rule_reason']);
 
 // ── Clean, allowed slug ("/" and "/oferta"): the funnel of the sub1's [F23] ──
 [$st, $hd, $body, $outcome, $route] = decide($root, make_request(['REQUEST_URI' => '/?sub1=' . rawurlencode('[CA] [FB] [F23] [ABERTO]')]), $gate);

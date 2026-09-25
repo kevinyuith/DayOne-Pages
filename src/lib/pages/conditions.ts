@@ -68,6 +68,32 @@ const paramRule = z
   .refine((p) => [p.equals !== undefined, p.contains !== undefined, p.present !== undefined].filter(Boolean).length === 1, {
     message: "choose exactly one of equals, contains or present",
   });
+const IPV4_RE = /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/;
+
+/** An IPv6 address (with "::" and an optional dotted IPv4 tail). */
+function isIpv6(s: string): boolean {
+  if (!/^[0-9a-fA-F:.]+$/.test(s) || s.split("::").length > 2) return false;
+  let groups = s;
+  const tail = s.slice(s.lastIndexOf(":") + 1);
+  if (tail.includes(".")) {
+    if (!IPV4_RE.test(tail)) return false;
+    groups = `${s.slice(0, s.lastIndexOf(":") + 1)}0:0`;
+  }
+  const [head, rest] = groups.split("::");
+  const all = [...(head ? head.split(":") : []), ...(rest ? rest.split(":") : [])];
+  if (!all.every((g) => /^[0-9a-fA-F]{1,4}$/.test(g))) return false;
+  return rest === undefined ? all.length === 8 : all.length < 8;
+}
+
+/** An IP or a CIDR range: "203.0.113.7", "10.0.0.0/8", "2001:db8::/32" (the database checks it again, as inet). */
+export function isIpOrRange(s: string): boolean {
+  const [ip, bits, extra] = s.split("/");
+  if (extra !== undefined) return false;
+  const v4 = IPV4_RE.test(ip);
+  if (!v4 && !isIpv6(ip)) return false;
+  return bits === undefined || (/^\d{1,3}$/.test(bits) && Number(bits) <= (v4 ? 32 : 128));
+}
+
 export const ruleConditionsSchema = conditionsSchema
   .extend({
     sub1: subId.optional(),
@@ -75,8 +101,18 @@ export const ruleConditionsSchema = conditionsSchema
     param: paramRule.optional(),
     user_agent: z.string().min(1).max(500).optional(),
     user_agent_mode: z.literal("block").optional(),
+    // The click's IP (IPs and CIDR ranges), its AS number and its hostname (reverse DNS, a regex).
+    ips: z.array(z.string().refine(isIpOrRange, "invalid IP or range")).min(1).max(200).optional(),
+    ips_mode: z.literal("block").optional(),
+    asns: z.array(z.number().int().min(1).max(4294967295)).min(1).max(200).optional(),
+    asns_mode: z.literal("block").optional(),
+    hostname: z.string().min(1).max(500).optional(),
+    hostname_mode: z.literal("block").optional(),
   })
-  .refine((c) => !c.user_agent_mode || (c.user_agent?.length ?? 0) > 0, { message: "user_agent_mode requires user_agent", path: ["user_agent_mode"] });
+  .refine((c) => !c.user_agent_mode || (c.user_agent?.length ?? 0) > 0, { message: "user_agent_mode requires user_agent", path: ["user_agent_mode"] })
+  .refine((c) => !c.ips_mode || (c.ips?.length ?? 0) > 0, { message: "ips_mode requires ips", path: ["ips_mode"] })
+  .refine((c) => !c.asns_mode || (c.asns?.length ?? 0) > 0, { message: "asns_mode requires asns", path: ["asns_mode"] })
+  .refine((c) => !c.hostname_mode || (c.hostname?.length ?? 0) > 0, { message: "hostname_mode requires hostname", path: ["hostname_mode"] });
 
 export type RuleConditions = z.infer<typeof ruleConditionsSchema>;
 
@@ -185,11 +221,19 @@ export function summarizeConditions(c: RouteConditions | null | undefined): stri
 
 /**
  * Reads a rule's conditions from the rule form. The same fields as the domain
- * filter (minus `bot`), plus `sub1`, `sub11` (exact) and `user_agent` (a regex,
- * with `user_agent_mode` "block" to invert). The regex is validated for real
- * (it must compile — the server runs it per click).
+ * filter (minus `bot`), plus `sub1`, `sub11` (exact), `user_agent` and
+ * `hostname` (regexes), `ips` (IPs/CIDR ranges) and `asns` (AS numbers, "AS"
+ * prefix optional) — each with its `_mode` "block" to invert. The regexes are
+ * validated for real (they must compile — the server runs them per click).
  */
 export function parseRuleConditionsForm(fd: FormData): { ok: true; value: RuleConditions } | { ok: false; reason: string } {
+  // The rule form adds URL parameters one by one: "contains" goes once, and a parameter only once.
+  const paramNames = fd.getAll("param_name").map((v) => String(v).trim()).filter(Boolean);
+  if (paramNames.length > 1) return { ok: false, reason: "Only one URL parameter can use contains." };
+  const queryKeys = fd.getAll("query_key").map((v) => String(v).trim()).filter(Boolean);
+  const twice = [...queryKeys, ...paramNames].find((k, i, all) => all.indexOf(k) !== i);
+  if (twice) return { ok: false, reason: `The URL parameter "${twice}" is there twice.` };
+
   const base = parseConditionsForm(fd);
   if (!base.ok) return base;
   if (base.value.bot) return { ok: false, reason: "The bot condition doesn't apply to a traffic rule (bots are the domain's block)." };
@@ -214,6 +258,39 @@ export function parseRuleConditionsForm(fd: FormData): { ok: true; value: RuleCo
     } else {
       raw.param = { name: paramName, present: true };
     }
+  }
+
+  const tokens = (name: string) => Array.from(new Set(String(fd.get(name) ?? "").split(/[\s,;]+/).map((t) => t.trim()).filter(Boolean)));
+
+  const ips = tokens("ips");
+  if (ips.length) {
+    const bad = ips.find((ip) => !isIpOrRange(ip));
+    if (bad) return { ok: false, reason: `"${bad}" isn't an IP or range (e.g. 203.0.113.7 or 10.0.0.0/8).` };
+    raw.ips = ips;
+    if (String(fd.get("ips_mode") ?? "allow") === "block") raw.ips_mode = "block";
+  }
+
+  const asnTokens = tokens("asns");
+  if (asnTokens.length) {
+    const asns: number[] = [];
+    for (const t of asnTokens) {
+      const n = Number(/^(?:AS)?(\d{1,10})$/i.exec(t)?.[1] ?? NaN);
+      if (!Number.isInteger(n) || n < 1 || n > 4294967295) return { ok: false, reason: `"${t}" isn't an AS number (e.g. 16509 or AS16509).` };
+      asns.push(n);
+    }
+    raw.asns = Array.from(new Set(asns));
+    if (String(fd.get("asns_mode") ?? "allow") === "block") raw.asns_mode = "block";
+  }
+
+  const hostname = String(fd.get("hostname") ?? "").trim();
+  if (hostname) {
+    try {
+      new RegExp(hostname, "i");
+    } catch {
+      return { ok: false, reason: "The hostname regex doesn't compile." };
+    }
+    raw.hostname = hostname;
+    if (String(fd.get("hostname_mode") ?? "allow") === "block") raw.hostname_mode = "block";
   }
 
   const ua = String(fd.get("user_agent") ?? "").trim();
@@ -245,6 +322,12 @@ export function ruleConditionsToForm(c: RuleConditions | null | undefined): Retu
   paramValue: string;
   userAgent: string;
   userAgentMode: ListMode;
+  ips: string;
+  ipsMode: ListMode;
+  asns: string;
+  asnsMode: ListMode;
+  hostname: string;
+  hostnameMode: ListMode;
 } {
   const p = c?.param;
   return {
@@ -256,6 +339,12 @@ export function ruleConditionsToForm(c: RuleConditions | null | undefined): Retu
     paramValue: p?.equals ?? p?.contains ?? "",
     userAgent: c?.user_agent ?? "",
     userAgentMode: c?.user_agent_mode === "block" ? "block" : "allow",
+    ips: (c?.ips ?? []).join(", "),
+    ipsMode: c?.ips_mode === "block" ? "block" : "allow",
+    asns: (c?.asns ?? []).join(", "),
+    asnsMode: c?.asns_mode === "block" ? "block" : "allow",
+    hostname: c?.hostname ?? "",
+    hostnameMode: c?.hostname_mode === "block" ? "block" : "allow",
   };
 }
 
@@ -267,6 +356,9 @@ export function summarizeRuleConditions(c: RuleConditions | null | undefined): s
   if (c.sub1) parts.push(`sub1 = ${c.sub1}`);
   if (c.param) parts.push(`?${c.param.name} ${c.param.equals !== undefined ? `= ${c.param.equals}` : c.param.contains !== undefined ? `~ ${c.param.contains}` : "present"}`);
   if (c.user_agent) parts.push(`UA ${c.user_agent_mode === "block" ? "not " : ""}~ /${c.user_agent}/i`);
+  if (c.ips?.length) parts.push(`IP ${c.ips_mode === "block" ? "not " : ""}in ${c.ips.join(", ")}`);
+  if (c.asns?.length) parts.push(`ASN ${c.asns_mode === "block" ? "not " : ""}in ${c.asns.join(", ")}`);
+  if (c.hostname) parts.push(`Hostname ${c.hostname_mode === "block" ? "not " : ""}~ /${c.hostname}/i`);
   const base = summarizeConditions(c);
   if (base !== "Always") parts.push(base);
   return parts.length ? parts.join(" · ") : "Always";
