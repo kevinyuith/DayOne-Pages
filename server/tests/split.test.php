@@ -58,7 +58,7 @@ check('decide: page B\'s body', str_contains((string) $body, 'PAGE-B') && !str_c
 same('decide: logged route = page B', $pB, $route['page_id']);
 check('decide: Vary with Cookie', str_contains($headers['Vary'], 'Cookie'));
 check('decide: correct cookie, no Set-Cookie dop_pg', !str_contains(json_encode($headers['Set-Cookie'] ?? []), 'dop_pg'));
-same('decide: page B\'s ETag', '"hashB-b2"', $headers['ETag']);
+same('decide: page B\'s ETag', '"hashB-b3"', $headers['ETag']);
 [$status, $headers] = decide([$splitRoute], make_request());
 check('decide: new visitor gets Set-Cookie dop_pg', str_contains(json_encode($headers['Set-Cookie'] ?? []), 'dop_pg='), json_encode($headers['Set-Cookie'] ?? null));
 
@@ -76,6 +76,6 @@ check('cache_has_all_content: a split page is missing → false', !cache_has_all
 // Load notice: click.
 $vid = str_repeat('ab', 16);
 $post = static fn () => make_request(['REQUEST_METHOD' => 'POST', 'REQUEST_URI' => '/_dop/l', 'HTTP_COOKIE' => "dop_v=$vid"]);
-same('beacon c=1: click', [$vid, true], [handle_beacon($post(), 'c=1')[3], handle_beacon($post(), 'c=1')[5]]);
-same('beacon t=…: load, no click', [$vid, false], [handle_beacon($post(), 't=900')[3], handle_beacon($post(), 't=900')[5]]);
+same('beacon c=1: click', [$vid, 'click'], [handle_beacon($post(), 'c=1')[3], handle_beacon($post(), 'c=1')[4]['kind']]);
+same('beacon t=…: load, no click', [$vid, 'load'], [handle_beacon($post(), 't=900')[3], handle_beacon($post(), 't=900')[4]['kind']]);
 check('script sends c=1 on a click that leaves the page and ignores "#"', str_contains(BEACON_SCRIPT, 'b("c=1")') && str_contains(BEACON_SCRIPT, 'h.charAt(0)==="#"'));

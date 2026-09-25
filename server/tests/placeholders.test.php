@@ -63,7 +63,7 @@ check('etag changes with the data', $a !== placeholders_etag(placeholder_values(
 check('etag changes with the language', $a !== placeholders_etag(placeholder_values($base, make_request(['HTTP_ACCEPT_LANGUAGE' => 'es']), $noon)));
 check('etag changes with the day', $a !== placeholders_etag(placeholder_values($base, make_request(), $noon->modify('+1 day'))));
 
-// serve_slug end to end: replaced body and ETag with the suffix, before the load notice's -b2.
+// serve_slug end to end: replaced body and ETag with the suffix, before the load notice's -b3.
 $slug = 'ph-test-' . bin2hex(random_bytes(4));
 cache_put_content('ph1', '<html><body><h1>{{company.name}}</h1><p>{{lang}}</p></body></html>');
 $route = ['slug_id' => $slug, 'content_hash' => 'ph1', 'content_type' => 'text/html; charset=utf-8', 'funnel' => false,

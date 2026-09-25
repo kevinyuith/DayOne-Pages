@@ -145,6 +145,13 @@ function supabase_log_click(string $visitId): ?bool
     return is_bool($found) ? $found : null;
 }
 
+/** A visit's first interaction (mouse, scroll, touch, key): same as supabase_log_load. */
+function supabase_log_interact(string $visitId, string $kind, ?int $ms): ?bool
+{
+    $found = supabase_fire('log_interact', ['p_visit_id' => $visitId, 'p_kind' => $kind, 'p_ms' => $ms]);
+    return is_bool($found) ? $found : null;
+}
+
 /**
  * POST to a logging RPC (pages.<fn>) with p_key: the function's result
  * (decoded JSON), or null when the call failed (only the log sees it).

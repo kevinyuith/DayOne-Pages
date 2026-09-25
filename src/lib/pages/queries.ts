@@ -695,12 +695,18 @@ export type HitLogRow = HitRow & {
   redirect_url: string | null;
   /** Visit id (cookie dop_v) when the response was an HTML page with the load notice. */
   visit_id: string | null;
-  /** The rule that caught the click (pages.rules): its label (Bot, Suspicious), name and reason; null = no rule. */
+  /** The rule that caught the click (pages.rules): its label (Bot, Suspicious), name, reason and flow; null = no rule. */
   rule_label: string | null;
   rule: string | null;
   rule_reason: string | null;
+  rule_tags: string[] | null;
   /** The Accept-Language header as the browser sent it. */
   accept_language: string | null;
+  /** The visitor's first interaction (mouse, scroll, touch, key) and the ms from the navigation start to it; null = none reported. */
+  interaction: "mouse" | "scroll" | "touch" | "key" | null;
+  interaction_ms: number | null;
+  /** When the visitor first clicked out of the page; null = no click. */
+  clicked_at: string | null;
   /** Registered domain (pages.domains), not the request's host. */
   domain: string | null;
   page_name: string | null;
@@ -720,8 +726,8 @@ export async function listHits(opts: { domainId?: string | null; beforeId?: numb
     .from("hits")
     .select(
       "id, created_at, domain_id, host, path, outcome, status_code, country, device, is_bot, referrer_host, ip, user_agent, " +
-        "hostname, asn, as_name, cookies, region, route_id, page_id, slug, decision, query, redirect_url, visit_id, rule_label, rule, rule_reason, " +
-        "loaded_at, load_ms, accept_language, domains(domain)",
+        "hostname, asn, as_name, cookies, region, route_id, page_id, slug, decision, query, redirect_url, visit_id, rule_label, rule, rule_reason, rule_tags, " +
+        "loaded_at, load_ms, accept_language, interaction, interaction_ms, clicked_at, domains(domain)",
     )
     .order("id", { ascending: false })
     .limit(limit + 1);

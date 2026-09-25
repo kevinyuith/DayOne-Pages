@@ -8,10 +8,11 @@ import { RowAction } from "@/components/row-action";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, Td, Th, Tr } from "@/components/ui/table";
+import { languagesFromHeader } from "@/lib/accept-language";
 import { connectionType } from "@/lib/connection";
 import { browserFromUA, osFromUA } from "@/lib/user-agent";
 import { normalizeHost } from "@/lib/pages/normalize";
-import { listDomains, listHits, unregisteredHosts } from "@/lib/pages/queries";
+import { listDomains, listHits, unregisteredHosts, type HitLogRow } from "@/lib/pages/queries";
 import { APP_TZ } from "@/lib/time-zone";
 import { registerSeenDomain } from "../domains/actions";
 
@@ -98,9 +99,12 @@ export default async function LogsPage({
               <Th className="text-right">Status</Th>
               <Th>Result</Th>
               <Th>Rule</Th>
+              <Th>Flow</Th>
+              <Th>Reason</Th>
               <Th title="The browser reported that the page finished loading (load event). Pings, prefetches, link-preview bots and curl don't report. — = not applicable (redirect, 404, file or old record).">
                 Loaded
               </Th>
+              <Th>Interaction</Th>
               <Th>Country</Th>
               <Th>State</Th>
               <Th>Language</Th>
@@ -181,17 +185,30 @@ export default async function LogsPage({
                       {h.is_bot ? <span className="rounded bg-violet-500/10 px-1.5 py-0.5 text-[10px] font-medium text-violet-600 dark:text-violet-400">bot</span> : null}
                     </span>
                   </Td>
-                  <Td className="min-w-[180px] max-w-[260px]">
+                  <Td className="min-w-[140px] max-w-[220px]">
                     {h.rule_label || h.rule ? (
                       <span className="flex flex-col items-start gap-0.5">
                         {h.rule_label ? <Badge tone={h.rule_label.toLowerCase() === "bot" ? "danger" : "warning"}>{h.rule_label}</Badge> : null}
                         {h.rule ? <span className="text-xs font-medium">{h.rule}</span> : null}
-                        {h.rule_reason ? <span className="text-xs text-muted">{h.rule_reason}</span> : null}
                       </span>
                     ) : (
                       <span className="text-muted">—</span>
                     )}
                   </Td>
+                  <Td className="min-w-[100px] max-w-[200px]">
+                    {h.rule_tags?.length ? (
+                      <span className="flex flex-wrap gap-1">
+                        {h.rule_tags.map((t) => (
+                          <span key={t} className="rounded bg-foreground/[0.06] px-1.5 py-0.5 text-xs">
+                            {t}
+                          </span>
+                        ))}
+                      </span>
+                    ) : (
+                      <span className="text-muted">—</span>
+                    )}
+                  </Td>
+                  <Td className="min-w-[140px] max-w-[260px] text-xs">{h.rule_reason || <span className="text-muted">—</span>}</Td>
                   <Td className="whitespace-nowrap">
                     {h.load ? (
                       <Badge tone="success">✓{h.load.load_ms !== null ? ` ${loadFmt.format(h.load.load_ms / 1000)}s` : ""}</Badge>
@@ -203,10 +220,13 @@ export default async function LogsPage({
                       <span className="text-muted">—</span>
                     )}
                   </Td>
+                  <Td className="whitespace-nowrap">
+                    <Interaction hit={h} />
+                  </Td>
                   <Td className="text-muted">{h.country || "—"}</Td>
                   <Td className="whitespace-nowrap text-muted">{h.region || "—"}</Td>
-                  <Td className="max-w-[180px] text-muted" title={h.accept_language ?? undefined}>
-                    {h.accept_language ? <span className="line-clamp-2 break-all font-mono text-[11px]">{h.accept_language}</span> : "—"}
+                  <Td className="whitespace-nowrap" title={h.accept_language ?? undefined}>
+                    <Languages header={h.accept_language} />
                   </Td>
                   <Td className="text-muted">{h.device || "—"}</Td>
                   <Td className="whitespace-nowrap text-muted">{browserFromUA(h.user_agent) ?? "—"}</Td>
@@ -263,5 +283,33 @@ export default async function LogsPage({
         </nav>
       ) : null}
     </>
+  );
+}
+
+/** The visitor's first interaction (kind and time to it) and whether they clicked out of the page. */
+function Interaction({ hit }: { hit: HitLogRow }) {
+  if (!hit.interaction && !hit.clicked_at) return <span className={hit.visit_id ? "text-xs text-muted" : "text-muted"}>{hit.visit_id ? "no" : "—"}</span>;
+  return (
+    <span className="inline-flex items-center gap-1">
+      {hit.interaction ? (
+        <Badge tone="success">
+          {hit.interaction}
+          {hit.interaction_ms !== null ? ` ${loadFmt.format(hit.interaction_ms / 1000)}s` : ""}
+        </Badge>
+      ) : null}
+      {hit.clicked_at ? <Badge tone="info">clicked</Badge> : null}
+    </span>
+  );
+}
+
+/** The click's languages, most preferred first: the main one highlighted, the others after it (the full header on hover). */
+function Languages({ header }: { header: string | null }) {
+  const [main, ...rest] = languagesFromHeader(header);
+  if (!main) return <span className="text-muted">{header ? <span className="font-mono text-[11px]">{header.slice(0, 40)}</span> : "—"}</span>;
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span className="rounded bg-foreground/[0.06] px-1.5 py-0.5 text-xs font-semibold">{main}</span>
+      {rest.length ? <span className="text-xs text-muted">{rest.join(" · ")}</span> : null}
+    </span>
   );
 }

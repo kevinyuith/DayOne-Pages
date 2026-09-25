@@ -29,14 +29,14 @@ function dayone_handle(): void
         return;
     }
     if ($req->rawPath === BEACON_PATH) {
-        [$status, $headers, $body, $visitId, $loadMs, $click] = handle_beacon($req, (string) file_get_contents('php://input', false, null, 0, 256));
+        [$status, $headers, $body, $visitId, $notice] = handle_beacon($req, (string) file_get_contents('php://input', false, null, 0, 256));
         send_response($status, $headers, $body, false);
         if ($visitId !== null) {
             if (function_exists('fastcgi_finish_request')) {
                 fastcgi_finish_request();
             }
             // On the hit (pages.hits); retried while the hit isn't written yet.
-            beacon_record($click ? static fn () => supabase_log_click($visitId) : static fn () => supabase_log_load($visitId, $loadMs));
+            beacon_record(static fn () => beacon_send($visitId, $notice));
         }
         return;
     }
