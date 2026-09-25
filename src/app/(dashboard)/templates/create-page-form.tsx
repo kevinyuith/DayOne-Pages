@@ -29,8 +29,8 @@ const OPTIONS: { key: Source; label: string; hint: string; Icon: typeof FilePlus
 
 /**
  * "Create template": first the source (another template, link, pasted HTML or
- * from scratch), then the name. `folderId` is the folder the template is created
- * in (the one open on screen); on success the action redirects to the editor.
+ * from scratch), then the name. `folderId` is the folder (its path) the template
+ * is created in (the one open on screen); on success the action redirects to the editor.
  *
  * With `funnel` (Funnel screen), it's the same flow for a funnel page: created
  * with kind FUNNEL, linked to the funnel, and "from scratch" comes with Pre Lander + Lander.
@@ -164,7 +164,7 @@ function SourceForm({
   return (
     <form action={action} className="flex flex-col gap-3">
       <input type="hidden" name="source" value={source === "link" ? "html" : source} />
-      {folderId ? <input type="hidden" name="folder_id" value={folderId} /> : null}
+      {folderId ? <input type="hidden" name="folder" value={folderId} /> : null}
       {funnel ? <input type="hidden" name="funnel_id" value={funnel.id} /> : null}
 
       <div className="flex items-center gap-2 text-sm">

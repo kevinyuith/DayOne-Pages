@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { errorReason, fail, type ActionResult } from "@/lib/action-result";
-import { getKimiKey, listKimiModels, setAiModel, setKimiKey } from "@/lib/ai-settings";
+import { listKimiModels, setKimiKey } from "@/lib/ai-settings";
 
 /**
  * Settings → AI for template variations. The key goes to the Vault and
@@ -30,29 +30,6 @@ export async function saveKimiKey(prev: AiKeyState, fd: FormData): Promise<AiKey
 export async function removeKimiKey(): Promise<ActionResult> {
   try {
     await setKimiKey(null);
-    revalidatePath("/settings");
-    return { ok: true };
-  } catch (cause) {
-    return fail(errorReason(cause));
-  }
-}
-
-/** The models the saved key unlocks. */
-export async function loadKimiModels(): Promise<ActionResult<{ models: string[] }>> {
-  try {
-    const key = await getKimiKey();
-    if (!key) return fail("No key configured.");
-    const r = await listKimiModels(key);
-    return r.ok ? { ok: true, models: r.models } : fail(r.reason);
-  } catch (cause) {
-    return fail(errorReason(cause));
-  }
-}
-
-export async function saveAiModel(model: string): Promise<ActionResult> {
-  if (!/^[A-Za-z0-9._-]{2,80}$/.test(model)) return fail("Invalid model.");
-  try {
-    await setAiModel(model);
     revalidatePath("/settings");
     return { ok: true };
   } catch (cause) {

@@ -1,6 +1,6 @@
 import { supabaseService } from "@/lib/supabase/service";
 import { scanFunnel, type ScannedVersion } from "./funnel-scan";
-import type { Domain, Folder, FolderScope, Page, PageKind, PageRef, PageSlug, PageSlugSummary, PageStatus } from "./types";
+import type { Domain, Page, PageKind, PageRef, PageSlug, PageSlugSummary, PageStatus } from "./types";
 
 /**
  * Reads from the `pages` schema, for Server Components.
@@ -134,7 +134,7 @@ type PageSummaryRow = {
   kind: PageKind;
   status: PageStatus;
   notes: string | null;
-  folder_id: string | null;
+  folder: string | null;
   template_id: string | null;
   funnel_id: string | null;
   funnel_page_id: string | null;
@@ -156,7 +156,7 @@ const asPage = (r: PageSummaryRow): Page => ({
   kind: r.kind,
   status: r.status,
   notes: r.notes,
-  folder_id: r.folder_id,
+  folder: r.folder,
   created_at: r.created_at,
   updated_at: r.updated_at,
 });
@@ -167,13 +167,6 @@ export async function listPages(): Promise<PageListItem[]> {
   const copiesOf = new Map<string, number>();
   for (const c of copies) if (c.template_id) copiesOf.set(c.template_id, (copiesOf.get(c.template_id) ?? 0) + 1);
   return templates.map((r) => ({ ...asPage(r), slugs_count: r.slugs.length, copies_count: copiesOf.get(r.id) ?? 0 }));
-}
-
-/** A screen's folders (there are few; the tree is built on the screen). */
-export async function listFolders(scope: FolderScope = "TEMPLATE"): Promise<Folder[]> {
-  const { data, error } = await supabaseService().from("folders").select("*").eq("scope", scope).order("name");
-  throwIf(error, "listFolders");
-  return (data ?? []) as Folder[];
 }
 
 // ── Funnel: variants and A/B test results ────────────────────────────────────
@@ -469,7 +462,7 @@ export async function getFunnelPageForEditor(pageId: string, slugPath: string | 
   return {
     funnelId,
     mainFunnelId: row.main_funnel_id,
-    page: { id: row.page_id, name: row.name, kind: "FUNNEL", status: row.status, notes: row.notes, folder_id: null, created_at: row.created_at, updated_at: row.updated_at },
+    page: { id: row.page_id, name: row.name, kind: "FUNNEL", status: row.status, notes: row.notes, folder: null, created_at: row.created_at, updated_at: row.updated_at },
     slugs,
     slug: { ...current, content },
   };
@@ -568,7 +561,7 @@ export async function getDomainPageForEditor(domainId: string, pageId: string, s
 
   return {
     domain: domain.data as DomainPageEditorData["domain"],
-    page: { id: row.page_id, name: row.name, kind: row.kind, status: row.status, notes: null, folder_id: null, created_at: row.created_at, updated_at: row.updated_at },
+    page: { id: row.page_id, name: row.name, kind: row.kind, status: row.status, notes: null, folder: null, created_at: row.created_at, updated_at: row.updated_at },
     slugs,
     slug: { ...current, content },
   };

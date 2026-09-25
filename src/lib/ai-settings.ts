@@ -7,13 +7,14 @@ import { supabaseService } from "@/lib/supabase/service";
  * - the key is encrypted in Supabase Vault (pages.ai_secret_*); the
  *   dashboard only reads it on the server, when calling the API, and the
  *   screen gets at most the last 4 characters;
- * - the model lives in pages.app_settings (`ai.model`).
+ * - the model is fixed in the code (AI_MODEL).
  *
- * Edited in Settings. Server-only.
+ * The key is edited in Settings. Server-only.
  */
 
 const KIMI_SECRET = "dayone_pages.moonshot_api_key";
-export const DEFAULT_AI_MODEL = "kimi-k3";
+/** The Kimi model the copy rewriting uses. */
+export const AI_MODEL = "kimi-k3";
 export const KIMI_BASE_URL = "https://api.moonshot.ai/v1";
 
 export type AiStatus = { keySet: boolean; hint: string | null; updatedAt: string | null; model: string };
@@ -29,25 +30,11 @@ export async function setKimiKey(key: string | null): Promise<void> {
   if (error) throw new Error(`ai_secret_set: ${error.message}`);
 }
 
-export async function getAiModel(): Promise<string> {
-  const { data, error } = await supabaseService().from("app_settings").select("value").eq("key", "ai.model").maybeSingle();
-  if (error) throw new Error(`app_settings: ${error.message}`);
-  const value = (data as { value: unknown } | null)?.value;
-  return typeof value === "string" && value ? value : DEFAULT_AI_MODEL;
-}
-
-export async function setAiModel(model: string): Promise<void> {
-  const { error } = await supabaseService()
-    .from("app_settings")
-    .upsert({ key: "ai.model", value: model, updated_at: new Date().toISOString() });
-  if (error) throw new Error(`app_settings: ${error.message}`);
-}
-
 export async function getAiStatus(): Promise<AiStatus> {
-  const [status, model] = await Promise.all([supabaseService().rpc("ai_secret_status", { p_name: KIMI_SECRET }), getAiModel()]);
+  const status = await supabaseService().rpc("ai_secret_status", { p_name: KIMI_SECRET });
   if (status.error) throw new Error(`ai_secret_status: ${status.error.message}`);
   const row = (status.data as { hint: string; updated_at: string }[] | null)?.[0];
-  return { keySet: !!row, hint: row?.hint ?? null, updatedAt: row?.updated_at ?? null, model };
+  return { keySet: !!row, hint: row?.hint ?? null, updatedAt: row?.updated_at ?? null, model: AI_MODEL };
 }
 
 /** The models the key unlocks (Moonshot's GET /models), newest to oldest. */

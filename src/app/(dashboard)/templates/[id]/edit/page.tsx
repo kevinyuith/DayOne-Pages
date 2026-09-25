@@ -45,7 +45,7 @@ export default async function TemplateEditorPage({ params, searchParams }: { par
       }}
       nav={{
         // Go back to the template's folder, not to the root.
-        backHref: page.folder_id ? `/templates?folder=${page.folder_id}` : "/templates",
+        backHref: page.folder ? `/templates?folder=${encodeURIComponent(page.folder)}` : "/templates",
         backTitle: "Back to templates",
         slugHref: `/templates/${page.id}/edit?slug={slug}`,
         afterDeleteHref: "/templates",

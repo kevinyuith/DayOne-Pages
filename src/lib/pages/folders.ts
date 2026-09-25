@@ -1,12 +1,57 @@
 import type { Folder } from "./types";
 
 /**
- * Folder tree of the /templates screen. All folders come from the database
- * (there are few) and the screen builds what it needs: a folder's children, the
- * path to the root (breadcrumb) and "X is a descendant of Y" (so a folder isn't
- * moved into itself). Everything tolerates bad data — a cycle in the database
- * doesn't hang the screen, it just cuts the path.
+ * Folder tree of the /templates screen. Folders aren't stored: each template
+ * keeps its folder as a path (pages.pages.folder, "Funnels/F23/White"; null =
+ * the root) and the tree comes from the paths — a folder exists while a
+ * template is in it (the screen keeps a new, still empty one in the session).
+ * A folder's `id` is its full path. The screen builds what it needs: a folder's
+ * children, the path to the root (breadcrumb) and "X is inside Y" (so a folder
+ * isn't moved into itself).
  */
+
+/** Up to 10 levels; a segment has 1–80 characters, no "/", no spaces at the ends (pages_folder_path in the database). */
+export const FOLDER_MAX_DEPTH = 10;
+export const FOLDER_NAME_MAX = 80;
+
+/** A folder name typed on the screen, or null if it can't be one ("/" inside, empty, too long). */
+export function cleanFolderName(raw: string): string | null {
+  const name = raw.replace(/\s+/g, " ").trim();
+  return name.length >= 1 && name.length <= FOLDER_NAME_MAX && !name.includes("/") ? name : null;
+}
+
+/** Is this a valid folder path? */
+export function isFolderPath(v: unknown): v is string {
+  if (typeof v !== "string") return false;
+  const parts = v.split("/");
+  return parts.length <= FOLDER_MAX_DEPTH && parts.every((p) => cleanFolderName(p) === p);
+}
+
+/** The path of `name` inside `parent` (null = the root). */
+export const joinFolder = (parent: string | null, name: string) => (parent ? `${parent}/${name}` : name);
+
+/** The parent of a path (null = the root). */
+export const parentFolder = (path: string) => (path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : null);
+
+/** The last segment of a path (the folder's name). */
+export const folderName = (path: string) => path.slice(path.lastIndexOf("/") + 1);
+
+/** The tree behind these paths: every folder, with its ancestors, once. */
+export function foldersFromPaths(paths: Iterable<string | null | undefined>): Folder[] {
+  const out = new Map<string, Folder>();
+  for (const path of paths) {
+    if (!path || !isFolderPath(path)) continue;
+    for (let cur: string | null = path; cur && !out.has(cur); cur = parentFolder(cur)) {
+      out.set(cur, { id: cur, name: folderName(cur), parent_id: parentFolder(cur) });
+    }
+  }
+  return [...out.values()];
+}
+
+/** A path with the `from` prefix replaced by `to` (the folder was renamed/moved), or unchanged. */
+export function movePath(path: string, from: string, to: string): string {
+  return path === from ? to : path.startsWith(`${from}/`) ? to + path.slice(from.length) : path;
+}
 
 export type FolderMap = Map<string, Folder>;
 

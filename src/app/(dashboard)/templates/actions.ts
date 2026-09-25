@@ -9,7 +9,8 @@ import { isValidSlug, normalizePath } from "@/lib/pages/normalize";
 import { STARTER_HTML } from "@/lib/pages/starter-template";
 import { funnelStarterHtml, refreshPageIds } from "@/lib/pages/subpages";
 import { setShare } from "@/lib/pages/traffic";
-import { isFolderColor, isFolderScope, isPageStatus, isTemplateKind, type FolderScope, type PageKind, type PageStatus } from "@/lib/pages/types";
+import { FOLDER_MAX_DEPTH, FOLDER_NAME_MAX, cleanFolderName, folderName, isFolderPath, joinFolder, parentFolder } from "@/lib/pages/folders";
+import { isPageStatus, isTemplateKind, type PageKind, type PageStatus } from "@/lib/pages/types";
 import { supabaseService } from "@/lib/supabase/service";
 
 /**
@@ -44,15 +45,15 @@ type SlugInput = { title: string | null; content: string; content_type?: string;
 type StoredSlugs = Record<string, SlugInput>;
 
 /** A template's slugs (with the HTML). null if it doesn't exist. */
-async function templateSlugs(templateId: string): Promise<{ name: string; kind: PageKind; notes: string | null; folder_id: string | null; slugs: StoredSlugs } | null> {
+async function templateSlugs(templateId: string): Promise<{ name: string; kind: PageKind; notes: string | null; folder: string | null; slugs: StoredSlugs } | null> {
   const { data, error } = await supabaseService()
     .from("pages")
-    .select("name, kind, notes, folder_id, slugs")
+    .select("name, kind, notes, folder, slugs")
     .eq("id", templateId)
     .eq("scope", "TEMPLATE")
     .maybeSingle();
   if (error) throw new Error(error.message);
-  return (data as { name: string; kind: PageKind; notes: string | null; folder_id: string | null; slugs: StoredSlugs } | null) ?? null;
+  return (data as { name: string; kind: PageKind; notes: string | null; folder: string | null; slugs: StoredSlugs } | null) ?? null;
 }
 
 /** Copy of the slugs for another page: HTML with new sub-page ids (see duplicatePage), without hash or dates. */
@@ -90,7 +91,7 @@ export async function createPage(prev: CreatePageState, fd: FormData): Promise<C
   const attempt = prev.attempt + 1;
   const name = String(fd.get("name") ?? "").trim();
   const kind = String(fd.get("kind") ?? "OTHER");
-  const folderId = optionalId(fd.get("folder_id"));
+  const folder = String(fd.get("folder") ?? "").trim() || null;
   const funnelId = optionalId(fd.get("funnel_id"));
   const source = String(fd.get("source") ?? "blank") as CreateSource;
 
@@ -98,7 +99,7 @@ export async function createPage(prev: CreatePageState, fd: FormData): Promise<C
     return { error: `Enter a name of ${NAME_MIN} to ${NAME_MAX} characters.`, attempt };
   }
   if (!funnelId && !isTemplateKind(kind)) return { error: "Invalid type.", attempt };
-  if (folderId === undefined) return { error: "Invalid folder.", attempt };
+  if (folder !== null && !isFolderPath(folder)) return { error: "Invalid folder.", attempt };
   if (funnelId === undefined) return { error: "Invalid funnel.", attempt };
   if (!(SOURCES as readonly string[]).includes(source)) return { error: "Invalid source.", attempt };
 
@@ -156,7 +157,7 @@ export async function createPage(prev: CreatePageState, fd: FormData): Promise<C
 
   let pageId: string;
   try {
-    const { data, error } = await db.from("pages").insert({ scope: "TEMPLATE", name, kind, status: "DRAFT", folder_id: folderId, notes, slugs }).select("id").single();
+    const { data, error } = await db.from("pages").insert({ scope: "TEMPLATE", name, kind, status: "DRAFT", folder, notes, slugs }).select("id").single();
     if (error) throw new Error(error.message);
     pageId = (data as { id: string }).id;
   } catch (cause) {
@@ -336,12 +337,11 @@ export async function renamePage(pageId: string, rawName: string): Promise<Actio
   }
 }
 
-/** Moves the page into a folder (`null` = root). */
-export async function movePage(pageId: string, folderId: string | null): Promise<ActionResult> {
-  const target = optionalId(folderId);
-  if (target === undefined) return fail("Invalid folder.");
+/** Moves the page into a folder (its path; `null` = root). A folder that had no template yet starts existing. */
+export async function movePage(pageId: string, folder: string | null): Promise<ActionResult> {
+  if (folder !== null && !isFolderPath(folder)) return fail("Invalid folder.");
   try {
-    const { error } = await supabaseService().from("pages").update({ folder_id: target }).eq("id", pageId).eq("scope", "TEMPLATE");
+    const { error } = await supabaseService().from("pages").update({ folder }).eq("id", pageId).eq("scope", "TEMPLATE");
     if (error) throw new Error(error.message);
     revalidateLibrary();
     return { ok: true };
@@ -363,7 +363,7 @@ export async function duplicatePage(pageId: string): Promise<ActionResult<{ page
     const name = `${src.name} (copy)`.slice(0, NAME_MAX);
     const created = await supabaseService()
       .from("pages")
-      .insert({ scope: "TEMPLATE", name, kind: src.kind, status: "DRAFT", notes: src.notes, folder_id: src.folder_id, slugs: copySlugs(src.slugs) })
+      .insert({ scope: "TEMPLATE", name, kind: src.kind, status: "DRAFT", notes: src.notes, folder: src.folder, slugs: copySlugs(src.slugs) })
       .select("id")
       .single();
     if (created.error) throw new Error(created.error.message);
@@ -375,91 +375,44 @@ export async function duplicatePage(pageId: string): Promise<ActionResult<{ page
 }
 
 // ── Folders ───────────────────────────────────────────────────────────────────
+// A folder is the path its templates keep (pages.pages.folder); there is no
+// folder row. A new folder lives on the screen until a template goes into it.
+// Renaming, moving and deleting one rewrite its templates' paths in the
+// database, in one statement (pages.template_folder_move / _delete).
 
-const FOLDER_NAME_MAX = 80;
-
-function folderName(raw: string): string | null {
-  const name = raw.trim();
-  return name.length >= 1 && name.length <= FOLDER_NAME_MAX ? name : null;
-}
-
-export async function createFolder(parentId: string | null, rawName: string, scope: FolderScope = "TEMPLATE"): Promise<ActionResult<{ folderId: string }>> {
-  const name = folderName(rawName);
-  if (!name) return fail(`Enter a name of 1 to ${FOLDER_NAME_MAX} characters.`);
-  const parent = optionalId(parentId);
-  if (parent === undefined) return fail("Invalid folder.");
-  if (!isFolderScope(scope)) return fail("Invalid screen.");
+async function runFolderMove(from: string, to: string): Promise<ActionResult<{ path: string }>> {
+  if (!isFolderPath(to)) return fail(`Folders go up to ${FOLDER_MAX_DEPTH} levels.`);
   try {
-    const { data, error } = await supabaseService().from("folders").insert({ name, parent_id: parent, scope }).select("id").single();
+    const { error } = await supabaseService().rpc("template_folder_move", { p_from: from, p_to: to });
+    if (error?.code === "23514") return fail(`A folder can't go inside itself, and folders go up to ${FOLDER_MAX_DEPTH} levels.`);
     if (error) throw new Error(error.message);
     revalidateLibrary();
-    return { ok: true, folderId: (data as { id: string }).id };
+    return { ok: true, path: to };
   } catch (cause) {
     return fail(errorReason(cause));
   }
 }
 
-export async function renameFolder(folderId: string, rawName: string): Promise<ActionResult> {
-  const name = folderName(rawName);
-  if (!name) return fail(`Enter a name of 1 to ${FOLDER_NAME_MAX} characters.`);
-  try {
-    const { error } = await supabaseService().from("folders").update({ name }).eq("id", folderId);
-    if (error) throw new Error(error.message);
-    revalidateLibrary();
-    return { ok: true };
-  } catch (cause) {
-    return fail(errorReason(cause));
-  }
+/** Renames the folder (the last part of its path); its subfolders go along. */
+export async function renameFolder(path: string, rawName: string): Promise<ActionResult<{ path: string }>> {
+  const name = cleanFolderName(rawName);
+  if (!name) return fail(`Enter a name of 1 to ${FOLDER_NAME_MAX} characters, without "/".`);
+  if (!isFolderPath(path)) return fail("Invalid folder.");
+  return runFolderMove(path, joinFolder(parentFolder(path), name));
 }
 
-export async function setFolderColor(folderId: string, color: string | null): Promise<ActionResult> {
-  if (color !== null && !isFolderColor(color)) return fail("Invalid color.");
-  try {
-    const { error } = await supabaseService().from("folders").update({ color }).eq("id", folderId);
-    if (error) throw new Error(error.message);
-    revalidateLibrary();
-    return { ok: true };
-  } catch (cause) {
-    return fail(errorReason(cause));
-  }
+/** Moves the folder into another one (`null` = the root), with what's inside. */
+export async function moveFolder(path: string, parent: string | null): Promise<ActionResult<{ path: string }>> {
+  if (!isFolderPath(path) || (parent !== null && !isFolderPath(parent))) return fail("Invalid folder.");
+  if (parent === path || parent?.startsWith(`${path}/`)) return fail("A folder can't go inside itself.");
+  return runFolderMove(path, joinFolder(parent, folderName(path)));
 }
 
-/** Moves the folder into another one (`null` = root). The database rejects cycles. */
-export async function moveFolder(folderId: string, parentId: string | null): Promise<ActionResult> {
-  const parent = optionalId(parentId);
-  if (parent === undefined) return fail("Invalid folder.");
-  if (parent === folderId) return fail("A folder can't be inside itself.");
+/** Deletes the folder without deleting anything inside: templates and subfolders move up one level. */
+export async function deleteFolder(path: string): Promise<ActionResult> {
+  if (!isFolderPath(path)) return fail("Invalid folder.");
   try {
-    const { error } = await supabaseService().from("folders").update({ parent_id: parent }).eq("id", folderId);
-    if (error) {
-      if (error.code === "23514") return fail("A folder can't be inside one of its subfolders (or a folder from the other screen).");
-      throw new Error(error.message);
-    }
-    revalidateLibrary();
-    return { ok: true };
-  } catch (cause) {
-    return fail(errorReason(cause));
-  }
-}
-
-/**
- * Deletes the folder without deleting anything inside: pages and subfolders
- * move up to the parent folder (or to the root).
- */
-export async function deleteFolder(folderId: string): Promise<ActionResult> {
-  const db = supabaseService();
-  try {
-    const cur = await db.from("folders").select("parent_id").eq("id", folderId).maybeSingle();
-    if (cur.error) throw new Error(cur.error.message);
-    if (!cur.data) return fail("Folder not found.");
-    const parent = (cur.data as { parent_id: string | null }).parent_id;
-
-    const up1 = await db.from("pages").update({ folder_id: parent }).eq("folder_id", folderId).eq("scope", "TEMPLATE");
-    if (up1.error) throw new Error(up1.error.message);
-    const up2 = await db.from("folders").update({ parent_id: parent }).eq("parent_id", folderId);
-    if (up2.error) throw new Error(up2.error.message);
-
-    const { error } = await db.from("folders").delete().eq("id", folderId);
+    const { error } = await supabaseService().rpc("template_folder_delete", { p_path: path });
     if (error) throw new Error(error.message);
     revalidateLibrary();
     return { ok: true };

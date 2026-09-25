@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
-import { KIMI_BASE_URL, getAiModel, getKimiKey } from "@/lib/ai-settings";
+import { AI_MODEL, KIMI_BASE_URL, getKimiKey } from "@/lib/ai-settings";
 
 /**
  * "Template variation" with a different copy angle: rewrites the page's
@@ -229,7 +229,7 @@ export async function rewriteCopyAngle(pages: Record<string, string>, brief: str
     return { ok: false, reason: `The page has too much text to rewrite in one go (${segments.length} segments, ${chars} characters). Generate only the visual variation.` };
   }
 
-  const r = kimiKey ? await rewriteWithKimi(kimiKey, await getAiModel(), segments, brief) : await rewriteWithClaude(segments, brief);
+  const r = kimiKey ? await rewriteWithKimi(kimiKey, AI_MODEL, segments, brief) : await rewriteWithClaude(segments, brief);
   if (!r.ok) return r;
   const { pages: out, rewritten } = rebuild(r.texts);
   return { ok: true, pages: out, rewritten };

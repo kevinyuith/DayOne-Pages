@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition, type DragEvent, type ReactNode } from "react";
 import {
   ChevronRightIcon,
@@ -13,7 +14,6 @@ import {
   FolderPlusIcon,
   MoreIcon,
   MoveIcon,
-  PaletteIcon,
   PencilIcon,
   SearchIcon,
   TrashIcon,
@@ -23,10 +23,25 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { INPUT_CLASS, SELECT_CLASS } from "@/components/ui/field";
 import type { ActionResult } from "@/lib/action-result";
-import { childFolders, folderMap, folderOptions, folderPath, folderPathLabel, isInside } from "@/lib/pages/folders";
+import {
+  FOLDER_MAX_DEPTH,
+  FOLDER_NAME_MAX,
+  childFolders,
+  cleanFolderName,
+  folderMap,
+  folderOptions,
+  folderPath,
+  folderPathLabel,
+  foldersFromPaths,
+  isFolderPath,
+  isInside,
+  joinFolder,
+  movePath,
+  parentFolder,
+} from "@/lib/pages/folders";
 import type { PageListItem } from "@/lib/pages/queries";
-import { FOLDER_COLORS, FOLDER_COLOR_LABELS, PAGE_KIND_LABELS, PAGE_STATUS_LABELS, type Folder, type FolderColor } from "@/lib/pages/types";
-import { createFolder, deleteFolder, deletePage, duplicatePage, moveFolder, movePage, renameFolder, renamePage, setFolderColor } from "./actions";
+import { PAGE_KIND_LABELS, PAGE_STATUS_LABELS, type Folder } from "@/lib/pages/types";
+import { deleteFolder, deletePage, duplicatePage, moveFolder, movePage, renameFolder, renamePage } from "./actions";
 import { CreatePageForm } from "./create-page-form";
 
 /**
@@ -34,11 +49,15 @@ import { CreatePageForm } from "./create-page-form";
  * search, a "…" menu on each card and drag-and-drop to move. The /funnels screen
  * shows the dayone-main funnels as a list (see funnels/page.tsx).
  *
- * The open folder comes from the URL (`?folder=<id>`), so every folder has a link.
- * The server sends ALL folders and pages (a few hundred at most) and the
- * screen filters; search is local and spans all folders. Every mutation is a
- * server action that revalidates `/templates` — the screen gets the new data
- * without keeping its own state beyond what is being dragged/edited.
+ * The open folder comes from the URL (`?folder=<path>`), so every folder has a link.
+ * The server sends ALL pages (a few hundred at most) and the folders their paths
+ * make; the screen filters, and search is local and spans all folders. Every
+ * mutation is a server action that revalidates `/templates`.
+ *
+ * A folder is the path its templates keep (pages.pages.folder): a NEW folder
+ * has no template yet, so the screen keeps it (for the browser session, across
+ * folders) until a template goes into it. Renaming/moving/deleting a folder
+ * with templates goes to the database; one that is still empty only changes here.
  */
 
 const TEXT = {
@@ -53,23 +72,8 @@ const TEXT = {
   deleteQ: (name: string) => `Delete the template "${name}" and all its slugs? The copies domains already have won't change.`,
 };
 
-const FOLDER_COLOR_CLASS: Record<FolderColor, string> = {
-  blue: "text-blue-500",
-  emerald: "text-emerald-500",
-  violet: "text-violet-500",
-  amber: "text-amber-500",
-  rose: "text-rose-500",
-  slate: "text-slate-400",
-};
-const FOLDER_COLOR_SWATCH: Record<FolderColor, string> = {
-  blue: "bg-blue-500",
-  emerald: "bg-emerald-500",
-  violet: "bg-violet-500",
-  amber: "bg-amber-500",
-  rose: "bg-rose-500",
-  slate: "bg-slate-400",
-};
-const folderColorClass = (c: FolderColor | null) => (c ? FOLDER_COLOR_CLASS[c] : "text-accent");
+/** New folders (no template yet) of this browser session: they survive moving between folders, not a reload. */
+const sessionFolders = { paths: [] as string[] };
 
 type Drag = { type: "page" | "folder"; id: string };
 
@@ -79,13 +83,13 @@ type DialogState =
   | { kind: "rename-folder"; folder: Folder }
   | { kind: "rename-page"; page: PageListItem }
   | { kind: "move"; item: Drag; name: string; from: string | null }
-  | { kind: "color"; folder: Folder }
   | null;
 
 const DRAG_MIME = "application/x-dayone-item";
 
-export function PagesBrowser({ folders, pages, currentFolderId }: { folders: Folder[]; pages: PageListItem[]; currentFolderId: string | null }) {
+export function PagesBrowser({ folders: saved, pages, currentFolderId }: { folders: Folder[]; pages: PageListItem[]; currentFolderId: string | null }) {
   const T = TEXT;
+  const router = useRouter();
   const ROOT_LABEL = T.root;
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -94,6 +98,41 @@ export function PagesBrowser({ folders, pages, currentFolderId }: { folders: Fol
   const [dialog, setDialog] = useState<DialogState>(null);
   const [dragging, setDragging] = useState<Drag | null>(null);
   const [dropKey, setDropKey] = useState<string | null>(null);
+  const [newFolders, setNewFoldersState] = useState<string[]>(() => sessionFolders.paths);
+  const setNewFolders = useCallback((next: string[]) => {
+    sessionFolders.paths = next;
+    setNewFoldersState(next);
+  }, []);
+
+  // The saved folders (from the templates' paths) + the new ones + the open one (a new folder opened by link).
+  const folders = useMemo(
+    () => foldersFromPaths([...saved.map((f) => f.id), ...newFolders, ...(currentFolderId ? [currentFolderId] : [])]),
+    [saved, newFolders, currentFolderId],
+  );
+  /** Does the folder hold a template somewhere below (saved), or is it only on this screen (new)? */
+  const isSaved = useCallback((path: string) => saved.some((f) => f.id === path), [saved]);
+  /** The new folders after `from` became `to` (renamed/moved) — or went up a level (deleted: `to` = null). */
+  const followFolder = useCallback(
+    (from: string, to: string | null) =>
+      setNewFolders(
+        newFolders.flatMap((p) => {
+          if (to !== null) return [movePath(p, from, to)];
+          if (p === from) return [];
+          const up = parentFolder(from);
+          return [p.startsWith(`${from}/`) ? joinFolder(up, p.slice(from.length + 1)) : p];
+        }),
+      ),
+    [newFolders, setNewFolders],
+  );
+  /** The open folder was renamed/moved/deleted: the URL follows it. */
+  const followCurrent = useCallback(
+    (from: string, to: string | null) => {
+      if (!currentFolderId || (currentFolderId !== from && !currentFolderId.startsWith(`${from}/`))) return;
+      const next = to !== null ? movePath(currentFolderId, from, to) : parentFolder(from);
+      router.replace(next ? `${TEXT.base}?folder=${encodeURIComponent(next)}` : TEXT.base);
+    },
+    [currentFolderId, router],
+  );
 
   const map = useMemo(() => folderMap(folders), [folders]);
   const current = currentFolderId ? (map.get(currentFolderId) ?? null) : null;
@@ -104,14 +143,14 @@ export function PagesBrowser({ folders, pages, currentFolderId }: { folders: Fol
   const counts = useMemo(() => {
     const c = new Map<string, number>();
     for (const f of folders) if (f.parent_id) c.set(f.parent_id, (c.get(f.parent_id) ?? 0) + 1);
-    for (const p of pages) if (p.folder_id) c.set(p.folder_id, (c.get(p.folder_id) ?? 0) + 1);
+    for (const p of pages) if (p.folder) c.set(p.folder, (c.get(p.folder) ?? 0) + 1);
     return c;
   }, [folders, pages]);
 
   const q = query.trim().toLowerCase();
   const searching = q.length > 0;
   const shownFolders = searching ? folders.filter((f) => f.name.toLowerCase().includes(q)).sort((a, b) => a.name.localeCompare(b.name)) : childFolders(folders, currentId);
-  const shownPages = searching ? pages.filter((p) => p.name.toLowerCase().includes(q)) : pages.filter((p) => (p.folder_id ?? null) === currentId);
+  const shownPages = searching ? pages.filter((p) => p.name.toLowerCase().includes(q)) : pages.filter((p) => (p.folder ?? null) === currentId);
 
   useEffect(() => {
     if (!notice) return;
@@ -136,10 +175,10 @@ export function PagesBrowser({ folders, pages, currentFolderId }: { folders: Fol
   /** Can `item` be dropped into folder `target` (null = root)? Not into the same folder, nor a folder into itself. */
   const canDropItem = useCallback(
     (item: Drag, target: string | null) => {
-      if (item.type === "page") return (pages.find((p) => p.id === item.id)?.folder_id ?? null) !== target;
+      if (item.type === "page") return (pages.find((p) => p.id === item.id)?.folder ?? null) !== target;
       const f = map.get(item.id);
       if (!f || f.id === target || (f.parent_id ?? null) === target) return false;
-      return !(target && isInside(map, target, f.id));
+      return !(target && isInside(map, target, f.id)) && isFolderPath(joinFolder(target, f.name));
     },
     [map, pages],
   );
@@ -148,10 +187,28 @@ export function PagesBrowser({ folders, pages, currentFolderId }: { folders: Fol
     (item: Drag, target: string | null) => {
       if (!canDropItem(item, target)) return;
       const done = () => setNotice(`Moved to ${targetLabel(target)}.`);
-      if (item.type === "page") run(() => movePage(item.id, target), done);
-      else run(() => moveFolder(item.id, target), done);
+      if (item.type === "page") {
+        run(() => movePage(item.id, target), done);
+        return;
+      }
+      const to = joinFolder(target, map.get(item.id)?.name ?? "");
+      if (!isSaved(item.id)) {
+        // Still empty: only this screen knows it.
+        followFolder(item.id, to);
+        followCurrent(item.id, to);
+        done();
+        return;
+      }
+      run(
+        () => moveFolder(item.id, target),
+        (r) => {
+          followFolder(item.id, r.path);
+          followCurrent(item.id, r.path);
+          done();
+        },
+      );
     },
-    [canDropItem, run, targetLabel],
+    [canDropItem, run, targetLabel, map, isSaved, followFolder, followCurrent],
   );
 
   // ── Drag and drop ──────────────────────────────────────────────────────────
@@ -204,7 +261,42 @@ export function PagesBrowser({ folders, pages, currentFolderId }: { folders: Fol
   const onDeleteFolder = (f: Folder) => {
     const dest = f.parent_id ? `"${map.get(f.parent_id)?.name ?? "parent folder"}"` : "the root";
     if (!window.confirm(`Delete the folder "${f.name}"? The ${T.many} and subfolders inside it will move to ${dest}.`)) return;
-    run(() => deleteFolder(f.id), () => setNotice("Folder deleted."));
+    const after = () => {
+      followFolder(f.id, null);
+      followCurrent(f.id, null);
+      setNotice("Folder deleted.");
+    };
+    if (isSaved(f.id)) run(() => deleteFolder(f.id), after);
+    else after();
+  };
+  const onNewFolder = (raw: string) => {
+    const name = cleanFolderName(raw);
+    const path = name ? joinFolder(currentId, name) : null;
+    if (!name || !path) return setError(`Enter a name of 1 to ${FOLDER_NAME_MAX} characters, without "/".`);
+    if (!isFolderPath(path)) return setError(`Folders go up to ${FOLDER_MAX_DEPTH} levels.`);
+    if (map.has(path)) return setError(`There's already a folder "${name}" here.`);
+    setError(null);
+    setNewFolders([...newFolders, path]);
+    setNotice(`Folder "${name}" created. It's kept once a template goes into it.`);
+  };
+  const onRenameFolder = (f: Folder, raw: string) => {
+    const name = cleanFolderName(raw);
+    if (!name) return setError(`Enter a name of 1 to ${FOLDER_NAME_MAX} characters, without "/".`);
+    const to = joinFolder(f.parent_id, name);
+    if (to === f.id) return;
+    if (map.has(to)) return setError(`There's already a folder "${name}" here.`);
+    if (!isSaved(f.id)) {
+      followFolder(f.id, to);
+      followCurrent(f.id, to);
+      return;
+    }
+    run(
+      () => renameFolder(f.id, name),
+      (r) => {
+        followFolder(f.id, r.path);
+        followCurrent(f.id, r.path);
+      },
+    );
   };
   const onDuplicate = (p: PageListItem) => run(() => duplicatePage(p.id), () => setNotice(`"${p.name}" duplicated as a draft.`));
 
@@ -223,7 +315,7 @@ export function PagesBrowser({ folders, pages, currentFolderId }: { folders: Fol
           {trail.map((f) => (
             <span key={f.id} className="flex items-center gap-1">
               <ChevronRightIcon className="size-3.5 text-muted/60" />
-              <Crumb href={`${T.base}?folder=${f.id}`} active={f.id === currentId} highlight={dropKey === `crumb:${f.id}`} {...dropProps(f.id, `crumb:${f.id}`)}>
+              <Crumb href={`${T.base}?folder=${encodeURIComponent(f.id)}`} active={f.id === currentId} highlight={dropKey === `crumb:${f.id}`} {...dropProps(f.id, `crumb:${f.id}`)}>
                 {f.name}
               </Crumb>
             </span>
@@ -283,12 +375,11 @@ export function PagesBrowser({ folders, pages, currentFolderId }: { folders: Fol
             subtitle={searching ? folderPathLabel(map, f.parent_id, ROOT_LABEL) : null}
             dimmed={dragging?.type === "folder" && dragging.id === f.id}
             highlight={dropKey === `folder:${f.id}`}
-            href={`${T.base}?folder=${f.id}`}
+            href={`${T.base}?folder=${encodeURIComponent(f.id)}`}
             dragProps={dragProps({ type: "folder", id: f.id })}
             dropProps={dropProps(f.id, `folder:${f.id}`)}
             menu={[
               { label: "Rename", icon: <PencilIcon className="size-4" />, onClick: () => setDialog({ kind: "rename-folder", folder: f }) },
-              { label: "Folder color", icon: <PaletteIcon className="size-4" />, onClick: () => setDialog({ kind: "color", folder: f }) },
               { label: "Move to…", icon: <MoveIcon className="size-4" />, onClick: () => setDialog({ kind: "move", item: { type: "folder", id: f.id }, name: f.name, from: f.parent_id }) },
               { label: "Delete", icon: <TrashIcon className="size-4" />, danger: true, onClick: () => onDeleteFolder(f) },
             ]}
@@ -300,14 +391,14 @@ export function PagesBrowser({ folders, pages, currentFolderId }: { folders: Fol
             key={p.id}
             page={p}
             href={`${T.base}/${p.id}`}
-            subtitle={searching ? folderPathLabel(map, p.folder_id, ROOT_LABEL) : null}
+            subtitle={searching ? folderPathLabel(map, p.folder, ROOT_LABEL) : null}
             dimmed={dragging?.type === "page" && dragging.id === p.id}
             dragProps={dragProps({ type: "page", id: p.id })}
             menu={[
               { label: "Open", icon: <ExternalIcon className="size-4" />, href: `${T.base}/${p.id}` },
               { label: "Rename", icon: <PencilIcon className="size-4" />, onClick: () => setDialog({ kind: "rename-page", page: p }) },
               { label: "Duplicate", icon: <DuplicateIcon className="size-4" />, onClick: () => onDuplicate(p) },
-              { label: "Move to…", icon: <MoveIcon className="size-4" />, onClick: () => setDialog({ kind: "move", item: { type: "page", id: p.id }, name: p.name, from: p.folder_id }) },
+              { label: "Move to…", icon: <MoveIcon className="size-4" />, onClick: () => setDialog({ kind: "move", item: { type: "page", id: p.id }, name: p.name, from: p.folder }) },
               { label: "Delete", icon: <TrashIcon className="size-4" />, danger: true, onClick: () => onDeletePage(p) },
             ]}
           />
@@ -338,9 +429,9 @@ export function PagesBrowser({ folders, pages, currentFolderId }: { folders: Fol
         description={current ? `Inside "${current.name}".` : "In the root."}
         label="Folder name"
         submitLabel="Create folder"
-        maxLength={80}
+        maxLength={FOLDER_NAME_MAX}
         onClose={closeDialog}
-        onSubmit={(name) => run(() => createFolder(currentId, name), () => setNotice(`Folder "${name}" created.`))}
+        onSubmit={onNewFolder}
       />
 
       <NameDialog
@@ -348,10 +439,10 @@ export function PagesBrowser({ folders, pages, currentFolderId }: { folders: Fol
         title="Rename folder"
         label="Name"
         submitLabel="Rename"
-        maxLength={80}
+        maxLength={FOLDER_NAME_MAX}
         initial={dialog?.kind === "rename-folder" ? dialog.folder.name : ""}
         onClose={closeDialog}
-        onSubmit={(name) => dialog?.kind === "rename-folder" && run(() => renameFolder(dialog.folder.id, name))}
+        onSubmit={(name) => dialog?.kind === "rename-folder" && onRenameFolder(dialog.folder, name)}
       />
 
       <NameDialog
@@ -378,39 +469,6 @@ export function PagesBrowser({ folders, pages, currentFolderId }: { folders: Fol
         }}
       />
 
-      <Dialog open={dialog?.kind === "color"} title="Folder color" onClose={closeDialog}>
-        {dialog?.kind === "color" ? (
-          <div className="flex flex-wrap gap-2">
-            {FOLDER_COLORS.map((c) => (
-              <button
-                key={c}
-                type="button"
-                title={FOLDER_COLOR_LABELS[c]}
-                aria-label={FOLDER_COLOR_LABELS[c]}
-                aria-pressed={dialog.folder.color === c}
-                onClick={() => {
-                  const id = dialog.folder.id;
-                  closeDialog();
-                  run(() => setFolderColor(id, c));
-                }}
-                className={`size-9 rounded-full ${FOLDER_COLOR_SWATCH[c]} ${dialog.folder.color === c ? "ring-2 ring-foreground ring-offset-2 ring-offset-surface" : "hover:scale-110"} transition-transform`}
-              />
-            ))}
-            <Button
-              variant="ghost"
-              size="sm"
-              className="ml-auto"
-              onClick={() => {
-                const id = dialog.folder.id;
-                closeDialog();
-                run(() => setFolderColor(id, null));
-              }}
-            >
-              Default
-            </Button>
-          </div>
-        ) : null}
-      </Dialog>
     </div>
   );
 }
@@ -453,7 +511,7 @@ function FolderCard({
       className={`${CARD} ${highlight ? "border-accent bg-accent/10 ring-2 ring-accent" : "border-border hover:border-accent/50"} ${dimmed ? "opacity-40" : ""}`}
     >
       <Link href={href} draggable={false} className="absolute inset-0 rounded-xl" aria-label={`Open folder ${folder.name}`} />
-      <FolderIcon className={`size-16 ${folderColorClass(folder.color)}`} strokeWidth={1.25} />
+      <FolderIcon className="size-16 text-accent" strokeWidth={1.25} />
       <span className="line-clamp-2 text-sm font-semibold">{folder.name}</span>
       <span className="text-[11px] text-muted">{subtitle ?? `${count} ${count === 1 ? "item" : "items"}`}</span>
       <CardMenu label={`Options for folder ${folder.name}`} items={menu} />

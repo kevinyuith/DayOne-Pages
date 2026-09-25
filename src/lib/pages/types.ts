@@ -59,43 +59,21 @@ export type Page = {
   kind: PageKind;
   status: PageStatus;
   notes: string | null;
-  /** Folder on the pages screen; null = root. */
-  folder_id: string | null;
+  /** The template's folder as a path ("Funnels/F23/White"); null = the root. */
+  folder: string | null;
   created_at: string;
   updated_at: string;
 };
 
-/** Folder colors: key saved in the database → UI classes (see `FOLDER_COLOR_CLASSES`). */
-export const FOLDER_COLORS = ["blue", "emerald", "violet", "amber", "rose", "slate"] as const;
-export type FolderColor = (typeof FOLDER_COLORS)[number];
-export const FOLDER_COLOR_LABELS: Record<FolderColor, string> = {
-  blue: "Blue",
-  emerald: "Green",
-  violet: "Purple",
-  amber: "Amber",
-  rose: "Pink",
-  slate: "Gray",
-};
-export function isFolderColor(v: unknown): v is FolderColor {
-  return typeof v === "string" && (FOLDER_COLORS as readonly string[]).includes(v);
-}
-
-/** Folder on the pages screen (nestable: parent_id). */
-/** Which screen the folder (and what it holds) shows up on: Templates or Funnel. Each screen has its own tree. */
-export const FOLDER_SCOPES = ["TEMPLATE", "FUNNEL"] as const;
-export type FolderScope = (typeof FOLDER_SCOPES)[number];
-export function isFolderScope(v: unknown): v is FolderScope {
-  return typeof v === "string" && (FOLDER_SCOPES as readonly string[]).includes(v);
-}
-
+/**
+ * A folder of the Templates screen. Folders aren't stored: a template keeps its
+ * folder as a path (pages.pages.folder, "Funnels/F23/White") and the screen
+ * derives the tree from the paths (folders.ts). `id` is the full path.
+ */
 export type Folder = {
   id: string;
   name: string;
   parent_id: string | null;
-  color: FolderColor | null;
-  scope: FolderScope;
-  created_at: string;
-  updated_at: string;
 };
 
 /** A page slug. `id` is the path itself (unique within the page). */
