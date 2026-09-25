@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { PlusIcon } from "@/components/icons";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -13,11 +13,11 @@ import { findFunnelVideo, loadFunnelVsls, saveFunnelVsl, searchFunnelVsls } from
 
 /**
  * A funnel's VSLs tab (inside its row on the Funnel screen), loaded when it
- * opens: the funnel's VTurb A/B test (the replica in pages.funnels.vsl) —
- * each video (VTurb player id) with its share, editable; the shares add up to
- * 100 and saving writes the test in VTurb. VSLs are added searching the
- * produced ones (or by VTurb video id). A funnel without a test shows the
- * VSLs linked to it in dayone-main.
+ * opens: the funnel's VSL split (pages.funnels.vsl) — each video (VTurb
+ * player id) with its share, editable; the shares add up to 100. The split is
+ * ours: saving writes only the database, and the delivery server draws one
+ * video per visitor (server/src/vsl.php). VSLs are added searching the
+ * produced ones (or by VTurb video id).
  */
 
 const STATUS_LABELS: Record<VslStatus, string> = {
@@ -70,13 +70,14 @@ export function FunnelVslsPanel({ mainFunnelId, label }: { mainFunnelId: string;
 
   if (error && !panel) return <Alert tone="danger">{error}</Alert>;
   if (!panel) return <p className="py-2 text-sm text-muted">Loading…</p>;
-  if (!panel.groupId) return <LinkedVsls vsls={panel.linked} />;
   return (
     <div className="flex flex-col gap-3">
-      <VturbTest
-        // The key restarts the editor when a new replica arrives.
-        key={`${panel.syncedAt}:${panel.videos.map((v) => `${v.id}=${v.weight}`).join()}`}
+      <VslSplit
+        // The key restarts the editor when a new version of the split arrives.
+        key={`${panel.version}:${panel.videos.map((v) => `${v.id}=${v.weight}`).join()}`}
         funnelRowId={panel.funnelRowId}
+        mainFunnelId={mainFunnelId}
+        version={panel.version}
         label={label}
         videos={panel.videos}
         onDone={async (m) => {
@@ -116,23 +117,26 @@ function Title({ text, url }: { text: string; url: string | null }) {
 }
 
 /**
- * The funnel's VTurb A/B test: one row per video, with its share. Edit the
- * shares (they must add up to 100%), add VSLs, then Save: it writes the test
- * in VTurb and reports back through `onDone` (which reloads the replica).
- * Videos without traffic are folded under "Show all".
+ * The funnel's VSL split: one row per video, with its share. Edit the shares
+ * (they must add up to 100%), add VSLs, then Save: it writes the split over
+ * the version the screen loaded and reports back through `onDone` (which
+ * reloads it). Videos without traffic are folded under "Show all".
  */
-function VturbTest({
+function VslSplit({
   funnelRowId,
+  mainFunnelId,
+  version,
   label,
   videos,
   onDone,
 }: {
   funnelRowId: string;
+  mainFunnelId: string;
+  version: string | null;
   label: string;
   videos: FunnelVideo[];
   onDone: (message: Message) => Promise<void>;
 }) {
-  const original = useMemo(() => Object.fromEntries(videos.map((v) => [v.id, v.weight])), [videos]);
   const [weights, setWeights] = useState<Record<string, string>>(() => Object.fromEntries(videos.map((v) => [v.id, String(v.weight)])));
   const [added, setAdded] = useState<FunnelVideo[]>([]);
   const [showAll, setShowAll] = useState(false);
@@ -161,12 +165,12 @@ function VturbTest({
 
   const onSave = () =>
     start(async () => {
-      const r = await saveFunnelVsl(funnelRowId, Object.fromEntries(all.map((v) => [v.id, num(v.id)])), original);
-      // Both ways the replica may have changed (saved, or re-read from VTurb on a conflict): reload it.
-      await onDone(r.ok ? { tone: "success", text: "Saved in VTurb." } : { tone: "danger", text: r.reason });
+      const r = await saveFunnelVsl(funnelRowId, Object.fromEntries(all.map((v) => [v.id, num(v.id)])), version);
+      // Both ways the split may have changed (saved, or saved by someone else first): reload it.
+      await onDone(r.ok ? { tone: "success", text: "Saved." } : { tone: "danger", text: r.reason });
     });
-  const inTest = (id: string) => all.some((v) => v.id === id);
-  /** Puts a video in the list as NEW, at 0% (it joins the test on Save, with a share). */
+  const inSplit = (id: string) => all.some((v) => v.id === id);
+  /** Puts a video in the list as NEW, at 0% (it joins the split on Save; at 0% it stays paused). */
   const addVideo = (video: FunnelVideo) => {
     setAdded((cur) => [...cur, video]);
     setWeights((cur) => ({ ...cur, [video.id]: "0" }));
@@ -176,27 +180,30 @@ function VturbTest({
     startFind(async () => {
       setAddError(null);
       const id = newId.trim().toLowerCase();
-      if (inTest(id)) return setAddError("This video is already in the test.");
+      if (inSplit(id)) return setAddError("This video is already in the split.");
       const r = await findFunnelVideo(id);
       if (!r.ok) return setAddError(r.reason);
       addVideo({ id: r.id, name: r.name, weight: 0, vsl: null });
     });
+  // The finished VSLs of the funnel's niche and language; the words (2+ letters) narrow them.
+  const runSearch = async (value: string) => {
+    setSearching(true);
+    const r = await searchFunnelVsls(mainFunnelId, value.trim().length < 2 ? "" : value);
+    if (lastSearch.current !== value) return; // a newer search is on its way
+    setSearching(false);
+    if (r.ok) setResults(r.vsls);
+    else setAddError(r.reason);
+  };
   const onSearch = (value: string) => {
     setSearch(value);
     lastSearch.current = value;
     if (searchTimer.current) clearTimeout(searchTimer.current);
-    if (value.trim().length < 2) {
-      setResults(null);
-      return;
-    }
-    searchTimer.current = setTimeout(async () => {
-      setSearching(true);
-      const r = await searchFunnelVsls(value);
-      if (lastSearch.current !== value) return; // a newer search is on its way
-      setSearching(false);
-      if (r.ok) setResults(r.vsls);
-      else setAddError(r.reason);
-    }, 300);
+    searchTimer.current = setTimeout(() => runSearch(value), 300);
+  };
+  const openAdd = () => {
+    setAdding(true);
+    lastSearch.current = "";
+    runSearch("");
   };
   const closeAdd = () => {
     setAdding(false);
@@ -272,7 +279,7 @@ function VturbTest({
             {visible.length === 0 ? (
               <tr>
                 <td colSpan={9} className="px-3 py-3 text-sm text-muted">
-                  No video with traffic.
+                  {all.length ? "No video with traffic." : "No video in the split."}
                 </td>
               </tr>
             ) : null}
@@ -286,7 +293,7 @@ function VturbTest({
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <button type="button" onClick={() => setAdding(true)} disabled={pending} className="inline-flex items-center gap-1.5 text-xs font-medium text-accent hover:underline disabled:opacity-50">
+        <button type="button" onClick={openAdd} disabled={pending} className="inline-flex items-center gap-1.5 text-xs font-medium text-accent hover:underline disabled:opacity-50">
           <PlusIcon className="size-3.5" /> Add VSL
         </button>
         <div className="flex flex-wrap items-center gap-2">
@@ -295,7 +302,7 @@ function VturbTest({
             Reset
           </Button>
           <Button type="button" size="sm" onClick={onSave} disabled={pending || !changed || !valid}>
-            {pending ? "Saving…" : "Save in VTurb"}
+            {pending ? "Saving…" : "Save"}
           </Button>
         </div>
       </div>
@@ -303,7 +310,7 @@ function VturbTest({
       <Dialog open={adding} title={`Add VSL · ${label}`} onClose={closeAdd} className="sm:max-w-2xl">
         <div className="flex flex-col gap-4">
           <label className="flex flex-col gap-1.5">
-            <span className="text-xs font-medium text-muted">Search the produced VSLs</span>
+            <span className="text-xs font-medium text-muted">Finished VSLs of this funnel&apos;s niche and language</span>
             <input value={search} onChange={(e) => onSearch(e.target.value)} autoFocus placeholder="Name, copywriter or editor…" className={`${INPUT_BASE} w-full`} />
           </label>
           {searching ? <p className="text-xs text-muted">Searching…</p> : null}
@@ -311,7 +318,7 @@ function VturbTest({
             results.length ? (
               <ul className="flex max-h-80 flex-col divide-y divide-border overflow-y-auto rounded-lg border border-border">
                 {results.map((v) => {
-                  const already = v.videoId ? inTest(v.videoId) : false;
+                  const already = v.videoId ? inSplit(v.videoId) : false;
                   return (
                     <li key={v.id} className="flex items-center justify-between gap-3 px-3 py-2">
                       <div className="min-w-0">
@@ -330,14 +337,14 @@ function VturbTest({
                         disabled={!v.videoId || already}
                         onClick={() => v.videoId && addVideo({ id: v.videoId, name: v.title, weight: 0, vsl: v })}
                       >
-                        {already ? "In the test" : "Add"}
+                        {already ? "In the split" : "Add"}
                       </Button>
                     </li>
                   );
                 })}
               </ul>
             ) : (
-              <p className="text-xs text-muted">No produced VSL matches.</p>
+              <p className="text-xs text-muted">{search.trim().length >= 2 ? "No VSL matches." : "No finished VSL in this funnel's niche and language."}</p>
             )
           ) : null}
 
@@ -364,41 +371,6 @@ function VturbTest({
           </div>
         </div>
       </Dialog>
-    </div>
-  );
-}
-
-/** A funnel without a VTurb A/B test: the VSLs linked to it in dayone-main (read-only). */
-function LinkedVsls({ vsls }: { vsls: FunnelVsl[] }) {
-  return (
-    <div className="flex flex-col gap-2">
-      <p className="text-xs text-muted">No VTurb A/B test.</p>
-      {vsls.length ? (
-        <div className="overflow-hidden rounded-lg border border-border bg-surface">
-          <table className="w-full text-sm">
-            <thead className="border-b border-border text-left text-xs text-muted">
-              <tr>
-                <th className="px-3 py-2 font-medium">VSL</th>
-                <th className="px-3 py-2 font-medium">Status</th>
-                <th className="px-3 py-2 font-medium">Language</th>
-                <th className="px-3 py-2 text-right font-medium">Pitch</th>
-                <th className="px-3 py-2 font-medium">Copy</th>
-                <th className="px-3 py-2 font-medium">Editor</th>
-              </tr>
-            </thead>
-            <tbody>
-              {vsls.map((v) => (
-                <tr key={v.id} className="border-b border-border last:border-0">
-                  <td className="px-3 py-2">
-                    <Title text={v.title} url={v.videoUrl} />
-                  </td>
-                  <VslCells vsl={v} />
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : null}
     </div>
   );
 }

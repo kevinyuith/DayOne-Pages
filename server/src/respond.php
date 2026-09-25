@@ -11,6 +11,8 @@
  *             If-None-Match equal to the hash → 304. Otherwise 200 with the HTML.
  *             Slug with a server-mode funnel (funnel.php): only the current step
  *             goes out, the ETag gets the step id and the response varies by Cookie.
+ *             Page of a funnel with a VSL split (vsl.php): the page's A/B VTurb
+ *             player gets the video drawn for the visitor; same ETag/Cookie rule.
  *             An HTML page gets the load notice (beacon.php).
  *             {{key}} placeholders become the domain's data (placeholders.php).
  *   REDIRECT  Location = redirect_url (+ original query if preserve_query).
@@ -125,7 +127,8 @@ function serve_slug(array $route, Request $req): array
     // is just the hash and the 304 goes out without reading the content from
     // disk. Old cache (without the flag) or funnel: reads the content, because
     // the step goes into the ETag.
-    if (($route['funnel'] ?? null) === false) {
+    // A VSL split also reads the content: the drawn video goes into the ETag.
+    if (($route['funnel'] ?? null) === false && empty($route['vsl'])) {
         $headers['ETag'] = '"' . $hash . $ptag . $tag . '"';
         if ($req->ifNoneMatch !== null && etag_matches($req->ifNoneMatch, $headers['ETag'])) {
             return [304, $headers, null];
@@ -153,11 +156,24 @@ function serve_slug(array $route, Request $req): array
     // Server-mode funnel: the step goes into the ETag (each step is a different
     // body at the SAME URL). With an A/B test or a funnel, the response varies by Cookie.
     $funnel = funnel_apply($body, $req->cookies);
-    $etag = '"' . $hash . $abTag . ($funnel ? '-' . $funnel['step'] : '') . $ptag . $tag . '"';
     if ($funnel) {
         $body = $funnel['html'];
     }
-    if ($funnel || $abTag !== '') {
+
+    // VSL split of the funnel: the page's A/B player gets the video drawn for
+    // this visitor (dop_vsl cookie); the video goes into the ETag.
+    $vsl = vsl_apply($body, $route['vsl'] ?? null, $req->cookies);
+    $vslTag = '';
+    if ($vsl) {
+        $body = $vsl['html'];
+        $vslTag = '-v' . $vsl['tag'];
+        if ($vsl['cookie'] !== null) {
+            $headers['Set-Cookie'] = [...(array) ($headers['Set-Cookie'] ?? []), vsl_cookie($vsl['cookie'])];
+        }
+    }
+
+    $etag = '"' . $hash . $abTag . ($funnel ? '-' . $funnel['step'] : '') . $vslTag . $ptag . $tag . '"';
+    if ($funnel || $abTag !== '' || $vslTag !== '') {
         $headers['Vary'] .= ', Cookie';
     }
     $headers['ETag'] = $etag;

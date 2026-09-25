@@ -10,7 +10,6 @@ import { evenSplit, normalizeShares, setShare } from "@/lib/pages/traffic";
 import { getFunnelVslPanel, searchProducedVsls, type FunnelVslPanel, type ProducedVsl } from "@/lib/pages/queries";
 import { isPageStatus } from "@/lib/pages/types";
 import { supabaseService } from "@/lib/supabase/service";
-import { VturbChanged, findVideo, isVturbId, readTest, writeTest, type VslReplica } from "@/lib/vturb";
 import type { SaveEditorInput, SaveEditorResult } from "../templates/actions";
 
 /**
@@ -229,85 +228,82 @@ export async function removeFunnelPage(funnelId: string, pageId: string): Promis
   }
 }
 
-// ── VTurb A/B test of the funnel's videos (pages.funnels.vsl) ────────────────
-// VTurb decides which video plays; pages.funnels.vsl is the replica: every
-// write goes to VTurb first and then saves what VTurb has. When the test
-// changed in VTurb meanwhile, the save re-reads it into the replica instead.
+// ── The funnel's VSL split (pages.funnels.vsl) ───────────────────────────────
+// The split is ours: saved only here, nothing goes to VTurb. The delivery
+// server draws one video per visitor by these shares and puts it in the
+// page's A/B VTurb player (server/src/vsl.php); VTurb only plays it.
 
-async function funnelTest(funnelRowId: string): Promise<{ groupId: string } | null> {
-  const { data, error } = await supabaseService().from("funnels").select("vturb_group_id").eq("id", funnelRowId).maybeSingle();
-  if (error) throw new Error(error.message);
-  const groupId = (data as { vturb_group_id: string | null } | null)?.vturb_group_id;
-  return groupId ? { groupId } : null;
-}
-
-async function saveReplica(funnelRowId: string, groupId: string, vsl: VslReplica): Promise<void> {
-  const { error } = await supabaseService().rpc("funnel_vsl_save", { p_funnel: funnelRowId, p_group: groupId, p_vsl: vsl });
-  if (error) throw new Error(error.message);
-}
+const VTURB_ID_RE = /^[0-9a-f]{24}$/;
 
 /**
- * Sets the % of every video of the funnel's A/B test in VTurb (they add up to
- * 100; a new video joins with its %). `expected` is the test as the screen
- * loaded it: if VTurb has something else by now, nothing is written — the
- * replica takes what VTurb has, and the screen shows it.
+ * Saves the % of every video of the funnel's split (they add up to 100; 0
+ * pauses one — a video can join at 0% and wait there). `version` is the split's
+ * vsl_updated_at the screen loaded: if someone saved in between, nothing is
+ * written. The names come from the saved split or dayone-main's copy of the
+ * VTurb library, not from the screen.
  */
-export async function saveFunnelVsl(funnelRowId: string, weights: Record<string, number>, expected: Record<string, number>): Promise<ActionResult> {
+export async function saveFunnelVsl(funnelRowId: string, weights: Record<string, number>, version: string | null): Promise<ActionResult> {
   if (!UUID_RE.test(funnelRowId)) return fail("Invalid funnel.");
   const entries = Object.entries(weights);
-  if (!entries.length || entries.some(([id, w]) => !isVturbId(id) || typeof w !== "number" || !Number.isFinite(w) || w < 0 || w > 100)) {
+  if (!entries.length || entries.some(([id, w]) => !VTURB_ID_RE.test(id) || typeof w !== "number" || !Number.isFinite(w) || w < 0 || w > 100)) {
     return fail("Each video's share goes from 0 to 100%.");
   }
   if (entries.some(([, w]) => Math.round(w * 100) !== w * 100)) return fail("Use at most 2 decimals.");
   const total = entries.reduce((t, [, w]) => t + w, 0);
   if (Math.abs(total - 100) > 0.001) return fail(`The shares add up to ${Math.round(total * 100) / 100}%. They must add up to 100%.`);
-  if (entries.some(([id, w]) => !(id in expected) && w <= 0)) return fail("A new video needs a share above 0% to join the test.");
   try {
-    const test = await funnelTest(funnelRowId);
-    if (!test) return fail("This funnel has no VTurb A/B test.");
-    const saved = await writeTest(test.groupId, weights, expected);
-    await saveReplica(funnelRowId, test.groupId, saved);
-    revalidatePath("/funnels");
-    return { ok: true };
-  } catch (cause) {
-    if (cause instanceof VturbChanged) {
-      try {
-        const test = await funnelTest(funnelRowId);
-        if (test) await saveReplica(funnelRowId, test.groupId, await readTest(test.groupId));
-        revalidatePath("/funnels");
-      } catch {
-        // The message below still holds; the replica catches up on the next save.
+    const db = supabaseService();
+    const row = await db.from("funnels").select("vsl").eq("id", funnelRowId).maybeSingle();
+    if (row.error) throw new Error(row.error.message);
+    if (!row.data) return fail("Funnel not found.");
+    const saved = ((row.data as { vsl: Record<string, { weight: number; name: string | null }> | null }).vsl ?? {}) as Record<string, { weight: number; name: string | null }>;
+
+    const vsl: Record<string, { weight: number; name: string | null }> = {};
+    for (const [id, weight] of entries) {
+      let name = saved[id]?.name ?? null;
+      if (!(id in saved)) {
+        const found = await db.rpc("vturb_player_find", { p_player: id });
+        if (found.error) throw new Error(found.error.message);
+        name = ((found.data as { name: string | null }[] | null) ?? [])[0]?.name ?? null;
       }
-      return fail("The test had changed in VTurb. The list now shows what VTurb has: make your change again.");
+      vsl[id] = { weight, name };
     }
+    const { data: savedAt, error } = await db.rpc("funnel_vsl_set", { p_funnel: funnelRowId, p_vsl: vsl, p_expected: version });
+    if (error?.code === "23514") return fail("The shares must add up to 100%.");
+    if (error) throw new Error(error.message);
+    // NULL = the split changed since the screen loaded it: nothing was written.
+    if (!savedAt) return fail("Someone saved this split since the screen loaded. The list now shows the saved split: make your change again.");
+    // The domains with the funnel serve the new split right away (without the purge, within 30 s).
+    return purgeFunnelDomains(funnelRowId);
+  } catch (cause) {
     return fail(errorReason(cause));
   }
 }
 
-/** A VTurb video by id (to add it to a funnel's test). */
+/** A VTurb video by id (to add it to a funnel's split), from dayone-main's copy of the VTurb library. */
 export async function findFunnelVideo(playerId: string): Promise<ActionResult<{ id: string; name: string | null }>> {
   const id = playerId.trim().toLowerCase();
-  if (!isVturbId(id)) return fail("A VTurb video id has 24 characters (0-9, a-f).");
+  if (!VTURB_ID_RE.test(id)) return fail("A VTurb video id has 24 characters (0-9, a-f).");
   try {
-    const video = await findVideo(id);
-    return { ok: true, ...video };
+    const { data, error } = await supabaseService().rpc("vturb_player_find", { p_player: id });
+    if (error) throw new Error(error.message);
+    const found = ((data as { id: string; name: string | null }[] | null) ?? [])[0];
+    return found ? { ok: true, id: found.id, name: found.name } : fail("This video isn't in the VTurb library yet. New videos show up within a few minutes.");
   } catch (cause) {
     return fail(errorReason(cause));
   }
 }
 
-/** Searches the produced VSLs (dayone-main) to add one to a funnel's test. */
-export async function searchFunnelVsls(query: string): Promise<ActionResult<{ vsls: ProducedVsl[] }>> {
-  const q = query.trim().slice(0, 100);
-  if (q.length < 2) return { ok: true, vsls: [] };
+/** The finished VSLs of the funnel's niche and language, to add one to its split; `query` narrows them. */
+export async function searchFunnelVsls(mainFunnelId: string, query: string): Promise<ActionResult<{ vsls: ProducedVsl[] }>> {
   try {
-    return { ok: true, vsls: await searchProducedVsls(q) };
+    return { ok: true, vsls: await searchProducedVsls(mainFunnelId, query.trim().slice(0, 100)) };
   } catch (cause) {
     return fail(errorReason(cause));
   }
 }
 
-/** A funnel's VSLs tab (loaded when it opens): its VTurb A/B test, or the VSLs linked to it. */
+/** A funnel's VSLs tab (loaded when it opens): its split. */
 export async function loadFunnelVsls(mainFunnelId: string): Promise<ActionResult<{ panel: FunnelVslPanel }>> {
   try {
     const panel = await getFunnelVslPanel(mainFunnelId);
