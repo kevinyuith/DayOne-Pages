@@ -1,5 +1,6 @@
 import { supabaseService } from "@/lib/supabase/service";
 import { scanFunnel, type ScannedVersion } from "./funnel-scan";
+import type { HitFilters } from "./hit-filters";
 import type { Domain, Page, PageKind, PageRef, PageSlug, PageSlugSummary, PageStatus } from "./types";
 
 /**
@@ -724,8 +725,11 @@ export type HitLogRow = HitRow & {
  * A page of hits, newest to oldest. Cursor pagination:
  * `beforeId` = id of the last one on the previous page (the created_at index follows
  * the same order as the id, which is IDENTITY). Fetches one extra to know if there's a next page.
+ * `filters` = the Logs screen's filters (hit-filters.ts).
  */
-export async function listHits(opts: { domainId?: string | null; beforeId?: number | null; limit?: number } = {}): Promise<{ rows: HitLogRow[]; hasMore: boolean }> {
+export async function listHits(
+  opts: { domainId?: string | null; beforeId?: number | null; limit?: number; filters?: HitFilters } = {},
+): Promise<{ rows: HitLogRow[]; hasMore: boolean }> {
   const limit = opts.limit ?? 100;
   const db = supabaseService();
   let q = db
@@ -739,6 +743,22 @@ export async function listHits(opts: { domainId?: string | null; beforeId?: numb
     .limit(limit + 1);
   if (opts.domainId) q = q.eq("domain_id", opts.domainId);
   if (opts.beforeId) q = q.lt("id", opts.beforeId);
+  const f = opts.filters ?? {};
+  if (f.result) q = q.eq("outcome", f.result);
+  if (f.rule === "any") q = q.not("rule", "is", null);
+  else if (f.rule === "bot") q = q.eq("rule_label", "Bot");
+  else if (f.rule === "suspicious") q = q.eq("rule_label", "Suspicious");
+  else if (f.rule === "none") q = q.is("rule", null);
+  if (f.unique) q = q.eq("is_unique", f.unique === "unique");
+  // Served by a funnel = the gate's funnel decision (the hits from before gate_reason have it too).
+  if (f.funnel === "sent") q = q.eq("decision", "SERVE · GATE");
+  else if (f.funnel) q = q.eq("gate_reason", f.funnel);
+  if (f.interaction === "yes") q = q.not("interaction", "is", null);
+  else if (f.interaction === "clicked") q = q.not("clicked_at", "is", null);
+  else if (f.interaction === "none") q = q.not("visit_id", "is", null).is("interaction", null).is("clicked_at", null);
+  if (f.device) q = q.eq("device", f.device);
+  if (f.country) q = q.eq("country", f.country);
+  if (f.ip) q = q.eq("ip", f.ip);
   const { data, error } = await q;
   throwIf(error, "listHits");
 

@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, Td, Th, Tr } from "@/components/ui/table";
 import { languagesFromHeader } from "@/lib/accept-language";
+import { HIT_FILTER_OPTIONS, hitFilterParams, parseHitFilters } from "@/lib/pages/hit-filters";
 import { connectionType } from "@/lib/connection";
 import { browserFromUA, osFromUA } from "@/lib/user-agent";
 import { normalizeHost } from "@/lib/pages/normalize";
@@ -27,21 +28,25 @@ const loadFmt = new Intl.NumberFormat("en-US", { minimumFractionDigits: 1, maxim
 
 /**
  * Every request logged in pages.hits, with all columns, newest to oldest.
- * Filter by domain (?domain=<id>, GET form, no JS) and cursor pagination
- * (?before=<id>). An unregistered host gets a button to register it right
- * there.
+ * Filters in a GET form, no JS (?domain=<id> and hit-filters.ts: result, rule,
+ * unique, funnel, interaction, device, country, ip) and cursor pagination
+ * (?before=<id>) that keeps them. An unregistered host gets a button to
+ * register it right there.
  */
 export default async function LogsPage({
   searchParams,
 }: {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
-  const { domain, before } = await searchParams;
+  const params = await searchParams;
+  const { domain, before } = params;
+  const filters = parseHitFilters(params);
   const domains = await listDomains();
   const selected = typeof domain === "string" && domains.some((d) => d.id === domain) ? domain : null;
   const beforeId = typeof before === "string" && /^\d+$/.test(before) ? Number(before) : null;
+  const filtered = selected !== null || hitFilterParams(filters).length > 0;
   const [{ rows: hits, hasMore }, unregistered] = await Promise.all([
-    listHits({ domainId: selected, beforeId, limit: PAGE_SIZE }),
+    listHits({ domainId: selected, beforeId, limit: PAGE_SIZE, filters }),
     unregisteredHosts(),
   ]);
   // Unregistered hosts that can be registered from here (the "looks like a domain" rules live in the SQL).
@@ -50,6 +55,7 @@ export default async function LogsPage({
   const pageHref = (cursor: number | null) => {
     const qs = new URLSearchParams();
     if (selected) qs.set("domain", selected);
+    for (const [k, v] of hitFilterParams(filters)) qs.set(k, v);
     if (cursor) qs.set("before", String(cursor));
     const s = qs.toString();
     return s ? `/logs?${s}` : "/logs";
@@ -60,34 +66,32 @@ export default async function LogsPage({
       <PageHeader title="Logs" />
 
       <form method="get" className="mb-6 flex flex-wrap items-center gap-2">
-        <label className="relative">
-          <span className="sr-only">Domain</span>
-          <select
-            name="domain"
-            defaultValue={selected ?? ""}
-            className="appearance-none rounded-lg border border-border bg-surface py-2 pl-3 pr-9 text-sm font-medium text-muted transition-colors hover:text-foreground"
-          >
-            <option value="">All domains</option>
-            {domains.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.domain}
-              </option>
-            ))}
-          </select>
-          <ChevronDownIcon className="pointer-events-none absolute right-2.5 top-1/2 size-4 -translate-y-1/2 text-muted" />
-        </label>
+        <FilterSelect name="domain" label="Domain" value={selected} options={domains.map((d) => [d.id, d.domain] as const)} all="All domains" />
+        <FilterSelect name="result" label="Result" value={filters.result} options={HIT_FILTER_OPTIONS.result} all="All results" />
+        <FilterSelect name="rule" label="Rule" value={filters.rule} options={HIT_FILTER_OPTIONS.rule} all="All rules" />
+        <FilterSelect name="unique" label="Unique" value={filters.unique} options={HIT_FILTER_OPTIONS.unique} all="Unique and repeat" />
+        <FilterSelect name="funnel" label="Funnel" value={filters.funnel} options={HIT_FILTER_OPTIONS.funnel} all="Funnel: all" />
+        <FilterSelect name="interaction" label="Interaction" value={filters.interaction} options={HIT_FILTER_OPTIONS.interaction} all="Interaction: all" />
+        <FilterSelect name="device" label="Device" value={filters.device} options={HIT_FILTER_OPTIONS.device} all="All devices" />
+        <FilterInput name="country" label="Country" value={filters.country} placeholder="Country" maxLength={2} className="w-24 uppercase placeholder:normal-case" />
+        <FilterInput name="ip" label="IP" value={filters.ip} placeholder="IP" maxLength={45} className="w-44 font-mono" />
         <Button type="submit" variant="secondary">
           Filter
         </Button>
+        {filtered ? (
+          <Link href="/logs" className="px-2 text-sm font-medium text-muted hover:text-foreground">
+            Clear
+          </Link>
+        ) : null}
       </form>
 
       {hits.length === 0 ? (
         <EmptyState
-          title={beforeId ? "No older requests" : "No requests logged"}
+          title={beforeId ? "No older requests" : filtered ? "No requests match these filters" : "No requests logged"}
           description="Requests show up here as the delivery server logs them."
         />
       ) : (
-        <Table className="min-w-[3360px]">
+        <Table className="min-w-[3800px] [&_td]:px-6 [&_td]:py-3 [&_th]:whitespace-nowrap [&_th]:px-6 [&_th]:py-3">
           <thead>
             <tr>
               <Th>Date</Th>
@@ -156,26 +160,20 @@ export default async function LogsPage({
                       "—"
                     )}
                   </Td>
-                  <Td className="min-w-[120px] max-w-[220px] text-xs text-muted">
-                    {h.slug ? (
-                      <>
-                        <span className="break-all font-mono text-foreground">{h.slug}</span>
-                        {h.page_name ? (
-                          <span className="block truncate" title={h.page_name}>
-                            {h.page_name}
-                          </span>
-                        ) : null}
-                      </>
-                    ) : (
-                      "—"
-                    )}
-                  </Td>
+                  <Td className="max-w-[220px] break-all font-mono text-xs">{h.slug || <span className="font-sans text-muted">—</span>}</Td>
                   <Td className="text-right tabular-nums text-muted">{h.status_code ?? "—"}</Td>
-                  <Td className={h.redirect_url ? "min-w-[220px] max-w-[320px]" : undefined}>
+                  <Td className={h.redirect_url || h.page_id ? "min-w-[180px] max-w-[320px]" : undefined}>
                     <span className="inline-flex items-center gap-1.5">
                       <Badge tone={o.tone}>{o.label}</Badge>
                       {h.is_bot ? <span className="rounded bg-violet-500/10 px-1.5 py-0.5 text-[10px] font-medium text-violet-600 dark:text-violet-400">bot</span> : null}
                     </span>
+                    {h.page_name ? (
+                      <span className="mt-0.5 block truncate text-xs font-medium" title={h.page_name}>
+                        {h.page_name}
+                      </span>
+                    ) : h.page_id ? (
+                      <span className="mt-0.5 block truncate text-xs text-muted">{h.decision === "SERVE · GATE" && h.funnel ? `${h.funnel} · deleted page` : "Deleted page"}</span>
+                    ) : null}
                     {h.redirect_url ? (
                       <span className="mt-0.5 line-clamp-3 break-all font-mono text-[11px] leading-snug text-muted" title={h.redirect_url}>
                         → {h.redirect_url}
@@ -285,6 +283,35 @@ export default async function LogsPage({
         </nav>
       ) : null}
     </>
+  );
+}
+
+const FILTER_CLASS = "rounded-lg border border-border bg-surface py-2 text-sm font-medium transition-colors hover:text-foreground";
+
+/** A filter of the Logs' GET form; the first option (empty) is no filter. */
+function FilterSelect({ name, label, value, options, all }: { name: string; label: string; value: string | null | undefined; options: readonly (readonly [string, string])[]; all: string }) {
+  return (
+    <label className="relative">
+      <span className="sr-only">{label}</span>
+      <select name={name} defaultValue={value ?? ""} className={`${FILTER_CLASS} appearance-none pl-3 pr-9 ${value ? "text-foreground" : "text-muted"}`}>
+        <option value="">{all}</option>
+        {options.map(([v, text]) => (
+          <option key={v} value={v}>
+            {text}
+          </option>
+        ))}
+      </select>
+      <ChevronDownIcon className="pointer-events-none absolute right-2.5 top-1/2 size-4 -translate-y-1/2 text-muted" />
+    </label>
+  );
+}
+
+function FilterInput({ name, label, value, placeholder, maxLength, className }: { name: string; label: string; value: string | undefined; placeholder: string; maxLength: number; className: string }) {
+  return (
+    <label>
+      <span className="sr-only">{label}</span>
+      <input name={name} defaultValue={value ?? ""} placeholder={placeholder} maxLength={maxLength} autoComplete="off" className={`${FILTER_CLASS} px-3 text-foreground placeholder:text-muted ${className}`} />
+    </label>
   );
 }
 
