@@ -561,6 +561,39 @@ COMMENT ON FUNCTION pages.resolve(text, text, text, boolean) IS 'The delivery se
 REVOKE ALL ON FUNCTION pages.resolve(text, text, text, boolean) FROM public, authenticated;
 GRANT EXECUTE ON FUNCTION pages.resolve(text, text, text, boolean) TO anon, service_role;
 
+-- ── content_get: the gate serves FUNNEL pages directly now ──────────────────
+--
+-- The gate serves a funnel's pages straight (scope FUNNEL), not only the
+-- domain's copies (scope DOMAIN) — so content_get takes both.
+
+CREATE OR REPLACE FUNCTION pages.content_get(p_refs jsonb, p_key text)
+RETURNS TABLE (page_id uuid, slug text, content_hash text, content text)
+LANGUAGE plpgsql
+STABLE SECURITY DEFINER
+SET search_path TO ''
+AS $function$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pages.server_keys k
+    WHERE k.key_hash = encode(sha256(convert_to(coalesce(p_key, ''), 'UTF8')), 'hex')
+      AND k.revoked_at IS NULL
+  ) THEN
+    RAISE EXCEPTION 'pages.content_get: invalid key' USING ERRCODE = '28000';
+  END IF;
+  IF coalesce(jsonb_typeof(p_refs), '') <> 'array' OR jsonb_array_length(p_refs) > 50 THEN
+    RAISE EXCEPTION 'pages.content_get: refs must be an array of at most 50 { page_id, slug }' USING ERRCODE = '22023';
+  END IF;
+  RETURN QUERY
+    SELECT p.id, r.slug, p.slugs -> r.slug ->> 'content_hash', p.slugs -> r.slug ->> 'content'
+    FROM jsonb_to_recordset(p_refs) AS r(page_id uuid, slug text)
+    JOIN pages.pages p ON p.id = r.page_id AND p.scope IN ('DOMAIN', 'FUNNEL')
+    WHERE p.slugs ? r.slug;
+END $function$;
+
+REVOKE ALL ON FUNCTION pages.content_get(jsonb, text) FROM public, authenticated;
+GRANT EXECUTE ON FUNCTION pages.content_get(jsonb, text) TO anon, service_role;
+
 -- ── Grants ──────────────────────────────────────────────────────────────────
 
 REVOKE ALL ON FUNCTION pages.rule_save(uuid, text, text, jsonb, jsonb, boolean) FROM public, anon, authenticated;
