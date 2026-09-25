@@ -212,7 +212,9 @@ export default async function LogsPage({
                       <span className="text-muted">—</span>
                     )}
                   </Td>
-                  <Td className="min-w-[140px] max-w-[260px] text-xs">{h.rule_reason || <span className="text-muted">—</span>}</Td>
+                  <Td className="min-w-[140px] max-w-[260px] text-xs">
+                    {h.rule_reason ? h.rule_reason : h.gate_reason ? <span className="text-muted">{gateReason(h)}</span> : <span className="text-muted">—</span>}
+                  </Td>
                   <Td className="whitespace-nowrap">
                     {h.load ? (
                       <Badge tone="success">✓{h.load.load_ms !== null ? ` ${loadFmt.format(h.load.load_ms / 1000)}s` : ""}</Badge>
@@ -288,6 +290,20 @@ export default async function LogsPage({
       ) : null}
     </>
   );
+}
+
+/** Why a clean click got the domain's page instead of the funnel. */
+function gateReason(hit: HitLogRow): string {
+  switch (hit.gate_reason) {
+    case "slug_not_allowed":
+      return "Slug not allowed";
+    case "no_funnel_token":
+      return "No [F…] in sub1";
+    case "funnel_not_live":
+      return `${hit.funnel ?? "Funnel"}: no live page`;
+    default:
+      return "";
+  }
 }
 
 /** The visitor's first interaction (kind and time to it) and whether they clicked out of the page. */

@@ -31,6 +31,9 @@ defined('DAYONE_ENTRY') || (http_response_code(404) && exit);
 const GATE_MATCH = 'GATE';
 const GATE_SAFE_MATCH = 'GATE-SAFE';
 
+/** Why a clean click got the domain's page instead of a funnel (pages.hits.gate_reason). */
+const GATE_REASONS = ['slug_not_allowed', 'no_funnel_token', 'funnel_not_live'];
+
 /** The rule-only condition keys (the base ones are conditions_match's). */
 const RULE_OWN_CONDITIONS = ['sub1', 'sub11', 'param', 'user_agent', 'user_agent_mode', 'ips', 'ips_mode', 'asns', 'asns_mode', 'hostname', 'hostname_mode'];
 
@@ -39,7 +42,8 @@ const RULE_OWN_CONDITIONS = ['sub1', 'sub11', 'param', 'user_agent', 'user_agent
  * through to the domain's normal flow (only when there are no routes/the host
  * isn't a domain — with routes, the gate always answers: the safe page is the
  * fallback). The route carries `_rule_label`/`_rule`/`_rule_reason`/`_rule_tags`/`_funnel`
- * for the traffic log.
+ * for the traffic log, and `_gate_reason` when a clean click didn't go to the
+ * funnel: slug_not_allowed, no_funnel_token or funnel_not_live (GATE_REASONS).
  */
 function gate_pick(array $routes, array $gate, Request $req): ?array
 {
@@ -74,7 +78,7 @@ function gate_pick(array $routes, array $gate, Request $req): ?array
     // 2) Clean traffic. The funnel only takes over on an allowed slug ("/" or
     //    one of the domain's gate_slugs); any other slug gets the domain's page.
     if (!gate_slug_allowed($req->path, $gate['gate_slugs'] ?? null)) {
-        return gate_flag_route($domainPage, GATE_SAFE_MATCH, []);
+        return gate_flag_route($domainPage, GATE_SAFE_MATCH, ['_gate_reason' => 'slug_not_allowed']);
     }
     $params = [];
     parse_str($req->rawQuery, $params);
@@ -83,8 +87,9 @@ function gate_pick(array $routes, array $gate, Request $req): ?array
     $funnel = $code !== null && is_array($gate['funnels'] ?? null) ? ($gate['funnels'][$code] ?? null) : null;
     $split = is_array($funnel['split'] ?? null) ? array_values(array_filter($funnel['split'], 'is_array')) : [];
     if ($split === []) {
-        // No token, or a funnel without a live split: the domain's page at "/".
-        return gate_flag_route($domainPage, GATE_SAFE_MATCH, ['_funnel' => $code]);
+        // No token, or a funnel without a live split (the data only has funnels
+        // with a live page): the domain's page at "/".
+        return gate_flag_route($domainPage, GATE_SAFE_MATCH, ['_funnel' => $code, '_gate_reason' => $code === null ? 'no_funnel_token' : 'funnel_not_live']);
     }
 
     $first = $split[0];

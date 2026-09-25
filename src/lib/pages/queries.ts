@@ -700,6 +700,10 @@ export type HitLogRow = HitRow & {
   rule: string | null;
   rule_reason: string | null;
   rule_tags: string[] | null;
+  /** Why a clean click got the domain's page instead of a funnel (no rule matched); null otherwise. */
+  gate_reason: "slug_not_allowed" | "no_funnel_token" | "funnel_not_live" | null;
+  /** The funnel code of the sub1's [F…] token, when there was one. */
+  funnel: string | null;
   /** The Accept-Language header as the browser sent it. */
   accept_language: string | null;
   /** The visitor's first interaction (mouse, scroll, touch, key) and the ms from the navigation start to it; null = none reported. */
@@ -728,7 +732,7 @@ export async function listHits(opts: { domainId?: string | null; beforeId?: numb
     .from("hits")
     .select(
       "id, created_at, domain_id, host, path, outcome, status_code, country, device, is_bot, referrer_host, ip, user_agent, " +
-        "hostname, asn, as_name, cookies, region, route_id, page_id, slug, decision, query, redirect_url, visit_id, rule_label, rule, rule_reason, rule_tags, " +
+        "hostname, asn, as_name, cookies, region, route_id, page_id, slug, decision, query, redirect_url, visit_id, rule_label, rule, rule_reason, rule_tags, gate_reason, funnel, " +
         "loaded_at, load_ms, accept_language, interaction, interaction_ms, clicked_at, is_unique, domains(domain)",
     )
     .order("id", { ascending: false })

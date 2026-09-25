@@ -68,6 +68,8 @@ function log_hit(Request $req, int $status, string $outcome, ?string $domainId, 
         'p_rule_reason'   => is_string($route['_rule_reason'] ?? null) && $route['_rule_reason'] !== '' ? $route['_rule_reason'] : null,
         'p_rule_tags'     => is_array($route['_rule_tags'] ?? null) ? array_values($route['_rule_tags']) : null,
         'p_funnel'        => is_string($route['_funnel'] ?? null) ? $route['_funnel'] : null,
+        // Why a clean click got the domain's page instead of the funnel (rules.php, GATE_REASONS).
+        'p_gate_reason'   => in_array($route['_gate_reason'] ?? null, GATE_REASONS, true) ? $route['_gate_reason'] : null,
     ]);
 
     if ($id === null || $known['complete']) {

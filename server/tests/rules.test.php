@@ -55,6 +55,7 @@ same('first match wins', ['Suspicious', 'Datacenter US'], [$route['_rule_label']
 [, , , , $route] = decide($root, make_request(['HTTP_USER_AGENT' => 'x EvilScraper']), $gate);
 same('UA rule: label + tags', ['Bot', 'Bad UA', ['scrape']], [$route['_rule_label'], $route['_rule'], $route['_rule_tags']]);
 same('a rule without a reason logs none', '', $route['_rule_reason']);
+check('a rule match has no gate reason', !isset($route['_gate_reason']));
 
 // ── Clean, allowed slug ("/" and "/oferta"): the funnel of the sub1's [F23] ──
 [$st, $hd, $body, $outcome, $route] = decide($root, make_request(['REQUEST_URI' => '/?sub1=' . rawurlencode('[CA] [FB] [F23] [ABERTO]')]), $gate);
@@ -62,6 +63,7 @@ same('clean: served by F23', [200, 'served', 'GATE'], [$st, $outcome, $route['ma
 check('clean: one of F23 pages', in_array($route['content_hash'], ['fade01', 'fade02'], true), (string) $route['content_hash']);
 same('clean: funnel code logged', 'F23', $route['_funnel']);
 check('clean: no detection', !isset($route['_rule_label']));
+check('clean, to the funnel: no gate reason', !isset($route['_gate_reason']));
 check('clean: Set-Cookie dop_pg', str_contains(json_encode($hd['Set-Cookie'] ?? []), 'dop_pg='));
 check('clean: vsl carried', ($route['vsl'][0]['id'] ?? null) === str_repeat('a', 24));
 
@@ -75,19 +77,23 @@ check('clean: F23 page at /oferta', in_array($route['content_hash'], ['fade01', 
 same('not allowed slug: the domain page', ['GATE-SAFE', 'ofer01'], [$route['match_type'], $route['content_hash']]);
 check('not allowed: oferta HTML', str_contains((string) $body, 'OFERTA'));
 check('not allowed: no funnel mark', !isset($route['_funnel']));
+same('not allowed: gate reason', 'slug_not_allowed', $route['_gate_reason'] ?? null);
 
 // ── Clean but no [F…] token: the domain's page at "/" ──
 [, , , , $route] = decide($root, make_request(['REQUEST_URI' => '/?sub1=plain']), $gate);
 same('no token: domain page at /', ['GATE-SAFE', 'home01'], [$route['match_type'], $route['content_hash']]);
+same('no token: gate reason', 'no_funnel_token', $route['_gate_reason'] ?? null);
 
 // No sub1 at all: the domain's page at "/".
 [, , , , $route] = decide($root, make_request(), $gate);
 same('no sub1: domain page at /', 'home01', $route['content_hash']);
+same('no sub1: gate reason', 'no_funnel_token', $route['_gate_reason'] ?? null);
 
 // A funnel the data doesn't have: the domain's page at "/", code logged.
 [, , , , $route] = decide($root, make_request(['REQUEST_URI' => '/?sub1=x[F99]']), $gate);
 same('unknown funnel: domain page', 'home01', $route['content_hash']);
 same('unknown funnel: code logged', 'F99', $route['_funnel']);
+same('unknown funnel: gate reason', 'funnel_not_live', $route['_gate_reason'] ?? null);
 
 // No rules at all: everything clean → the funnel of the sub1.
 [, , , , $route] = decide($root, make_request(['REQUEST_URI' => '/?sub1=x[F23]']), [...$gate, 'rules' => []]);
