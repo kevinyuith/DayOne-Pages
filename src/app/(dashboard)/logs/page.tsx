@@ -95,7 +95,6 @@ export default async function LogsPage({
               <Th>Parameters</Th>
               <Th>Domain</Th>
               <Th>Slug</Th>
-              <Th>Decision</Th>
               <Th className="text-right">Status</Th>
               <Th>Result</Th>
               <Th title="The first click with this IP and browser (User-Agent) on this domain in 30 days.">Unique</Th>
@@ -171,20 +170,17 @@ export default async function LogsPage({
                       "—"
                     )}
                   </Td>
-                  <Td className="min-w-[320px] max-w-[400px] font-mono text-xs text-muted" title={h.route_id ? `route ${h.route_id}` : undefined}>
-                    <span className="whitespace-nowrap">{h.decision || "—"}</span>
-                    {h.redirect_url ? (
-                      <span className="mt-0.5 line-clamp-3 break-all text-[11px] leading-snug text-foreground" title={h.redirect_url}>
-                        → {h.redirect_url}
-                      </span>
-                    ) : null}
-                  </Td>
                   <Td className="text-right tabular-nums text-muted">{h.status_code ?? "—"}</Td>
-                  <Td>
+                  <Td className={h.redirect_url ? "min-w-[220px] max-w-[320px]" : undefined}>
                     <span className="inline-flex items-center gap-1.5">
                       <Badge tone={o.tone}>{o.label}</Badge>
                       {h.is_bot ? <span className="rounded bg-violet-500/10 px-1.5 py-0.5 text-[10px] font-medium text-violet-600 dark:text-violet-400">bot</span> : null}
                     </span>
+                    {h.redirect_url ? (
+                      <span className="mt-0.5 line-clamp-3 break-all font-mono text-[11px] leading-snug text-muted" title={h.redirect_url}>
+                        → {h.redirect_url}
+                      </span>
+                    ) : null}
                   </Td>
                   <Td className="whitespace-nowrap">
                     {h.is_unique === null ? <span className="text-muted">—</span> : h.is_unique ? <Badge tone="success">unique</Badge> : <span className="text-xs text-muted">repeat</span>}
