@@ -55,6 +55,7 @@ function log_hit(Request $req, int $status, string $outcome, ?string $domainId, 
         // Cloudflare's "Add visitor location headers" Managed Transform; the database only stores it if country = US.
         'p_region'        => (string) ($_SERVER['HTTP_CF_REGION'] ?? ''),
         'p_user_agent'    => $req->userAgent,
+        'p_accept_language' => $req->acceptLanguage !== '' ? $req->acceptLanguage : null,
         'p_route_id'      => $route['route_id'] ?? null,
         'p_page_id'       => $route['page_id'] ?? null,
         'p_slug'          => $route['slug'] ?? null,

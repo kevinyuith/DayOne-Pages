@@ -699,6 +699,8 @@ export type HitLogRow = HitRow & {
   rule_label: string | null;
   rule: string | null;
   rule_reason: string | null;
+  /** The Accept-Language header as the browser sent it. */
+  accept_language: string | null;
   /** Registered domain (pages.domains), not the request's host. */
   domain: string | null;
   page_name: string | null;
@@ -719,7 +721,7 @@ export async function listHits(opts: { domainId?: string | null; beforeId?: numb
     .select(
       "id, created_at, domain_id, host, path, outcome, status_code, country, device, is_bot, referrer_host, ip, user_agent, " +
         "hostname, asn, as_name, cookies, region, route_id, page_id, slug, decision, query, redirect_url, visit_id, rule_label, rule, rule_reason, " +
-        "loaded_at, load_ms, domains(domain)",
+        "loaded_at, load_ms, accept_language, domains(domain)",
     )
     .order("id", { ascending: false })
     .limit(limit + 1);

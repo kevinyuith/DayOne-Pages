@@ -103,6 +103,7 @@ export default async function LogsPage({
               </Th>
               <Th>Country</Th>
               <Th>State</Th>
+              <Th>Language</Th>
               <Th>Device</Th>
               <Th>Browser</Th>
               <Th title="From the User-Agent. macOS, Windows 11 and Chrome on Android hide the real version, so only the name shows.">OS</Th>
@@ -204,6 +205,9 @@ export default async function LogsPage({
                   </Td>
                   <Td className="text-muted">{h.country || "—"}</Td>
                   <Td className="whitespace-nowrap text-muted">{h.region || "—"}</Td>
+                  <Td className="max-w-[180px] text-muted" title={h.accept_language ?? undefined}>
+                    {h.accept_language ? <span className="line-clamp-2 break-all font-mono text-[11px]">{h.accept_language}</span> : "—"}
+                  </Td>
                   <Td className="text-muted">{h.device || "—"}</Td>
                   <Td className="whitespace-nowrap text-muted">{browserFromUA(h.user_agent) ?? "—"}</Td>
                   <Td className="whitespace-nowrap text-muted">{osFromUA(h.user_agent) ?? "—"}</Td>
