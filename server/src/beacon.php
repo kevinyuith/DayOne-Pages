@@ -9,10 +9,11 @@
  *      with the time since navigation start. On the first click that leaves
  *      the page (a link or data-href that navigates; "#…" doesn't count), it
  *      sends "c=1".
- *   3. /_dop/l answers 204 right away and, after the response, stores the id
- *      in pages.hit_loads (RPC log_load; the click, log_click). The Logs
- *      screen joins it with hits.visit_id, and the Funnel screen sums loads
- *      and clicks per page (A/B test between the pages of a funnel).
+ *   3. /_dop/l answers 204 right away and, after the response, marks the
+ *      visit's hit (pages.hits.loaded_at/load_ms, clicked_at — RPC log_load;
+ *      the click, log_click), retrying while the hit isn't written yet
+ *      (beacon_record). The Logs screen shows it, and the Funnel screen sums
+ *      loads and clicks per page (A/B test between the pages of a funnel).
  *
  * The id goes in the cookie, not in the HTML, so the script is always the
  * same: the body stays cacheable and a 304 (which has no body) still carries
@@ -65,6 +66,28 @@ function beacon_cookie(string $visitId): string
  *
  * @return array{0: int, 1: array<string,string>, 2: ?string, 3: ?string, 4: ?int, 5: bool}
  */
+/**
+ * Records a notice on its hit, after the response. The hit is written after
+ * the response too and may not be there yet: a notice that found no hit is
+ * sent again after 1, 2 and 4 s (nobody waits — the connection is closed).
+ * `$send` returns true (recorded), false (no hit yet) or null (the call
+ * failed: not retried). Returns whether it was recorded.
+ */
+function beacon_record(callable $send, ?callable $sleep = null): bool
+{
+    $sleep ??= static fn (int $seconds) => sleep($seconds);
+    foreach ([0, 1, 2, 4] as $wait) {
+        if ($wait > 0) {
+            $sleep($wait);
+        }
+        $r = $send();
+        if ($r !== false) {
+            return $r === true;
+        }
+    }
+    return false;
+}
+
 function handle_beacon(Request $req, string $body): array
 {
     if ($req->method !== 'POST') {

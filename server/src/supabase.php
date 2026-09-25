@@ -113,38 +113,52 @@ function supabase_rpc(string $fn, array $params): array
 
 /**
  * Stores a hit: POST /rest/v1/rpc/log_hit. Same door as resolve (anon +
- * server key). Fire-and-forget — never takes down the response to the visitor;
- * a failure only goes to the log. Must be called AFTER fastcgi_finish_request.
+ * server key). Never takes down the response to the visitor; a failure only
+ * goes to the log. Must be called AFTER fastcgi_finish_request. Returns the
+ * new hit's id (null: not logged, or the call failed).
  *
  * @param array<string,mixed> $params already with the p_* keys (except p_key)
  */
-function supabase_log_hit(array $params): void
+function supabase_log_hit(array $params): ?int
 {
-    supabase_fire('log_hit', $params);
+    $id = supabase_fire('log_hit', $params);
+    return is_int($id) || (is_string($id) && ctype_digit($id)) ? (int) $id : null;
 }
 
-/** Stores a visit's load notice (beacon.php). Same rules as supabase_log_hit. */
-function supabase_log_load(string $visitId, ?int $loadMs): void
+/** The network lookups of a hit already written (log_hit_net). */
+function supabase_log_hit_net(int $id, ?int $asn, ?string $asName, ?string $hostname): void
 {
-    supabase_fire('log_load', ['p_visit_id' => $visitId, 'p_load_ms' => $loadMs]);
+    supabase_fire('log_hit_net', ['p_id' => $id, 'p_asn' => $asn, 'p_as_name' => $asName, 'p_hostname' => $hostname]);
 }
 
-function supabase_log_click(string $visitId): void
+/** A visit's load notice (beacon.php): true = on its hit, false = no hit yet, null = the call failed. */
+function supabase_log_load(string $visitId, ?int $loadMs): ?bool
 {
-    supabase_fire('log_click', ['p_visit_id' => $visitId]);
+    $found = supabase_fire('log_load', ['p_visit_id' => $visitId, 'p_load_ms' => $loadMs]);
+    return is_bool($found) ? $found : null;
 }
 
-/** POST to a logging RPC (pages.<fn>) with p_key; response ignored, failure only in the log. */
-function supabase_fire(string $fn, array $params): void
+/** A visit's click notice: same as supabase_log_load. */
+function supabase_log_click(string $visitId): ?bool
+{
+    $found = supabase_fire('log_click', ['p_visit_id' => $visitId]);
+    return is_bool($found) ? $found : null;
+}
+
+/**
+ * POST to a logging RPC (pages.<fn>) with p_key: the function's result
+ * (decoded JSON), or null when the call failed (only the log sees it).
+ */
+function supabase_fire(string $fn, array $params): mixed
 {
     $cfg = config();
     if ($cfg['supabase_url'] === '' || $cfg['supabase_anon_key'] === '' || $cfg['server_key'] === '') {
-        return;
+        return null;
     }
 
     $body = json_encode(['p_key' => $cfg['server_key']] + $params);
     if ($body === false) {
-        return;
+        return null;
     }
 
     $ch = curl_init($cfg['supabase_url'] . '/rest/v1/rpc/' . $fn);
@@ -159,12 +173,13 @@ function supabase_fire(string $fn, array $params): void
             'Authorization: Bearer ' . $cfg['supabase_anon_key'],
             'Content-Type: application/json',
             'Content-Profile: pages',
-            'Prefer: return=minimal',
         ],
     ]);
     $raw = curl_exec($ch);
     $status = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
     if ($raw === false || ($status !== 200 && $status !== 204)) {
         error_log("[dayone-pages] $fn failed (HTTP $status)");
+        return null;
     }
+    return is_string($raw) && $raw !== '' ? json_decode($raw, true) : null;
 }

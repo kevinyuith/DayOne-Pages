@@ -29,9 +29,12 @@ function log_hit(Request $req, int $status, string $outcome, ?string $domainId, 
         $referrerHost = (string) (parse_url($req->referer, PHP_URL_HOST) ?? '');
     }
 
-    $asn = asn_lookup($req->ip);
+    // The hit is written right away (a load notice can come right behind it) with
+    // what the per-IP cache already knows (a rule may have looked it up); the
+    // ASN/hostname lookups come after, into the same hit (log_hit_net).
+    $known = netinfo_known($req->ip);
 
-    supabase_log_hit([
+    $id = supabase_log_hit([
         'p_domain'        => $domainId,
         'p_host'          => visited_host($req),
         'p_path'          => $req->path,
@@ -44,9 +47,9 @@ function log_hit(Request $req, int $status, string $outcome, ?string $domainId, 
         'p_is_bot'        => strcasecmp((string) ($route['_rule_label'] ?? ''), 'Bot') === 0,
         'p_referrer_host' => $referrerHost,
         'p_ip'            => $req->ip,
-        'p_hostname'      => reverse_dns($req->ip),
-        'p_asn'           => $asn['asn'] ?? null,
-        'p_as_name'       => $asn['name'] ?? null,
+        'p_hostname'      => $known['hostname'],
+        'p_asn'           => $known['asn'],
+        'p_as_name'       => $known['as_name'],
         // Straight from $_SERVER: the Request doesn't keep these headers.
         'p_cookies'       => (string) ($_SERVER['HTTP_COOKIE'] ?? ''),
         // Cloudflare's "Add visitor location headers" Managed Transform; the database only stores it if country = US.
@@ -65,6 +68,15 @@ function log_hit(Request $req, int $status, string $outcome, ?string $domainId, 
         'p_rule_tags'     => is_array($route['_rule_tags'] ?? null) ? array_values($route['_rule_tags']) : null,
         'p_funnel'        => is_string($route['_funnel'] ?? null) ? $route['_funnel'] : null,
     ]);
+
+    if ($id === null || $known['complete']) {
+        return;
+    }
+    $asn = asn_lookup($req->ip);
+    $hostname = reverse_dns($req->ip);
+    if (($asn['asn'] ?? null) !== $known['asn'] || ($asn['name'] ?? null) !== $known['as_name'] || $hostname !== $known['hostname']) {
+        supabase_log_hit_net($id, $asn['asn'] ?? null, $asn['name'] ?? null, $hostname);
+    }
 }
 
 /** "SERVE · FALLBACK", "BLOCK · BOTGATE", "REDIRECT · PREFIX"…; "NONE" when no route matched. */

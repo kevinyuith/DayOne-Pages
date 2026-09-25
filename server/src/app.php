@@ -35,11 +35,8 @@ function dayone_handle(): void
             if (function_exists('fastcgi_finish_request')) {
                 fastcgi_finish_request();
             }
-            if ($click) {
-                supabase_log_click($visitId);
-            } else {
-                supabase_log_load($visitId, $loadMs);
-            }
+            // On the hit (pages.hits); retried while the hit isn't written yet.
+            beacon_record($click ? static fn () => supabase_log_click($visitId) : static fn () => supabase_log_load($visitId, $loadMs));
         }
         return;
     }

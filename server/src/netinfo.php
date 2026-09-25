@@ -86,6 +86,27 @@ function netinfo_hostname(string $ip, int $timeoutMs): ?string
 }
 
 /**
+ * What the per-IP cache already knows, with no lookup: the log writes the hit
+ * with it right away and looks the rest up after (complete = nothing to look up).
+ *
+ * @return array{asn: ?int, as_name: ?string, hostname: ?string, complete: bool}
+ */
+function netinfo_known(string $ip): array
+{
+    $e = netinfo_entry($ip);
+    $asnOk = netinfo_fresh($e, 'asn') && $e['asn'] !== null;
+    $hostOk = netinfo_fresh($e, 'hostname') && $e['hostname'] !== null;
+    $asn = $asnOk && $e['asn'] > 0 ? (int) $e['asn'] : null;
+    $nameOk = $asn === null || (netinfo_fresh($e, 'as_name') && ($e['as_name_ok'] ?? false));
+    return [
+        'asn' => $asn,
+        'as_name' => $asn !== null && $nameOk ? ($e['as_name'] ?? null) : null,
+        'hostname' => $hostOk && $e['hostname'] !== '' ? $e['hostname'] : null,
+        'complete' => $asnOk && $hostOk && $nameOk,
+    ];
+}
+
+/**
  * Is a field still good? An answer lasts NETINFO_TTL; a failed lookup
  * (null) only NETINFO_FAIL_TTL, so it's tried again soon — and right away by
  * a caller that can wait longer than the one that failed (a rule's short

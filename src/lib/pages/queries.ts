@@ -702,7 +702,7 @@ export type HitLogRow = HitRow & {
   /** Registered domain (pages.domains), not the request's host. */
   domain: string | null;
   page_name: string | null;
-  /** The browser's notice that the page loaded (pages.hit_loads); null if it never came. */
+  /** The browser's notice that the page loaded (pages.hits.loaded_at/load_ms); null if it never came. */
   load: { loaded_at: string; load_ms: number | null } | null;
 };
 
@@ -718,7 +718,8 @@ export async function listHits(opts: { domainId?: string | null; beforeId?: numb
     .from("hits")
     .select(
       "id, created_at, domain_id, host, path, outcome, status_code, country, device, is_bot, referrer_host, ip, user_agent, " +
-        "hostname, asn, as_name, cookies, region, route_id, page_id, slug, decision, query, redirect_url, visit_id, rule_label, rule, rule_reason, domains(domain)",
+        "hostname, asn, as_name, cookies, region, route_id, page_id, slug, decision, query, redirect_url, visit_id, rule_label, rule, rule_reason, " +
+        "loaded_at, load_ms, domains(domain)",
     )
     .order("id", { ascending: false })
     .limit(limit + 1);
@@ -727,7 +728,7 @@ export async function listHits(opts: { domainId?: string | null; beforeId?: numb
   const { data, error } = await q;
   throwIf(error, "listHits");
 
-  type Raw = Omit<HitLogRow, "domain" | "page_name" | "load"> & { domains: { domain: string } | null };
+  type Raw = Omit<HitLogRow, "domain" | "page_name" | "load"> & { loaded_at: string | null; load_ms: number | null; domains: { domain: string } | null };
   const raw = (data as unknown as Raw[] | null) ?? [];
   const rows = raw.slice(0, limit);
 
@@ -740,23 +741,12 @@ export async function listHits(opts: { domainId?: string | null; beforeId?: numb
     for (const p of (named.data as Pick<Page, "id" | "name">[] | null) ?? []) pageNames.set(p.id, p.name);
   }
 
-  // The load notice lives in another table (it arrives before the hit, no FK): third read.
-  const visitIds = rows.map((r) => r.visit_id).filter((id): id is string => id !== null);
-  const loads = new Map<string, { loaded_at: string; load_ms: number | null }>();
-  if (visitIds.length > 0) {
-    const { data: loaded, error: loadsError } = await db.from("hit_loads").select("visit_id, loaded_at, load_ms").in("visit_id", visitIds);
-    throwIf(loadsError, "listHits (loads)");
-    for (const l of (loaded as { visit_id: string; loaded_at: string; load_ms: number | null }[] | null) ?? []) {
-      loads.set(l.visit_id, { loaded_at: l.loaded_at, load_ms: l.load_ms });
-    }
-  }
-
   return {
-    rows: rows.map(({ domains, ...r }) => ({
+    rows: rows.map(({ domains, loaded_at, load_ms, ...r }) => ({
       ...r,
       domain: domains?.domain ?? null,
       page_name: r.page_id ? (pageNames.get(r.page_id) ?? null) : null,
-      load: r.visit_id ? (loads.get(r.visit_id) ?? null) : null,
+      load: loaded_at ? { loaded_at, load_ms } : null,
     })),
     hasMore: raw.length > limit,
   };

@@ -105,3 +105,16 @@ netinfo_store('198.51.100.9', ['asn' => 64500, 'asn_at' => time()]);
 $netMemo = [];
 same('stored on disk and read back', 64500, netinfo_entry('198.51.100.9')['asn'] ?? null);
 $netMemo = [];
+
+// netinfo_known: what the cache knows, no lookup.
+$netMemo = &netinfo_memo();
+$netMemo = [];
+$t = time();
+$netMemo['198.51.100.20'] = ['asn' => 15169, 'asn_at' => $t, 'as_name' => 'GOOGLE', 'as_name_at' => $t, 'as_name_ok' => true, 'hostname' => 'dns.google', 'hostname_at' => $t];
+same('known: everything cached → complete', ['asn' => 15169, 'as_name' => 'GOOGLE', 'hostname' => 'dns.google', 'complete' => true], netinfo_known('198.51.100.20'));
+$netMemo['198.51.100.21'] = ['asn' => 16509, 'asn_at' => $t];
+same('known: only the ASN (a rule looked it up) → not complete', ['asn' => 16509, 'as_name' => null, 'hostname' => null, 'complete' => false], netinfo_known('198.51.100.21'));
+$netMemo['198.51.100.22'] = ['asn' => 0, 'asn_at' => $t, 'hostname' => '', 'hostname_at' => $t];
+same('known: no ASN and no PTR (answers) → complete, nothing to write', ['asn' => null, 'as_name' => null, 'hostname' => null, 'complete' => true], netinfo_known('198.51.100.22'));
+same('known: nothing cached', ['asn' => null, 'as_name' => null, 'hostname' => null, 'complete' => false], netinfo_known('198.51.100.23'));
+$netMemo = [];

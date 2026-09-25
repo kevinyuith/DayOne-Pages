@@ -48,3 +48,17 @@ same('serve html: old ETag (no version) → 200', 200, serve_slug(['slug_id' => 
 [$status, $headers, $body] = serve_slug(['slug_id' => $bSlug, 'content_hash' => 'bb01', 'content_type' => 'text/css'], make_request(['REQUEST_URI' => '/app.css']));
 same('serve css: body untouched', '<html><body>hi</body></html>', $body);
 same('serve css: ETag is just the hash', '"bb01"', $headers['ETag']);
+
+// ── beacon_record: a notice that finds no hit yet is sent again (1, 2, 4 s) ──
+$waits = [];
+$sleep = static function (int $s) use (&$waits) { $waits[] = $s; };
+$answers = [false, false, true];
+check('found on the 3rd try', beacon_record(static function () use (&$answers) { return array_shift($answers); }, $sleep) === true);
+same('waited 1 s and 2 s', [1, 2], $waits);
+$waits = [];
+check('never found: gives up after 4 tries', beacon_record(static fn () => false, $sleep) === false);
+same('waited 1, 2 and 4 s', [1, 2, 4], $waits);
+$waits = [];
+$calls = 0;
+check('a failed call (null) is not retried', beacon_record(static function () use (&$calls) { $calls++; return null; }, $sleep) === false && $calls === 1 && $waits === []);
+check('found at once: no wait', beacon_record(static fn () => true, $sleep) === true && $waits === []);
