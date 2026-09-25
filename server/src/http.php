@@ -40,6 +40,21 @@ final class Request
     }
 }
 
+/**
+ * The visitor's country: Cloudflare's CF-IPCountry (geolocation, free with the
+ * request); without it (a domain not behind Cloudflare), the country of the
+ * IP's network from the local table (netdb.php) — less precise, but something.
+ * '' = unknown.
+ */
+function client_country(array $server): string
+{
+    $cf = strtoupper(trim((string) ($server['HTTP_CF_IPCOUNTRY'] ?? '')));
+    if ($cf !== '') {
+        return $cf;
+    }
+    return (string) (netdb_lookup(client_ip($server))['cc'] ?? '');
+}
+
 function parse_request(array $server): Request
 {
     $uri = (string) ($server['REQUEST_URI'] ?? '/');
@@ -53,7 +68,7 @@ function parse_request(array $server): Request
         rawQuery: $query,
         userAgent: (string) ($server['HTTP_USER_AGENT'] ?? ''),
         referer: (string) ($server['HTTP_REFERER'] ?? ''),
-        country: strtoupper((string) ($server['HTTP_CF_IPCOUNTRY'] ?? '')),
+        country: client_country($server),
         acceptLanguage: (string) ($server['HTTP_ACCEPT_LANGUAGE'] ?? ''),
         ip: client_ip($server),
         ifNoneMatch: isset($server['HTTP_IF_NONE_MATCH']) ? (string) $server['HTTP_IF_NONE_MATCH'] : null,

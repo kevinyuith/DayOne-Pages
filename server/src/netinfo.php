@@ -1,8 +1,8 @@
 <?php
 /**
- * What the network says about the click's IP — its ASN (Team Cymru, over
- * DNS) and its hostname (reverse DNS, PTR) — for the rules and the traffic
- * log, plus IP/CIDR matching for the rules.
+ * What the network says about the click's IP — its ASN (the local table,
+ * netdb.php; without it, Team Cymru over DNS) and its hostname (reverse DNS,
+ * PTR) — for the rules and the traffic log, plus IP/CIDR matching for the rules.
  *
  * A small DNS client over UDP with a timeout: dns_get_record and
  * gethostbyaddr take none, and a rule needs the answer BEFORE the response
@@ -39,6 +39,11 @@ function netinfo_rule_timeout(): int
 /** The IP's AS number: > 0; 0 = none (private IP, no route); null = unknown (the lookup failed). */
 function netinfo_asn(string $ip, int $timeoutMs): ?int
 {
+    // The local table answers with no network (and no cache needed: it's a few file reads).
+    $local = netdb_lookup($ip);
+    if ($local !== null) {
+        return $local['asn'];
+    }
     $e = netinfo_entry($ip);
     if (!netinfo_fresh($e, 'asn', $timeoutMs)) {
         $zone = cymru_origin_name($ip);
@@ -59,6 +64,9 @@ function netinfo_as_name(string $ip, int $timeoutMs): ?string
     $asn = netinfo_asn($ip, $timeoutMs);
     if (!$asn) {
         return null;
+    }
+    if (netdb_meta() !== null) {
+        return netdb_as_name($asn);
     }
     $e = netinfo_entry($ip);
     if (!netinfo_fresh($e, 'as_name', $timeoutMs)) {
@@ -94,8 +102,18 @@ function netinfo_hostname(string $ip, int $timeoutMs): ?string
 function netinfo_known(string $ip): array
 {
     $e = netinfo_entry($ip);
-    $asnOk = netinfo_fresh($e, 'asn') && $e['asn'] !== null;
     $hostOk = netinfo_fresh($e, 'hostname') && $e['hostname'] !== null;
+    $local = netdb_lookup($ip);
+    if ($local !== null) {
+        // The ASN and its name are always known from the table: only the hostname may be missing.
+        return [
+            'asn' => $local['asn'] > 0 ? $local['asn'] : null,
+            'as_name' => $local['asn'] > 0 ? netdb_as_name($local['asn']) : null,
+            'hostname' => $hostOk && $e['hostname'] !== '' ? $e['hostname'] : null,
+            'complete' => $hostOk,
+        ];
+    }
+    $asnOk = netinfo_fresh($e, 'asn') && $e['asn'] !== null;
     $asn = $asnOk && $e['asn'] > 0 ? (int) $e['asn'] : null;
     $nameOk = $asn === null || (netinfo_fresh($e, 'as_name') && ($e['as_name_ok'] ?? false));
     return [

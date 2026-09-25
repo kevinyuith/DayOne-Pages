@@ -106,4 +106,7 @@ function dayone_handle(): void
         // SWR: refresh the cache with nobody waiting.
         refresh_in_background($host, $path);
     }
+
+    // The local IP → ASN/country table: rebuilt once a day, by one process, with nobody waiting.
+    netdb_maybe_refresh();
 }
