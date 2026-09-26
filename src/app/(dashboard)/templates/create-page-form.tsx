@@ -3,12 +3,12 @@
 import { useActionState, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { HtmlPreview } from "@/components/html-preview";
-import { CodeIcon, DuplicateIcon, ExternalIcon, FilePlusIcon, LinkIcon } from "@/components/icons";
+import { CodeIcon, DuplicateIcon, ExternalIcon, FilePlusIcon, FunnelIcon, LinkIcon } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Field, INPUT_CLASS, SELECT_CLASS, TEXTAREA_CLASS } from "@/components/ui/field";
 import { applyPlaceholderFindings, detectPlaceholders, type PlaceholderFinding } from "@/lib/pages/detect-placeholders";
 import { importHtml } from "@/lib/pages/import-html";
-import { PAGE_KIND_LABELS, type PageKind } from "@/lib/pages/types";
+import { PAGE_KIND_LABELS, PAGE_STATUS_LABELS, type PageKind, type PageStatus } from "@/lib/pages/types";
 import { createPage, fetchTemplateFromUrl, type CreatePageState } from "./actions";
 import { createFunnelRedirect } from "../funnels/actions";
 
@@ -20,7 +20,10 @@ type TemplateChoice = { id: string; name: string; kind: PageKind; slugs_count: n
 /** New page for a dayone-main funnel (Funnel screen): created with kind FUNNEL, linked to it. */
 export type FunnelTarget = { id: string; defaultName: string };
 
-type Source = "template" | "link" | "html" | "blank" | "redirect";
+/** The pages of one funnel that can be copied into another ("F8 · AFRICAN RITUAL"). Redirects are not pages. */
+export type FunnelPageGroup = { funnel: string; pages: { id: string; name: string; status: PageStatus }[] };
+
+type Source = "template" | "funnel_page" | "link" | "html" | "blank" | "redirect";
 
 const OPTIONS: { key: Source; label: string; hint: string; Icon: typeof FilePlusIcon }[] = [
   { key: "template", label: "Copy from another template", hint: "A copy of an existing template, with all its slugs.", Icon: DuplicateIcon },
@@ -28,6 +31,9 @@ const OPTIONS: { key: Source; label: string; hint: string; Icon: typeof FilePlus
   { key: "html", label: "Copy from HTML", hint: "Paste the code of a ready-made page.", Icon: CodeIcon },
   { key: "blank", label: "Start from scratch", hint: "Starts from the blank template.", Icon: FilePlusIcon },
 ];
+
+/** Only on the Funnel screen: a copy of a page of any funnel (this one too). */
+const FUNNEL_PAGE_OPTION = { key: "funnel_page" as const, label: "Copy from another funnel", hint: "A copy of a page from any funnel.", Icon: FunnelIcon };
 
 /** Only on the Funnel screen: a funnel entry that 302s to a URL instead of serving a page. */
 const REDIRECT_OPTION = { key: "redirect" as const, label: "Redirect", hint: "302s the visitor to a URL. Use {sub1} to drop visit parameters in.", Icon: ExternalIcon };
@@ -44,21 +50,25 @@ export function CreatePageForm({
   folderId = null,
   templates,
   funnel = null,
+  funnelPages = [],
   onCancel,
 }: {
   folderId?: string | null;
   templates: TemplateChoice[];
   funnel?: FunnelTarget | null;
+  /** For "Copy from another funnel" (Funnel screen only). */
+  funnelPages?: FunnelPageGroup[];
   onCancel?: () => void;
 }) {
   const [source, setSource] = useState<Source | null>(null);
 
   if (!source) {
+    const [first, ...rest] = OPTIONS;
     return (
       <div className="flex flex-col gap-3">
         <div className="grid gap-2 sm:grid-cols-2">
-          {(funnel ? [...OPTIONS, REDIRECT_OPTION] : OPTIONS).map(({ key, label, hint, Icon }) => {
-            const disabled = key === "template" && templates.length === 0;
+          {(funnel ? [first, FUNNEL_PAGE_OPTION, ...rest, REDIRECT_OPTION] : OPTIONS).map(({ key, label, hint, Icon }) => {
+            const disabled = (key === "template" && templates.length === 0) || (key === "funnel_page" && funnelPages.length === 0);
             return (
               <button
                 key={key}
@@ -71,7 +81,7 @@ export function CreatePageForm({
                 <span>
                   <span className="block text-sm font-semibold">{label}</span>
                   <span className="mt-0.5 block text-xs text-muted">
-                    {disabled ? "No templates yet." : funnel && key === "blank" ? "Starts with a Pre Lander and a Lander." : hint}
+                    {disabled ? (key === "funnel_page" ? "No funnel pages yet." : "No templates yet.") : funnel && key === "blank" ? "Starts with a Pre Lander and a Lander." : hint}
                   </span>
                 </span>
               </button>
@@ -93,7 +103,18 @@ export function CreatePageForm({
     return <RedirectSource funnel={funnel} onBack={() => setSource(null)} onCancel={onCancel} />;
   }
 
-  return <SourceForm key={source} source={source} folderId={folderId} templates={templates} funnel={funnel} onBack={() => setSource(null)} onCancel={onCancel} />;
+  return (
+    <SourceForm
+      key={source}
+      source={source}
+      folderId={folderId}
+      templates={templates}
+      funnel={funnel}
+      funnelPages={funnelPages}
+      onBack={() => setSource(null)}
+      onCancel={onCancel}
+    />
+  );
 }
 
 /** Create a redirect entry of the funnel: a name and the destination URL template. */
@@ -163,6 +184,7 @@ function SourceForm({
   folderId,
   templates,
   funnel,
+  funnelPages,
   onBack,
   onCancel,
 }: {
@@ -170,6 +192,7 @@ function SourceForm({
   folderId: string | null;
   templates: TemplateChoice[];
   funnel: FunnelTarget | null;
+  funnelPages: FunnelPageGroup[];
   onBack: () => void;
   onCancel?: () => void;
 }) {
@@ -179,6 +202,7 @@ function SourceForm({
   const [nameTouched, setNameTouched] = useState(funnel !== null);
   const [kind, setKind] = useState<PageKind>(funnel ? "FUNNEL" : "OTHER");
   const [templateId, setTemplateId] = useState("");
+  const [funnelPageId, setFunnelPageId] = useState("");
 
   // "Copy from a link": fetches on the server, adjusts the addresses here and shows the preview.
   const [url, setUrl] = useState("");
@@ -229,8 +253,8 @@ function SourceForm({
     });
   };
 
-  const option = OPTIONS.find((o) => o.key === source)!;
-  const blocked = pending || (source === "link" && !imported) || (source === "template" && !templateId);
+  const option = [...OPTIONS, FUNNEL_PAGE_OPTION].find((o) => o.key === source)!;
+  const blocked = pending || (source === "link" && !imported) || (source === "template" && !templateId) || (source === "funnel_page" && !funnelPageId);
 
   return (
     <form action={action} className="flex flex-col gap-3">
@@ -254,6 +278,23 @@ function SourceForm({
               <option key={t.id} value={t.id}>
                 {t.name} · {PAGE_KIND_LABELS[t.kind]} · {t.slugs_count} {t.slugs_count === 1 ? "slug" : "slugs"}
               </option>
+            ))}
+          </select>
+        </Field>
+      ) : null}
+
+      {source === "funnel_page" ? (
+        <Field label="Source page">
+          <select name="funnel_page_id" value={funnelPageId} onChange={(e) => setFunnelPageId(e.target.value)} disabled={pending} className={SELECT_CLASS}>
+            <option value="">— choose —</option>
+            {funnelPages.map((g) => (
+              <optgroup key={g.funnel} label={g.funnel}>
+                {g.pages.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} · {PAGE_STATUS_LABELS[p.status]}
+                  </option>
+                ))}
+              </optgroup>
             ))}
           </select>
         </Field>

@@ -11,7 +11,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { INPUT_CLASS } from "@/components/ui/field";
 import type { FunnelBoardPage, FunnelBoardRow, VersionStats } from "@/lib/pages/queries";
 import { PAGE_STATUS_LABELS, type PageKind } from "@/lib/pages/types";
-import { CreatePageForm, type FunnelTarget } from "../templates/create-page-form";
+import { CreatePageForm, type FunnelPageGroup, type FunnelTarget } from "../templates/create-page-form";
 import { evenSplit, normalizeShares } from "@/lib/pages/traffic";
 import { createFunnelRedirect, removeFunnelPage, saveFunnelRedirect, saveFunnelShares } from "./actions";
 import { FunnelFilterBar, NO_FUNNEL_FILTERS, funnelFilterOptions, funnelMatches } from "./funnel-filters";
@@ -52,7 +52,7 @@ export function FunnelList({
   rows: FunnelBoardRow[];
   /** Per library page: loads (views) and outbound clicks (clicks). */
   stats: Record<string, VersionStats>;
-  /** For "copy from another template" (includes other funnels' pages). */
+  /** For "copy from another template". */
   templates: { id: string; name: string; kind: PageKind; slugs_count: number }[];
   days: number;
   initialOpen: string | null;
@@ -67,6 +67,17 @@ export function FunnelList({
   // The tab open inside each funnel (Pages by default).
   const [tabOf, setTabOf] = useState<Record<string, "pages" | "vsls">>({});
   const options = useMemo(() => funnelFilterOptions(rows.map((r) => r.funnel)), [rows]);
+  // For "Copy from another funnel": every funnel's pages (not its redirects), in code order.
+  const funnelPages = useMemo<FunnelPageGroup[]>(
+    () =>
+      rows
+        .map((r) => ({
+          funnel: r.funnel ? `${r.funnel.code} · ${r.funnel.name}` : "No funnel",
+          pages: r.pages.filter((p) => p.redirect === null).map((p) => ({ id: p.id, name: p.name, status: p.status })),
+        }))
+        .filter((g) => g.pages.length > 0),
+    [rows],
+  );
 
   // Each funnel's numbers (sum of its pages), for display and sorting.
   const entryOf = useMemo(() => new Map(rows.map((r) => [r, sum(r.pages, stats)])), [rows, stats]);
@@ -231,7 +242,7 @@ export function FunnelList({
       </div>
 
       <Dialog open={creating !== null} title={creating ? `New page · ${creating.defaultName}` : "New page"} onClose={() => setCreating(null)} className="sm:max-w-2xl">
-        {creating ? <CreatePageForm key={creating.id} templates={templates} funnel={creating} onCancel={() => setCreating(null)} /> : null}
+        {creating ? <CreatePageForm key={creating.id} templates={templates} funnel={creating} funnelPages={funnelPages} onCancel={() => setCreating(null)} /> : null}
       </Dialog>
 
       <Dialog open={redir !== null} title={redir?.page ? "Edit redirect" : "New redirect"} onClose={() => setRedir(null)} className="sm:max-w-xl">

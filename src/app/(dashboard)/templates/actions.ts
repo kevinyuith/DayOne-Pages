@@ -55,6 +55,13 @@ async function templateSlugs(templateId: string): Promise<{ name: string; kind: 
   return (data as { name: string; kind: PageKind; notes: string | null; folder: string | null; slugs: StoredSlugs } | null) ?? null;
 }
 
+/** A funnel page's slugs (with the HTML). null if it doesn't exist. */
+async function funnelPageSlugs(pageId: string): Promise<{ name: string; slugs: StoredSlugs } | null> {
+  const { data, error } = await supabaseService().from("pages").select("name, slugs").eq("id", pageId).eq("scope", "FUNNEL").maybeSingle();
+  if (error) throw new Error(error.message);
+  return (data as { name: string; slugs: StoredSlugs } | null) ?? null;
+}
+
 /** Copy of the slugs for another page: HTML with new sub-page ids (see duplicatePage), without hash or dates. */
 function copySlugs(slugs: StoredSlugs): StoredSlugs {
   return Object.fromEntries(
@@ -72,7 +79,7 @@ function optionalId(v: unknown): string | null | undefined {
 export type CreatePageState = { error?: string; attempt: number };
 
 /** Where a new template's content comes from. `html` covers pasted HTML and HTML fetched from a link. */
-const SOURCES = ["blank", "template", "html"] as const;
+const SOURCES = ["blank", "template", "funnel_page", "html"] as const;
 type CreateSource = (typeof SOURCES)[number];
 
 /**
@@ -83,6 +90,8 @@ type CreateSource = (typeof SOURCES)[number];
  *   Lander);
  * - `template`: copies another template with all its slugs (new ids for the
  *   funnel sub-pages, as in Duplicate);
+ * - `funnel_page` (funnel page only): copies a page of any funnel, the same way
+ *   (a redirect entry is not a page and isn't copied);
  * - `html`: the pasted HTML, or what "copy from a link" fetched (already with
  *   absolute addresses; `source_url` goes into the notes).
  */
@@ -118,6 +127,19 @@ export async function createPage(prev: CreatePageState, fd: FormData): Promise<C
     }
     if (!src || Object.keys(src.slugs).length === 0) return { error: "Template not found.", attempt };
     slugs = copySlugs(src.slugs);
+  } else if (source === "funnel_page") {
+    const sourcePageId = optionalId(fd.get("funnel_page_id"));
+    if (!funnelId) return { error: "Invalid source.", attempt };
+    if (!sourcePageId) return { error: "Choose the funnel page to copy.", attempt };
+    let src: Awaited<ReturnType<typeof funnelPageSlugs>>;
+    try {
+      src = await funnelPageSlugs(sourcePageId);
+    } catch (cause) {
+      return { error: errorReason(cause), attempt };
+    }
+    if (!src || Object.keys(src.slugs).length === 0) return { error: "Funnel page not found.", attempt };
+    if (Object.values(src.slugs).some((s) => s.content_type === "text/x-redirect")) return { error: "A redirect is not a page: create a new redirect instead.", attempt };
+    slugs = copySlugs(src.slugs);
   } else if (source === "html") {
     const content = String(fd.get("content") ?? "");
     if (!content.trim()) return { error: "Paste the HTML (or fetch the page by its link) before creating.", attempt };
@@ -144,10 +166,10 @@ export async function createPage(prev: CreatePageState, fd: FormData): Promise<C
       const added = await db.rpc("funnel_page_add", { p_funnel: funnelRow, p_name: name, p_slugs: slugs, p_notes: notes });
       if (added.error) throw new Error(added.error.message);
       pageId = String(added.data);
-      // A copy of another template is a ready page: it goes in published and joins the A/B test
-      // (the published pages' % add up to 100, the others shrink). The other sources start as a
-      // draft, which gets no traffic until it is published in the editor.
-      if (source === "template" && (await publishFunnelPage(funnelRow, pageId))) await joinFunnelSplit(funnelRow, pageId);
+      // A copy of another template or funnel page is a ready page: it goes in published and joins
+      // the A/B test (the published pages' % add up to 100, the others shrink). The other sources
+      // start as a draft, which gets no traffic until it is published in the editor.
+      if ((source === "template" || source === "funnel_page") && (await publishFunnelPage(funnelRow, pageId))) await joinFunnelSplit(funnelRow, pageId);
     } catch (cause) {
       return { error: errorReason(cause), attempt };
     }
