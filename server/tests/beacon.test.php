@@ -7,13 +7,16 @@ same('before the last </BODY>', '<p>"</body>"</p>' . BEACON_SCRIPT . '</BODY>', 
 same('no </body>: at the end', '<p>x</p>' . BEACON_SCRIPT, beacon_inject('<p>x</p>'));
 check('script calls the endpoint on load', str_contains(BEACON_SCRIPT, 'sendBeacon("/_dop/l"') && str_contains(BEACON_SCRIPT, '"load"'));
 
-// Which responses get the load notice: HTML pages.
-$html = ['content_type' => 'text/html; charset=utf-8'];
+// Which responses get the load notice: the gate's funnel pages (match_type GATE), HTML only.
+$html = ['content_type' => 'text/html; charset=utf-8', 'match_type' => 'GATE'];
 check('html at /', beacon_applies($html, make_request()));
+check('the safe page (GATE-SAFE): no', !beacon_applies(['match_type' => 'GATE-SAFE'] + $html, make_request()));
+check('a route without the gate: no', !beacon_applies(['match_type' => 'FALLBACK'] + $html, make_request()));
+check('no match_type: no', !beacon_applies(['content_type' => 'text/html'], make_request()));
 check('html at .php', beacon_applies($html, make_request(['REQUEST_URI' => '/thank-you.php'])));
-check('empty content_type = html', beacon_applies(['content_type' => ''], make_request()));
-check('no content_type = html', beacon_applies([], make_request()));
-check('css: no', !beacon_applies(['content_type' => 'text/css'], make_request(['REQUEST_URI' => '/app.css'])));
+check('empty content_type = html', beacon_applies(['match_type' => 'GATE', 'content_type' => ''], make_request()));
+check('no content_type = html', beacon_applies(['match_type' => 'GATE'], make_request()));
+check('css: no', !beacon_applies(['match_type' => 'GATE', 'content_type' => 'text/css'], make_request(['REQUEST_URI' => '/app.css'])));
 check('html served as .txt: no', !beacon_applies($html, make_request(['REQUEST_URI' => '/robots.txt'])));
 
 // Cookie and id.
@@ -49,10 +52,14 @@ same('beacon via GET: 404', 404, handle_beacon(make_request(['REQUEST_URI' => '/
 // serve_slug: HTML gets the script and the ETag gets the version; anything that is not a page stays the same.
 $bSlug = '22222222-2222-2222-2222-222222222222';
 cache_put_content('bb01', '<html><body>hi</body></html>');
-[$status, $headers, $body] = serve_slug(['slug_id' => $bSlug, 'content_hash' => 'bb01', 'content_type' => 'text/html'], make_request());
-same('serve html: body with the script', '<html><body>hi' . BEACON_SCRIPT . '</body></html>', $body);
-same('serve html: ETag with version', '"bb01-b3"', $headers['ETag']);
-same('serve html: old ETag (no version) → 200', 200, serve_slug(['slug_id' => $bSlug, 'content_hash' => 'bb01', 'content_type' => 'text/html'], make_request(['HTTP_IF_NONE_MATCH' => '"bb01"']))[0]);
+[$status, $headers, $body] = serve_slug(['slug_id' => $bSlug, 'content_hash' => 'bb01', 'content_type' => 'text/html', 'match_type' => 'GATE'], make_request());
+same('serve funnel html: body with the script', '<html><body>hi' . BEACON_SCRIPT . '</body></html>', $body);
+same('serve funnel html: ETag with version', '"bb01-b3"', $headers['ETag']);
+same('serve funnel html: old ETag (no version) → 200', 200, serve_slug(['slug_id' => $bSlug, 'content_hash' => 'bb01', 'content_type' => 'text/html', 'match_type' => 'GATE'], make_request(['HTTP_IF_NONE_MATCH' => '"bb01"']))[0]);
+[$status, $headers, $body] = serve_slug(['slug_id' => $bSlug, 'content_hash' => 'bb01', 'content_type' => 'text/html', 'match_type' => 'GATE-SAFE'], make_request());
+same('serve the safe page: body untouched', '<html><body>hi</body></html>', $body);
+same('serve the safe page: ETag is just the hash', '"bb01"', $headers['ETag']);
+same('serve the safe page: an old ETag with the version → 200 (the script goes away)', 200, serve_slug(['slug_id' => $bSlug, 'content_hash' => 'bb01', 'content_type' => 'text/html', 'match_type' => 'GATE-SAFE'], make_request(['HTTP_IF_NONE_MATCH' => '"bb01-b3"']))[0]);
 [$status, $headers, $body] = serve_slug(['slug_id' => $bSlug, 'content_hash' => 'bb01', 'content_type' => 'text/css'], make_request(['REQUEST_URI' => '/app.css']));
 same('serve css: body untouched', '<html><body>hi</body></html>', $body);
 same('serve css: ETag is just the hash', '"bb01"', $headers['ETag']);
@@ -70,3 +77,25 @@ $waits = [];
 $calls = 0;
 check('a failed call (null) is not retried', beacon_record(static function () use (&$calls) { $calls++; return null; }, $sleep) === false && $calls === 1 && $waits === []);
 check('found at once: no wait', beacon_record(static fn () => true, $sleep) === true && $waits === []);
+
+// ── decide() end to end: only the gate's funnel page carries the notice; the safe page doesn't ──
+$bDom = '99999999-0000-4000-8000-0000000000b1';
+cache_put_content('bsafe1', '<html><body>SAFE PAGE</body></html>');
+cache_put_content('bfun01', '<html><body>FUNNEL PAGE</body></html>');
+$bRoutes = [[
+    'route_id' => null, 'domain_id' => $bDom, 'priority' => 0, 'match_type' => 'PAGE', 'conditions' => [], 'action' => 'SERVE',
+    'page_id' => '88888888-0000-4000-8000-0000000000b1', 'slug' => '/', 'slug_id' => '44444444-0000-4000-8000-0000000000b1',
+    'content_type' => 'text/html; charset=utf-8', 'content_hash' => 'bsafe1', 'preserve_query' => true,
+]];
+$bGate = [
+    'gate_slugs' => ['/'],
+    'rules' => [['name' => 'Bad UA', 'label' => 'Bot', 'tags' => [], 'conditions' => ['user_agent' => 'scraperxyz']]],
+    'funnels' => ['F5' => ['split' => [['page_id' => '11111111-aaaa-4aaa-8aaa-0000000000b1', 'content_type' => 'text/html; charset=utf-8', 'content_hash' => 'bfun01', 'weight' => 100]]]],
+];
+[, $hd, $body, , $route] = decide($bRoutes, make_request(['REQUEST_URI' => '/?sub1=' . rawurlencode('[F5]')]), $bGate);
+check('decide: the funnel page (GATE) carries the notice', str_contains((string) $body, 'FUNNEL PAGE') && str_contains((string) $body, 'data-dop-beacon') && ($route['match_type'] ?? '') === 'GATE' && beacon_applies($route, make_request()));
+check('decide: the funnel page\'s ETag has the version', str_ends_with((string) $hd['ETag'], BEACON_ETAG . '"'), (string) $hd['ETag']);
+[, $hd, $body, , $route] = decide($bRoutes, make_request(['REQUEST_URI' => '/']), $bGate);
+check('decide: the safe page (no [F…]) has no notice', str_contains((string) $body, 'SAFE PAGE') && !str_contains((string) $body, 'data-dop-beacon') && !beacon_applies($route, make_request()));
+[, $hd, $body, , $route] = decide($bRoutes, make_request(['REQUEST_URI' => '/?sub1=' . rawurlencode('[F5]'), 'HTTP_USER_AGENT' => 'x scraperxyz']), $bGate);
+check('decide: a click a rule caught gets the safe page, no notice', str_contains((string) $body, 'SAFE PAGE') && !str_contains((string) $body, 'data-dop-beacon') && !str_ends_with((string) $hd['ETag'], BEACON_ETAG . '"'));

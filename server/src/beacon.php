@@ -3,8 +3,10 @@
  * Load notice: tells "the page loaded in the browser" apart from pings,
  * curl, prefetch and link-preview bots, which also count as "served".
  *
- *   1. A served HTML page (200/304) gets a visit id in the dop_v cookie
- *      (HttpOnly, 10 min) and, before </body>, a minimal script.
+ *   1. A funnel's page served by the gate (match_type GATE; HTML, 200/304)
+ *      gets a visit id in the dop_v cookie (HttpOnly, 10 min) and, before
+ *      </body>, a minimal script. The safe page (the domain's page, GATE-SAFE)
+ *      and every other route go without either: nothing to measure there.
  *   2. On the load event, the script calls sendBeacon("/_dop/l", "t=<ms>"),
  *      with the time since navigation start. On the first real interaction
  *      (the mouse moved or pressed, a wheel scroll, a touch or a key; events
@@ -42,9 +44,17 @@ const BEACON_SCRIPT = '<script data-dop-beacon>(function(){function b(d){try{nav
     . 'var i=false;function n(k){return function(e){if(i||!e.isTrusted||(e.type==="mousemove"&&!e.movementX&&!e.movementY))return;i=true;b("i="+k+"&t="+Math.round(performance.now()))}}'
     . '[["mousemove","mouse"],["mousedown","mouse"],["wheel","scroll"],["touchstart","touch"],["keydown","key"]].forEach(function(p){addEventListener(p[0],n(p[1]),{capture:true,passive:true})})})();</script>';
 
-/** Does this route's response carry the notice? Only HTML pages (.html, .php or no extension). */
+/**
+ * Does this route's response carry the notice? Only a funnel's page served by
+ * the gate (match_type GATE — the split's pick keeps it) that is HTML (.html,
+ * .php or no extension). The safe page and any other route: no script, no
+ * visit cookie.
+ */
 function beacon_applies(array $route, Request $req): bool
 {
+    if (($route['match_type'] ?? '') !== GATE_MATCH) {
+        return false;
+    }
     $type = (string) ($route['content_type'] ?? '') ?: 'text/html';
     return str_starts_with(strtolower($type), 'text/html') && is_logged_path($req->path);
 }

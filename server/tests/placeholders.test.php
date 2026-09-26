@@ -63,7 +63,7 @@ check('etag changes with the data', $a !== placeholders_etag(placeholder_values(
 check('etag changes with the language', $a !== placeholders_etag(placeholder_values($base, make_request(['HTTP_ACCEPT_LANGUAGE' => 'es']), $noon)));
 check('etag changes with the day', $a !== placeholders_etag(placeholder_values($base, make_request(), $noon->modify('+1 day'))));
 
-// serve_slug end to end: replaced body and ETag with the suffix, before the load notice's -b3.
+// serve_slug end to end (a domain page: no load notice): replaced body and ETag with the suffix.
 $slug = 'ph-test-' . bin2hex(random_bytes(4));
 cache_put_content('ph1', '<html><body><h1>{{company.name}}</h1><p>{{lang}}</p></body></html>');
 $route = ['slug_id' => $slug, 'content_hash' => 'ph1', 'content_type' => 'text/html; charset=utf-8', 'funnel' => false,
@@ -71,7 +71,7 @@ $route = ['slug_id' => $slug, 'content_hash' => 'ph1', 'content_type' => 'text/h
 [$status, $headers, $body] = serve_slug($route, make_request(['HTTP_ACCEPT_LANGUAGE' => 'es']));
 same('serve_slug 200', 200, $status);
 check('body with the values', str_contains((string) $body, '<h1>Acme</h1><p>es</p>'));
-check('ETag = hash + placeholders + notice', preg_match('/^"ph1-p[0-9a-f]{8}' . preg_quote(BEACON_ETAG, '/') . '"$/', $headers['ETag']) === 1);
+check('ETag = hash + placeholders', preg_match('/^"ph1-p[0-9a-f]{8}"$/', $headers['ETag']) === 1, $headers['ETag']);
 [$status] = serve_slug($route, make_request(['HTTP_ACCEPT_LANGUAGE' => 'es', 'HTTP_IF_NONE_MATCH' => $headers['ETag']]));
 same('304 with the same ETag', 304, $status);
 [$status] = serve_slug(['placeholders' => ['company.llc' => 'Other LLC', 'domain' => 'ex.com']] + $route, make_request(['HTTP_ACCEPT_LANGUAGE' => 'es', 'HTTP_IF_NONE_MATCH' => $headers['ETag']]));

@@ -58,7 +58,7 @@ check('decide: page B\'s body', str_contains((string) $body, 'PAGE-B') && !str_c
 same('decide: logged route = page B', $pB, $route['page_id']);
 check('decide: Vary with Cookie', str_contains($headers['Vary'], 'Cookie'));
 check('decide: correct cookie, no Set-Cookie dop_pg', !str_contains(json_encode($headers['Set-Cookie'] ?? []), 'dop_pg'));
-same('decide: page B\'s ETag', '"hashB-b3"', $headers['ETag']);
+same('decide: page B\'s ETag', '"hashB"', $headers['ETag']);
 [$status, $headers] = decide([$splitRoute], make_request());
 check('decide: new visitor gets Set-Cookie dop_pg', str_contains(json_encode($headers['Set-Cookie'] ?? []), 'dop_pg='), json_encode($headers['Set-Cookie'] ?? null));
 
