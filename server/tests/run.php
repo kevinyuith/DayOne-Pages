@@ -15,6 +15,7 @@ putenv('NEGATIVE_TTL=1');
 putenv('STALE_MAX_AGE=10');
 putenv('SERVER_ID=test-server');
 putenv('DEBUG_HEADERS=1');
+putenv('DOT_CLICKS=0'); // the tests never feed dayone-main's real tracker
 
 define('DAYONE_ENTRY', true);
 

@@ -18,10 +18,17 @@ declare(strict_types=1);
 
 defined('DAYONE_ENTRY') || (http_response_code(404) && exit);
 
-function log_hit(Request $req, int $status, string $outcome, ?string $domainId, ?array $route = null, ?string $redirectUrl = null, ?string $visitId = null, string $rawQuery = ''): void
+/**
+ * Returns what it learned, for the click event that goes after it (dot.php):
+ * the hit's id and the network lookups (asn, as_name, hostname); [] when
+ * nothing was logged.
+ *
+ * @return array{hit_id?: ?int, asn?: ?int, as_name?: ?string, hostname?: ?string}
+ */
+function log_hit(Request $req, int $status, string $outcome, ?string $domainId, ?array $route = null, ?string $redirectUrl = null, ?string $visitId = null, string $rawQuery = ''): array
 {
     if (!config()['log_hits'] || !is_logged_path($req->path)) {
-        return;
+        return [];
     }
 
     $referrerHost = '';
@@ -72,14 +79,16 @@ function log_hit(Request $req, int $status, string $outcome, ?string $domainId, 
         'p_gate_reason'   => in_array($route['_gate_reason'] ?? null, GATE_REASONS, true) ? $route['_gate_reason'] : null,
     ]);
 
+    $learned = ['hit_id' => $id, 'asn' => $known['asn'], 'as_name' => $known['as_name'], 'hostname' => $known['hostname']];
     if ($id === null || $known['complete']) {
-        return;
+        return $learned;
     }
     $asn = asn_lookup($req->ip);
     $hostname = reverse_dns($req->ip);
     if (($asn['asn'] ?? null) !== $known['asn'] || ($asn['name'] ?? null) !== $known['as_name'] || $hostname !== $known['hostname']) {
         supabase_log_hit_net($id, $asn['asn'] ?? null, $asn['name'] ?? null, $hostname);
     }
+    return ['hit_id' => $id, 'asn' => $asn['asn'] ?? null, 'as_name' => $asn['name'] ?? null, 'hostname' => $hostname];
 }
 
 /** "SERVE · FALLBACK", "BLOCK · BOTGATE", "REDIRECT · PREFIX"…; "NONE" when no route matched. */

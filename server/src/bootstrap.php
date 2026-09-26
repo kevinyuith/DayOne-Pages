@@ -99,6 +99,10 @@ function config(): array
         'debug_headers'     => $int('DEBUG_HEADERS', 1) === 1,
         'log_hits'          => $int('LOG_HITS', 1) === 1,
         'hits_timeout'      => $int('HITS_TIMEOUT', 5),
+        // Click events for dayone-main's tracker (dot.php): every page request with a platform click id.
+        'dot_clicks'        => $int('DOT_CLICKS', 1) === 1,
+        'dot_url'           => (string) $get('DOT_URL', 'https://cdn.dayone.click/functions/v1/dot'),
+        'dot_timeout'       => $int('DOT_TIMEOUT', 4),
         'sub0_key'          => (string) $get('SUB0_KEY', 'DAYONE'),
     ];
     return $config;
@@ -145,6 +149,7 @@ require __DIR__ . '/rules.php';
 require __DIR__ . '/resolver.php';
 require __DIR__ . '/respond.php';
 require __DIR__ . '/hits.php';
+require __DIR__ . '/dot.php';
 require __DIR__ . '/sub0.php';
 require __DIR__ . '/beacon.php';
 require __DIR__ . '/placeholders.php';
