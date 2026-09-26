@@ -63,23 +63,23 @@ cache_put_content('ab01', $ab);
 $abRoute = ['slug_id' => $abSlug, 'content_hash' => 'ab01', 'content_type' => 'text/html', 'funnel' => true];
 [$status, $headers, $body] = serve_slug($abRoute, make_request(['HTTP_COOKIE' => "dop_ab=$uid:p_pb"]));
 same('serve: 200', 200, $status);
-same('serve: ETag with the sample', '"ab01-p_pb-k1"', $headers['ETag']);
+same('serve: ETag with the sample and the step', '"ab01-p_pb-p_pb-k1"', $headers['ETag']);
 check('serve: Vary with Cookie', str_contains($headers['Vary'], 'Cookie'));
 check('serve: no Set-Cookie when the cookie is already right', !isset($headers['Set-Cookie']));
 check('serve: body with sample B only', str_contains((string) $body, 'PRE-B') && !str_contains((string) $body, 'PRE-A'));
-same('serve: 304 with the same sample', 304, serve_slug($abRoute, make_request(['HTTP_COOKIE' => "dop_ab=$uid:p_pb", 'HTTP_IF_NONE_MATCH' => '"ab01-p_pb-k1"']))[0]);
+same('serve: 304 with the same sample', 304, serve_slug($abRoute, make_request(['HTTP_COOKIE' => "dop_ab=$uid:p_pb", 'HTTP_IF_NONE_MATCH' => '"ab01-p_pb-p_pb-k1"']))[0]);
 [$status, $headers] = serve_slug($abRoute, make_request());
 check('serve: new visitor gets Set-Cookie dop_ab', is_array($headers['Set-Cookie'] ?? null) && str_starts_with($headers['Set-Cookie'][0], 'dop_ab='), json_encode($headers['Set-Cookie'] ?? null));
 
-// Page with steps but no test: ETag without a sample, no Vary Cookie, no cookie.
+// Page with steps but no test: ETag with the step only (always one step per response), no dop_ab cookie.
 $plainFunnel = $abDoc('<section data-dop-page="p_x" data-dop-kind="presell" data-dop-start><h1>P</h1></section><section data-dop-page="p_y" hidden><h1>L</h1></section>');
 cache_put_content('ab02', $plainFunnel);
 [$status, $headers, $body] = serve_slug(['slug_id' => $abSlug, 'content_hash' => 'ab02', 'content_type' => 'text/html', 'funnel' => true], make_request());
-same('no test: ETag is just the hash', '"ab02-k1"', $headers['ETag']);
-check('no test: Vary without Cookie', !str_contains($headers['Vary'], 'Cookie'));
+same('no test: ETag with the step only', '"ab02-p_x-k1"', $headers['ETag']);
+check('no test: Vary with Cookie (the step)', str_contains($headers['Vary'], 'Cookie'));
 check('no test: no dop_ab cookie', !isset($headers['Set-Cookie']));
 
-// Server mode + A/B: the sample first, then the step.
+// Steps + A/B: the sample first, then the step.
 $both = str_replace('<body>', '<body data-dop-funnel="server">', $ab);
 cache_put_content('ab03', $both);
 [$status, $headers, $body] = serve_slug(['slug_id' => $abSlug, 'content_hash' => 'ab03', 'content_type' => 'text/html', 'funnel' => true], make_request(['HTTP_COOKIE' => "dop_ab=$uid:p_pb; dop_step=p_la"]));

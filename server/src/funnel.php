@@ -1,13 +1,20 @@
 <?php
 /**
- * Funnel in "server mode": one step per response.
+ * A funnel is served one step per response, always.
  *
  * The editor stores a slug's sub-pages as sibling <section data-dop-page="…">
- * in the body, and may mark the body with data-dop-funnel="server". In that
- * mode, this server delivers ONLY the current step — the other sections are
- * not even in the HTML — and the page runtime switches steps by setting the
+ * in the body. This server delivers ONLY the current step — the other sections
+ * are not even in the HTML, so their scripts (a VSL player, say) never run
+ * behind another step — and the page runtime switches steps by setting the
  * `dop_step` cookie and reloading the same URL. The URL never changes; the
- * presell's source doesn't contain the main page.
+ * presell's source doesn't contain the main page. A stored
+ * data-dop-funnel="server" on the body (from when this was a choice) no
+ * longer matters.
+ *
+ * The cookie only carries the switch to the reload: the response that used it
+ * deletes it (funnel_step_cookie_clear), so a refresh or a later visit starts
+ * over at the initial step — and a request that carries it is a step switch of
+ * the same visit, not a new click (app.php marks its hit · STEP).
  *
  * Steps: always Pre Lander (presell) → Lander (main) → Backredirect; an
  * unknown kind counts as Lander. A step with no code (empty section, only
@@ -34,12 +41,11 @@
  * SAMPLES (A/B test, see ab_apply): before anything else, each step with two
  * or more active samples (sections of the same kind) keeps ONE, drawn in
  * proportion to the data-dop-weight values and fixed per visitor in the
- * dop_ab cookie. The others are removed from the HTML — in any mode, not only
- * server mode.
+ * dop_ab cookie. The others are removed from the HTML.
  *
- * Without server mode, returns null and the HTML goes as is. Server mode with
- * no step found also returns null, but logs it: it's a sign of HTML the
- * tokenizer didn't understand. With no active step, null (nothing to cut).
+ * Without step sections, returns null and the HTML goes as is. Sections the
+ * tokenizer can't find also return null, but are logged: it's a sign of HTML
+ * it didn't understand. With no active step, null (nothing to cut).
  */
 declare(strict_types=1);
 
@@ -57,10 +63,24 @@ function funnel_has_sections(string $html): bool
     return preg_match('/<section\b[^>]*\bdata-dop-page\s*=/i', $html) === 1;
 }
 
-/** Does the body ask for server mode? (cheap: one regex on the HTML) */
-function funnel_is_server_mode(string $html): bool
+/** The step the runtime asked for (the `dop_step` cookie), when well formed; null otherwise. */
+function funnel_step_cookie(array $cookies): ?string
 {
-    return preg_match('/<body\b[^>]*\bdata-dop-funnel\s*=\s*"server"/i', $html) === 1;
+    $want = (string) ($cookies[FUNNEL_COOKIE] ?? '');
+    return preg_match('/^p_[a-z0-9]{1,16}$/', $want) === 1 ? $want : null;
+}
+
+/**
+ * Deletes the step cookie (it only carries a switch to the reload). Same Path
+ * the runtime set it with (location.pathname = the raw path); null for a path
+ * that can't go in a Set-Cookie.
+ */
+function funnel_step_cookie_clear(string $rawPath): ?string
+{
+    if (preg_match('/^\/[\x21-\x7e]*$/', $rawPath) !== 1 || strpbrk($rawPath, ';,') !== false) {
+        return null;
+    }
+    return FUNNEL_COOKIE . "=; Path=$rawPath; Max-Age=0; SameSite=Lax";
 }
 
 /**
@@ -68,12 +88,12 @@ function funnel_is_server_mode(string $html): bool
  */
 function funnel_apply(string $html, array $cookies): ?array
 {
-    if (!funnel_is_server_mode($html)) {
+    if (!funnel_has_sections($html)) {
         return null;
     }
     $pages = funnel_sections($html);
     if ($pages === []) {
-        error_log('[dayone-pages] server-mode funnel with no recognized step; serving the whole HTML');
+        error_log('[dayone-pages] funnel with no recognized step; serving the whole HTML');
         return null;
     }
 
@@ -99,8 +119,8 @@ function funnel_apply(string $html, array $cookies): ?array
         }
     }
 
-    $want = (string) ($cookies[FUNNEL_COOKIE] ?? '');
-    $cur = (preg_match('/^p_[a-z0-9]{1,16}$/', $want) === 1 && isset($byId[$want])) ? $byId[$want] : $start;
+    $want = funnel_step_cookie($cookies);
+    $cur = ($want !== null && isset($byId[$want])) ? $byId[$want] : $start;
 
     // "Next": from the Pre Lander, the Lander; from the Lander, none; from the
     // Backredirect (or a section outside the flow), the Lander — or the initial one.
@@ -120,7 +140,7 @@ function funnel_apply(string $html, array $cookies): ?array
         }
     }
 
-    // The served step can't be `hidden` (the attribute is the browser mode's no-JS fallback).
+    // The served step can't be `hidden` (the attribute is the preview's no-JS fallback).
     $out = funnel_unhide($out, $cur['id']);
 
     $esc = fn (string $v): string => htmlspecialchars($v, ENT_QUOTES, 'UTF-8');

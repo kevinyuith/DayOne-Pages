@@ -83,6 +83,18 @@ function dayone_handle(): void
         $outcome = 'redirect';
         $route = [...$route, 'action' => 'REDIRECT', 'match_type' => 'WWW'];
     }
+    // A funnel's step switch: the runtime set dop_step and reloaded. The cookie
+    // goes (it only carries the switch — a refresh starts over at the first
+    // step) and a served page's hit is marked as the same visit's step.
+    if (funnel_step_cookie($req->cookies) !== null) {
+        $clear = funnel_step_cookie_clear($req->rawPath);
+        if ($clear !== null) {
+            $headers['Set-Cookie'] = [...(array) ($headers['Set-Cookie'] ?? []), $clear];
+        }
+        if ($outcome === 'served' && $route !== null) {
+            $route['_step'] = true;
+        }
+    }
     // Page served: visit id in the cookie, for the load notice (beacon.php).
     $visitId = null;
     if ($outcome === 'served' && $route !== null && beacon_applies($route, $req)) {

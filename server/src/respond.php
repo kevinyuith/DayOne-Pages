@@ -9,8 +9,8 @@
  *             doesn't skip to the next one, so the error shows up instead of
  *             vanishing).
  *             If-None-Match equal to the hash → 304. Otherwise 200 with the HTML.
- *             Slug with a server-mode funnel (funnel.php): only the current step
- *             goes out, the ETag gets the step id and the response varies by Cookie.
+ *             Slug with funnel steps (funnel.php): only the current step goes
+ *             out, the ETag gets the step id and the response varies by Cookie.
  *             Page of a funnel with a VSL split (vsl.php): the page's A/B VTurb
  *             player gets the video drawn for the visitor; same ETag/Cookie rule.
  *             An HTML page gets the load notice (beacon.php).
@@ -173,7 +173,7 @@ function serve_slug(array $route, Request $req): array
     $values = placeholder_values($route, $req);
     $ptag = placeholders_etag($values);
 
-    // A slug the cache already flagged as "not a server-mode funnel": the ETag
+    // A slug the cache already flagged as "no funnel steps": the ETag
     // is just the hash and the 304 goes out without reading the content from
     // disk. Old cache (without the flag) or funnel: reads the content, because
     // the step goes into the ETag.
@@ -203,7 +203,7 @@ function serve_slug(array $route, Request $req): array
         }
     }
 
-    // Server-mode funnel: the step goes into the ETag (each step is a different
+    // Funnel steps: the step goes into the ETag (each step is a different
     // body at the SAME URL). With an A/B test or a funnel, the response varies by Cookie.
     $funnel = funnel_apply($body, $req->cookies);
     if ($funnel) {

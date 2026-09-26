@@ -45,13 +45,11 @@ export const PAGE_WEIGHT_ATTR = "data-dop-weight";
 /** Marks (editor ONLY) which sub-page the canvas is showing. Removed by serialize. */
 export const PAGE_CURRENT_ATTR = "data-dop-current";
 /**
- * On the <body>: how the funnel switches steps. Absent/"browser" = everything is
- * in the HTML and the runtime switches in the browser; "server" = the PHP server
- * delivers only the current step (cookie `dop_step`) and the runtime sets the
- * cookie and reloads.
+ * Old <body> attribute: how the funnel switched steps, when that was a choice.
+ * The server now always delivers one step; normalizePages drops it.
  */
 export const FUNNEL_MODE_ATTR = "data-dop-funnel";
-/** Cookie that holds the current step in server mode. Same as FUNNEL_COOKIE in server/src/funnel.php. */
+/** Cookie that carries a step switch to the reload. Same as FUNNEL_COOKIE in server/src/funnel.php. */
 export const FUNNEL_COOKIE = "dop_step";
 
 /** The script that makes `data-href` navigate and sub-pages switch. Stays in the saved HTML. */

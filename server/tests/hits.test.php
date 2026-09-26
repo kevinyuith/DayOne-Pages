@@ -45,6 +45,7 @@ same('as name: empty', null, parse_cymru_as_name('396982 | US | arin | 2018-08-1
 same('decision: no route', 'NONE', hit_decision(null));
 same('decision: action + type', 'SERVE · FALLBACK', hit_decision(['action' => 'SERVE', 'match_type' => 'FALLBACK']));
 same('decision: no type', 'REDIRECT', hit_decision(['action' => 'REDIRECT']));
+same('decision: a funnel step switch', 'SERVE · GATE · STEP', hit_decision(['action' => 'SERVE', 'match_type' => 'GATE', '_step' => true]));
 
 // decide() returns the route that decided (5th element), for the log.
 $human = make_request(['REQUEST_URI' => '/?go=1']);

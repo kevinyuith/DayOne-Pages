@@ -4,9 +4,10 @@
  *
  * A funnel page is ONE HTML document with the steps as sibling
  * <section data-dop-page data-dop-kind="presell|main|backredirect">; the
- * runtime (runtime.ts) shows one step at a time and, when it shows one,
- * dispatches `dop:pageshow` on the section (browser mode) — server mode
- * reloads with only that step. So there's no separate page load per step.
+ * delivery server sends one step per response (funnel.php) and moving on
+ * reloads the same URL with the next one; without the server (static HTML),
+ * the runtime (runtime.ts) shows one step at a time and dispatches
+ * `dop:pageshow` on the section it shows.
  *
  * When the delivery server serves a page that has steps, it injects a small
  * loader that loads the step's tracker when the step becomes visible, once:

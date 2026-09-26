@@ -22,19 +22,18 @@
  * serves only that one; without the server (preview), the first active variant
  * wins. A step is active if any of its variants has code.
  *
- * The `hidden` on the non-initial ones is the no-JS fallback. With JS, the runtime
- * shows the initial one and switches on click (`#next-step`: from the Pre Lander to
- * the Lander; `#page:<id>`), without changing the URL. The <head> (styles) is
- * shared — pages cloned from different sites can clash in CSS; prefer prefixed
- * classes. The same rules (active = has code, initial-step priority) apply
- * in `runtime.ts` and in `server/src/funnel.php`.
- *
- * Two switching modes, saved in `<body data-dop-funnel>` (see FunnelMode):
- *  - browser (default): the whole HTML goes to the visitor; switching is JS only.
- *  - server: the PHP server trims the HTML and delivers ONLY the current step, chosen
- *    by the `dop_step` cookie; the runtime sets the cookie and reloads the same URL.
- *    The pre lander's source doesn't contain the lander. It only matters on the
- *    server — canvas and preview keep showing everything.
+ * The delivery server ALWAYS serves one step per response (`server/src/funnel.php`):
+ * it cuts the HTML down to the current step, chosen by the `dop_step` cookie, and
+ * the runtime switches by setting the cookie and reloading the same URL. So a
+ * step's scripts (a VSL player, say) never run behind another one, and the pre
+ * lander's source doesn't contain the lander. Canvas and preview (no server) keep
+ * every section: the `hidden` on the non-initial ones is the no-JS fallback, and
+ * the runtime shows the initial one and switches on click (`#next-step`: from the
+ * Pre Lander to the Lander; `#page:<id>`). The <head> (styles) is shared — pages
+ * cloned from different sites can clash in CSS; prefer prefixed classes. The same
+ * rules (active = has code, initial-step priority) apply in `runtime.ts` and in
+ * `server/src/funnel.php`. There is no "browser mode" to choose any more: an old
+ * `<body data-dop-funnel>` is dropped on the next save.
  *
  * Everything here operates on a Document (live canvas or parsed from the HTML) and
  * returns enough for the panel: `listPages`. The mutations save nothing — the
@@ -65,22 +64,6 @@ export const SUB_KIND_LABELS: Record<SubPageKind, string> = {
 };
 
 export type BackTrigger = "back" | "exit";
-
-export const FUNNEL_MODES = ["browser", "server"] as const;
-export type FunnelMode = (typeof FUNNEL_MODES)[number];
-export const FUNNEL_MODE_LABELS: Record<FunnelMode, string> = { browser: "In the browser", server: "On the server" };
-
-export function getFunnelMode(doc: Document): FunnelMode {
-  return doc.body?.getAttribute(FUNNEL_MODE_ATTR) === "server" ? "server" : "browser";
-}
-
-/** Saves the mode on the <body>; "browser" is the default and leaves no attribute. */
-export function setFunnelMode(doc: Document, mode: FunnelMode): void {
-  const body = doc.body;
-  if (!body) return;
-  if (mode === "server") body.setAttribute(FUNNEL_MODE_ATTR, "server");
-  else body.removeAttribute(FUNNEL_MODE_ATTR);
-}
 
 export type SubPage = {
   id: string;
@@ -235,6 +218,8 @@ function newId(doc: Document): string {
  * only on the Backredirect. Idempotent; runs before every serialize.
  */
 export function normalizePages(doc: Document): void {
+  // The old step-switching choice; the server always serves one step now.
+  doc.body?.removeAttribute(FUNNEL_MODE_ATTR);
   const els = pageElements(doc);
   if (!els.length) return;
   const start = startPage(doc);
@@ -530,7 +515,7 @@ export function pageIdFromHref(href: string): string | null {
  * Replaces every sub-page id (`p_xxxx`) in an HTML with new ids — in the
  * `data-dop-page` attributes and in every `#page:<id>` pointing to them. No DOM,
  * so it runs on the server (duplicate page): two slugs with the SAME step ids
- * would share the `dop_step` cookie in server mode.
+ * would share the `dop_step` cookie.
  */
 export function refreshPageIds(html: string, random: () => string = () => Math.random().toString(36).slice(2, 6)): string {
   const ids = new Set<string>();

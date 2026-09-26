@@ -3,8 +3,8 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { CHECKBOX_CLASS, SELECT_BASE, SELECT_CLASS, TEXTAREA_CLASS } from "@/components/ui/field";
-import { FUNNEL_MODES, FUNNEL_MODE_LABELS, funnelSlots, trafficShares, type BackTrigger, type FunnelMode, type SubPage, type SubPageKind } from "@/lib/pages/subpages";
+import { CHECKBOX_CLASS, INPUT_CLASS, SELECT_CLASS, TEXTAREA_CLASS } from "@/components/ui/field";
+import { funnelSlots, trafficShares, type BackTrigger, type SubPage, type SubPageKind } from "@/lib/pages/subpages";
 
 /**
  * "Funnel" panel: this slug's three fixed steps — Pre Lander → Lander →
@@ -13,8 +13,7 @@ import { FUNNEL_MODES, FUNNEL_MODE_LABELS, funnelSlots, trafficShares, type Back
  * is active, otherwise on the Lander; with several samples, the server draws one
  * per visitor in proportion to the weights (sticky for that visitor). Clicking a sample
  * changes what the canvas shows; the actions change the HTML (the parent applies them via
- * `applyDocChange`). The mode selector decides who switches steps: the
- * browser (everything in the HTML) or the server (one step per response).
+ * `applyDocChange`). The server always delivers one step per response (no choice here).
  */
 export type SubPagesActions = {
   select: (id: string) => void;
@@ -28,9 +27,10 @@ export type SubPagesActions = {
   setWeight: (id: string, weight: number) => void;
   splitEvenly: (kind: SubPageKind) => void;
   setTriggers: (ids: string[], triggers: BackTrigger[]) => void;
-  setMode: (mode: FunnelMode) => void;
   /** The HTML of a template's `/` slug (to become a sample). */
   loadTemplate: (templateId: string) => Promise<{ ok: true; html: string } | { ok: false; reason: string }>;
+  /** A page fetched by its URL, with absolute addresses (to become a sample). */
+  loadLink: (url: string) => Promise<{ ok: true; html: string } | { ok: false; reason: string }>;
 };
 
 const KIND_TONE: Record<SubPageKind, string> = {
@@ -46,28 +46,25 @@ const KIND_HINT: Record<SubPageKind, string> = {
 };
 
 /** Where the HTML of a new sample (or of a sample's new content) comes from. */
-type Importing = { kind: SubPageKind; replace: string | null; source: "html" | "template" } | null;
+type Importing = { kind: SubPageKind; replace: string | null; source: "html" | "template" | "link" } | null;
 
 const pct = (n: number) => `${n.toLocaleString("en-US", { maximumFractionDigits: 1 })}%`;
 
 export function SubPagesPanel({
   pages,
   currentId,
-  mode,
   canEdit,
   actions,
   templates,
 }: {
   pages: SubPage[];
   currentId: string | null;
-  mode: FunnelMode;
   canEdit: boolean;
   actions: SubPagesActions;
   templates: { id: string; name: string }[];
 }) {
   const [importing, setImporting] = useState<Importing>(null);
   const slots = funnelSlots(pages);
-  const activeCount = slots.filter((s) => s.active).length;
   const activeFlow = slots.filter((s) => s.active && s.kind !== "backredirect").length;
 
   const onDeactivate = (kind: SubPageKind, label: string) => {
@@ -146,6 +143,7 @@ export function SubPagesPanel({
                                 <MenuItem onClick={() => actions.addVersion(s.kind, { from: v.id })}>Duplicate</MenuItem>
                                 <MenuItem onClick={() => setImporting({ kind: s.kind, replace: v.id, source: "html" })}>Replace with HTML…</MenuItem>
                                 <MenuItem onClick={() => setImporting({ kind: s.kind, replace: v.id, source: "template" })}>Replace with a template…</MenuItem>
+                                <MenuItem onClick={() => setImporting({ kind: s.kind, replace: v.id, source: "link" })}>Replace with a link…</MenuItem>
                                 {s.versions.length > 1 ? (
                                   <MenuItem danger onClick={() => onRemoveVersion(v)}>
                                     Remove sample
@@ -190,6 +188,7 @@ export function SubPagesPanel({
                       {s.active ? <MenuItem onClick={() => actions.addVersion(s.kind, {})}>Blank starter</MenuItem> : null}
                       <MenuItem onClick={() => setImporting({ kind: s.kind, replace: null, source: "html" })}>Paste HTML…</MenuItem>
                       <MenuItem onClick={() => setImporting({ kind: s.kind, replace: null, source: "template" })}>From a template…</MenuItem>
+                      <MenuItem onClick={() => setImporting({ kind: s.kind, replace: null, source: "link" })}>From a link…</MenuItem>
                     </Menu>
                     {test ? (
                       <button type="button" onClick={() => actions.splitEvenly(s.kind)} className="text-[11px] text-muted underline-offset-2 hover:text-foreground hover:underline">
@@ -215,39 +214,11 @@ export function SubPagesPanel({
         </ul>
         {!canEdit ? <p className="mt-1 text-[11px] text-muted">Switch back to Visual mode (full document) to edit the funnel.</p> : null}
 
-        {activeCount > 1 ? (
-          <div className="mt-3 flex flex-col gap-1 rounded-lg border border-border p-2">
-            <label className="flex flex-col gap-1 text-[11px] text-muted">
-              Step switching
-              <select value={mode} onChange={(e) => actions.setMode(e.target.value as FunnelMode)} aria-label="Funnel mode" className={`${SELECT_BASE} h-8 w-full text-xs text-foreground`} disabled={!canEdit}>
-                {FUNNEL_MODES.map((m) => (
-                  <option key={m} value={m}>
-                    {FUNNEL_MODE_LABELS[m]}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <p className="text-[11px] leading-snug text-muted">
-              {mode === "server" ? (
-                <>
-                  The server delivers <b>only the current step</b>; the pre lander&apos;s source doesn&apos;t contain the lander. Moving forward sets the <code>dop_step</code> cookie and reloads the same URL. HTML caching
-                  on Cloudflare must stay off (the server already sends <code>Vary: Cookie</code>).
-                </>
-              ) : (
-                <>
-                  All steps go in the HTML and the script switches instantly, without reloading. Faster, but anyone who opens the source sees the other steps (never the other samples: the
-                  server only sends the drawn one).
-                </>
-              )}
-            </p>
-          </div>
-        ) : null}
-
         <div className="mt-3 rounded-lg bg-foreground/5 p-2 text-[11px] leading-snug text-muted">
           <p className="mb-1 font-medium text-foreground">How it works</p>
           <p>
             The visitor sees the <b>Pre Lander</b> first, if it&apos;s active; otherwise, the <b>Lander</b>. To go from the Pre Lander to the Lander, select a button and choose the destination{" "}
-            <b>Next step</b> (<code>#next-step</code>). The <b>Backredirect</b> shows when they press back.
+            <b>Next step</b> (<code>#next-step</code>). The <b>Backredirect</b> shows when they press back. Each step is served on its own: the next one reloads the same URL.
           </p>
           <p className="mt-1">
             <b>A/B test:</b> with two or more samples in a step, the server draws one per visitor in proportion to the weights, and the visitor always stays on it. Weight 0 pauses a
@@ -256,40 +227,52 @@ export function SubPagesPanel({
         </div>
       </div>
 
-      <ImportDialog importing={importing} templates={templates} onClose={() => setImporting(null)} onApply={applyImport} loadTemplate={actions.loadTemplate} />
+      <ImportDialog
+        importing={importing}
+        templates={templates}
+        onClose={() => setImporting(null)}
+        onApply={applyImport}
+        loadTemplate={actions.loadTemplate}
+        loadLink={actions.loadLink}
+      />
     </div>
   );
 }
 
-/** Paste a page's HTML or choose a template, to become a sample (or a sample's content). */
+/** Paste a page's HTML, choose a template or fetch a page by its link, to become a sample (or a sample's content). */
 function ImportDialog({
   importing,
   templates,
   onClose,
   onApply,
   loadTemplate,
+  loadLink,
 }: {
   importing: Importing;
   templates: { id: string; name: string }[];
   onClose: () => void;
   onApply: (html: string) => void;
   loadTemplate: SubPagesActions["loadTemplate"];
+  loadLink: SubPagesActions["loadLink"];
 }) {
   const [html, setHtml] = useState("");
   const [templateId, setTemplateId] = useState("");
+  const [url, setUrl] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const close = () => {
     setHtml("");
+    setUrl("");
     setError(null);
     onClose();
   };
   const submit = async () => {
     setError(null);
-    if (importing?.source === "template") {
-      if (!templateId) return setError("Choose a template.");
+    if (importing?.source === "template" || importing?.source === "link") {
+      if (importing.source === "template" && !templateId) return setError("Choose a template.");
+      if (importing.source === "link" && !url.trim()) return setError("Enter the page's URL.");
       setBusy(true);
-      const r = await loadTemplate(templateId);
+      const r = importing.source === "template" ? await loadTemplate(templateId) : await loadLink(url.trim());
       setBusy(false);
       if (!r.ok) return setError(r.reason);
       onApply(r.html);
@@ -298,6 +281,7 @@ function ImportDialog({
       onApply(html);
     }
     setHtml("");
+    setUrl("");
   };
   const title = importing?.replace ? "Replace the sample's content" : "New sample";
   return (
@@ -307,7 +291,9 @@ function ImportDialog({
       description={
         importing?.source === "template"
           ? "The template's / slug becomes the sample's content (with its CSS)."
-          : "Paste the whole page: the <body> becomes the sample, and the <head>'s CSS/scripts go with it."
+          : importing?.source === "link"
+            ? "Fetches the page: the <body> becomes the sample, and the <head>'s CSS/scripts go with it. Addresses become absolute; links still point to the source site."
+            : "Paste the whole page: the <body> becomes the sample, and the <head>'s CSS/scripts go with it."
       }
       onClose={close}
       className="sm:max-w-2xl"
@@ -322,13 +308,29 @@ function ImportDialog({
               </option>
             ))}
           </select>
+        ) : importing?.source === "link" ? (
+          <input
+            type="url"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                void submit();
+              }
+            }}
+            placeholder="https://example.com/page"
+            aria-label="Page URL"
+            className={INPUT_CLASS}
+            disabled={busy}
+          />
         ) : (
           <textarea value={html} onChange={(e) => setHtml(e.target.value)} rows={12} placeholder="<!doctype html>…" className={`${TEXTAREA_CLASS} font-mono text-xs`} />
         )}
         {error ? <p className="text-sm text-red-600 dark:text-red-400">{error}</p> : null}
         <div className="flex gap-2">
           <Button onClick={() => void submit()} disabled={busy}>
-            {busy ? "Loading…" : importing?.replace ? "Replace" : "Create sample"}
+            {busy ? (importing?.source === "link" ? "Fetching…" : "Loading…") : importing?.replace ? "Replace" : "Create sample"}
           </Button>
           <Button variant="ghost" onClick={close} disabled={busy}>
             Cancel

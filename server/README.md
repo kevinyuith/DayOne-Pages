@@ -42,36 +42,40 @@ conditions: country, device, language, URL parameters, referrer) and the
 default page (the fail page when there is a filter), with the request path as
 the slug. `bot` is only honored by the bot block.
 
-### Server-mode funnel (`dop_step`)
+### Funnel steps, one per response (`dop_step`)
 
-A slug with sub-pages (presell → main → back redirect, see the root README)
-can be saved with `<body data-dop-funnel="server">`. Then the slug's HTML goes
-into the cache as is (all sections), but **in the response** the server
-(`src/funnel.php`) delivers only the current step:
+A slug with sub-pages (presell → main → back redirect, see the root README) is
+ALWAYS served one step at a time (there is no "browser mode" any more; an old
+`<body data-dop-funnel>` is ignored). The slug's HTML goes into the cache as is
+(all sections), but **in the response** the server (`src/funnel.php`) delivers
+only the current step — so a step's scripts (a VSL player, say) never run
+behind another one:
 
 - step = the `dop_step=<id>` cookie if it points to an active section that exists;
   otherwise the Pre Lander if it is active, else the Lander (the fixed funnel rule);
 - the other `<section data-dop-page>` are removed from the HTML; the served one
   loses `hidden`; the `<body>` gets `data-dop-cur/-next/-start/-main/-br/-br-trigger`
   so the page runtime knows where to go;
-- the runtime moves forward by setting `dop_step` (`Path` = the slug's path, 1 day) and
+- the runtime moves forward by setting `dop_step` (`Path` = the slug's path) and
   reloading the same URL. The URL never changes and the source of one step
-  doesn't contain the others.
+  doesn't contain the others;
+- the response that used the cookie deletes it (`app.php`): it only carries the
+  switch to the reload, so a refresh or a later visit starts over at the first
+  step. That request is the same visit, not a new one: its hit is logged as
+  `SERVE · GATE · STEP` (the Funnel screen doesn't count it as another view;
+  its clicks out do count).
 
 The `ETag` becomes `"<hash>-<step>"` and the response carries `Vary: Cookie`. The HTML
 always comes from the origin (Cloudflare doesn't cache HTML by default); if HTML
-caching is ever turned on, a server-mode funnel requires *Bypass* on that slug.
-Without the attribute (browser mode), none of this runs and the whole HTML goes out.
+caching is ever turned on, a funnel slug requires *Bypass*.
+A slug without sections goes out whole.
 
 The cut is done by counting `<section>` in a copy of the HTML with comments,
 `<script>`, `<style>` and `<template>` blanked out (same length), so a
 `</section>` inside them doesn't count. If even so the server recognizes
-no step in a server-mode slug, it serves the whole HTML and
-logs it (`server-mode funnel with no recognized step`) — the page keeps
-working, in browser mode.
-
-**Deploy order:** the PHP server before the dashboard, so a slug saved in
-server mode is already cut by step from the first visit.
+no step in a slug that has sections, it serves the whole HTML and
+logs it (`funnel with no recognized step`) — the page keeps working, with
+the runtime switching steps in the browser.
 
 ### Entry via `www.` (`sub0`)
 

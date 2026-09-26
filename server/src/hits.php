@@ -91,13 +91,18 @@ function log_hit(Request $req, int $status, string $outcome, ?string $domainId, 
     return ['hit_id' => $id, 'asn' => $asn['asn'] ?? null, 'as_name' => $asn['name'] ?? null, 'hostname' => $hostname];
 }
 
-/** "SERVE · FALLBACK", "BLOCK · BOTGATE", "REDIRECT · PREFIX"…; "NONE" when no route matched. */
+/**
+ * "SERVE · FALLBACK", "BLOCK · BOTGATE", "REDIRECT · PREFIX"…; "NONE" when no
+ * route matched. A funnel's step switch (the reload that carries `dop_step`,
+ * see funnel.php) ends in " · STEP": the same visit, not a new one — the
+ * Funnel screen doesn't count it as another view.
+ */
 function hit_decision(?array $route): string
 {
     if ($route === null) {
         return 'NONE';
     }
-    $parts = array_filter([(string) ($route['action'] ?? ''), (string) ($route['match_type'] ?? '')], fn (string $p) => $p !== '');
+    $parts = array_filter([(string) ($route['action'] ?? ''), (string) ($route['match_type'] ?? ''), !empty($route['_step']) ? 'STEP' : ''], fn (string $p) => $p !== '');
     return implode(' · ', $parts);
 }
 

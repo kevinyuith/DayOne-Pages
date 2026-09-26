@@ -32,12 +32,12 @@ import { INPUT_BASE, SELECT_BASE } from "@/components/ui/field";
 import { buildLayers, parseHtml, type LayerNode, type SelectionInfo } from "@/lib/pages/html-editing";
 import { extractLinks, mutateHtml, replaceAll, replaceDestination, type LinkEntry } from "@/lib/pages/links";
 import { NEXT_STEP } from "@/lib/pages/runtime";
+import { importHtml } from "@/lib/pages/import-html";
 import { isFullDocument, wrapFragment } from "@/lib/pages/starter-template";
 import {
   activateStep,
   addVersion,
   deactivateStep,
-  getFunnelMode,
   listPages,
   pageAsVersion,
   pageById,
@@ -45,12 +45,10 @@ import {
   previewFrom,
   removeVersion,
   replaceVersionContent,
-  setFunnelMode,
   setTriggers,
   setWeight,
   splitEvenly,
   startPage,
-  type FunnelMode,
   type SubPage,
 } from "@/lib/pages/subpages";
 import {
@@ -66,7 +64,7 @@ import {
 import type { ActionResult } from "@/lib/action-result";
 import { AUTO_PLACEHOLDERS, PLACEHOLDER_FIELDS, applyPlaceholders, placeholderToken } from "@/lib/pages/placeholders";
 import { APP_TZ } from "@/lib/time-zone";
-import { templateRootHtml, type SaveEditorInput, type SaveEditorResult } from "@/app/(dashboard)/templates/actions";
+import { fetchTemplateFromUrl, templateRootHtml, type SaveEditorInput, type SaveEditorResult } from "@/app/(dashboard)/templates/actions";
 
 /**
  * What the editor does with the page, without knowing where it lives: template
@@ -165,11 +163,10 @@ export function PageEditor({
   const [showMarkers, setShowMarkers] = useState(true);
   const [currentPageId, setCurrentPageId] = useState<string | null>(null);
   const [previewDoc, setPreviewDoc] = useState("");
-  const [outline, setOutline] = useState<{ links: LinkEntry[]; layers: LayerNode[]; pages: SubPage[]; funnelMode: FunnelMode }>({
+  const [outline, setOutline] = useState<{ links: LinkEntry[]; layers: LayerNode[]; pages: SubPage[] }>({
     links: [],
     layers: [],
     pages: [],
-    funnelMode: "browser",
   });
 
   const [pending, startTransition] = useTransition();
@@ -239,7 +236,7 @@ export function PageEditor({
       const d = parseHtml(content);
       const pages = listPages(d);
       const root = currentPageId ? pageById(d, currentPageId) : null;
-      setOutline({ links: extractLinks(d), layers: buildLayers(d, root), pages, funnelMode: getFunnelMode(d) });
+      setOutline({ links: extractLinks(d), layers: buildLayers(d, root), pages });
       // In code mode the canvas is not mounted to pick the sub-page:
       // fall back to the start page (or drop it, if the slug is a single page again).
       if (pages.length && (!currentPageId || !pages.some((p) => p.id === currentPageId))) setCurrentPageId(startPage(d)?.getAttribute("data-dop-page") ?? null);
@@ -486,8 +483,12 @@ export function PageEditor({
     setWeight: (id, w) => applyDocChange((d) => setWeight(d, id, w)),
     splitEvenly: (kind) => applyDocChange((d) => splitEvenly(d, kind)),
     setTriggers: (ids, t) => applyDocChange((d) => ids.forEach((id) => setTriggers(d, id, t))),
-    setMode: (m) => applyDocChange((d) => setFunnelMode(d, m)),
     loadTemplate: templateRootHtml,
+    // The same fetch as "Copy from a link": the server fetches the page, the relative addresses become absolute here.
+    loadLink: async (url) => {
+      const r = await fetchTemplateFromUrl(url);
+      return r.ok ? { ok: true, html: importHtml(r.html, r.finalUrl).html } : r;
+    },
   };
 
   const activeSteps = outline.pages.filter((p) => p.active);
@@ -572,7 +573,6 @@ export function PageEditor({
                 <SubPagesPanel
                   pages={outline.pages}
                   currentId={currentPageId}
-                  mode={outline.funnelMode}
                   canEdit={fullDoc}
                   actions={subPages}
                   templates={templates}

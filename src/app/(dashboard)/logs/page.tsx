@@ -13,7 +13,7 @@ import { HIT_FILTER_OPTIONS, hitFilterParams, parseHitFilters } from "@/lib/page
 import { connectionType } from "@/lib/connection";
 import { browserFromUA, osFromUA } from "@/lib/user-agent";
 import { normalizeHost } from "@/lib/pages/normalize";
-import { listDomains, listHits, unregisteredHosts, type HitLogRow } from "@/lib/pages/queries";
+import { FUNNEL_DECISIONS, listDomains, listHits, unregisteredHosts, type HitLogRow } from "@/lib/pages/queries";
 import { APP_TZ } from "@/lib/time-zone";
 import { registerSeenDomain } from "../domains/actions";
 
@@ -176,7 +176,7 @@ export default async function LogsPage({
                         {h.page_name}
                       </span>
                     ) : h.page_id ? (
-                      <span className="mt-0.5 block truncate text-xs text-muted">{h.decision === "SERVE · GATE" && h.funnel ? `${h.funnel} · deleted page` : "Deleted page"}</span>
+                      <span className="mt-0.5 block truncate text-xs text-muted">{(FUNNEL_DECISIONS as readonly (string | null)[]).includes(h.decision) && h.funnel ? `${h.funnel} · deleted page` : "Deleted page"}</span>
                     ) : null}
                     {h.redirect_url ? (
                       <span className="mt-0.5 line-clamp-3 break-all font-mono text-[11px] leading-snug text-muted" title={h.redirect_url}>

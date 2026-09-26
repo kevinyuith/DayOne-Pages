@@ -157,12 +157,12 @@ function refresh_routes(string $host, string $path): ?array
         cache_touch_content($id);
     }
 
-    // Knowing up front that the slug has NO funnel steps (neither server
-    // mode nor A/B samples), the 304 goes out without reading the content from disk (see serve_slug).
+    // Knowing up front that the slug has NO funnel steps (nor A/B samples),
+    // the 304 goes out without reading the content from disk (see serve_slug).
     $flag = static function (array $c): array {
         $html = !empty($c['slug_id']) && !empty($c['content_hash']) ? cache_read_content((string) $c['content_hash']) : null;
         if ($html !== null) {
-            $c['funnel'] = funnel_has_sections($html) || funnel_is_server_mode($html);
+            $c['funnel'] = funnel_has_sections($html);
         }
         return $c;
     };

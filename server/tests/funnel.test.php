@@ -7,10 +7,13 @@ $sections = '<section data-dop-page="p_pre" data-dop-name="Presell" data-dop-kin
     . '<section data-dop-page="p_vsl" data-dop-name="VSL" data-dop-kind="main" hidden=""><h1>VSL</h1></section>'
     . '<section data-dop-page="p_br" data-dop-name="Stay" data-dop-kind="backredirect" data-dop-trigger="back exit" hidden><h1>Stay</h1></section>';
 
+// The old data-dop-funnel="server" doesn't matter: a page with steps is always served one step at a time.
 $browser = $doc('', $sections);
 $server = $doc(' data-dop-funnel="server"', $sections);
 
-check('browser mode: untouched', funnel_apply($browser, []) === null);
+same('no mode attribute (old browser mode): one step all the same', 'p_pre', funnel_apply($browser, [])['step'] ?? null);
+check('no mode attribute: the Lander is not in the Pre Lander\'s HTML', !str_contains(funnel_apply($browser, [])['html'] ?? 'VSL', 'VSL'));
+check('no step sections: untouched', funnel_apply($doc('', '<main><section class="x">a</section></main>'), []) === null);
 same('a single step (no kind = Lander): serves it', 'p_a', funnel_apply($doc(' data-dop-funnel="server"', '<section data-dop-page="p_a" data-dop-start>a</section>'), [])['step'] ?? null);
 check('no step with code: untouched', funnel_apply($doc(' data-dop-funnel="server"', '<section data-dop-page="p_a" data-dop-kind="presell"> </section><section data-dop-page="p_b"><!-- nothing --></section>'), []) === null);
 
@@ -74,9 +77,14 @@ same('304 on the same step', 304, $status);
 same('different step with old ETag → 200', 200, $status);
 same('ETag of the new step', '"abc123-p_vsl-k1"', $headers['ETag']);
 cache_put_content('def456', $browser);
-[$status, $headers] = serve_slug(['slug_id' => $tmpSlug, 'content_hash' => 'def456', 'content_type' => ''], make_request([]));
-same('browser mode: ETag is just the hash (no load notice)', '"def456-k1"', $headers['ETag']);
-check('browser mode: Vary without Cookie', !str_contains($headers['Vary'], 'Cookie'));
+[$status, $headers, $body] = serve_slug(['slug_id' => $tmpSlug, 'content_hash' => 'def456', 'content_type' => ''], make_request([]));
+same('no mode attribute: ETag with the step', '"def456-p_pre-k1"', $headers['ETag']);
+check('no mode attribute: Vary with Cookie', str_contains($headers['Vary'], 'Cookie'));
+check('no mode attribute: body with the presell only', str_contains((string) $body, 'Presell') && !str_contains((string) $body, 'VSL'));
+cache_put_content('ghi789', $doc('', '<main><h1>Plain</h1></main>'));
+[$status, $headers] = serve_slug(['slug_id' => $tmpSlug, 'content_hash' => 'ghi789', 'content_type' => ''], make_request([]));
+same('page without steps: ETag is just the hash (no load notice)', '"ghi789"', $headers['ETag']);
+check('page without steps: Vary without Cookie', !str_contains($headers['Vary'], 'Cookie'));
 // "funnel=false" flag in the routes cache: 304 without reading the content (the file may even be gone).
 $flagged = ['slug_id' => $tmpSlug, 'content_hash' => 'ghost99', 'content_type' => '', 'funnel' => false];
 [$status, $headers] = serve_slug($flagged, make_request(['HTTP_IF_NONE_MATCH' => '"ghost99"']));
@@ -108,8 +116,14 @@ $weird = $doc(' data-dop-funnel="server"', '<section data-dop-page="p_x" data-do
 $r = funnel_apply($weird, []);
 check('trigger with $1 escaped on body', $r !== null && str_contains($r['html'], 'data-dop-br-trigger="back $1 \\0"'), substr((string) ($r['html'] ?? ''), 0, 300));
 
-check('funnel_is_server_mode: yes', funnel_is_server_mode($server));
-check('funnel_is_server_mode: no', !funnel_is_server_mode($browser));
+// ── The step cookie: read when well formed; deleted by the response that used it ──
+same('funnel_step_cookie: well formed', 'p_ab12', funnel_step_cookie(['dop_step' => 'p_ab12']));
+same('funnel_step_cookie: missing', null, funnel_step_cookie([]));
+same('funnel_step_cookie: malformed', null, funnel_step_cookie(['dop_step' => 'p_AB;x']));
+same('funnel_step_cookie_clear: same Path, expired', 'dop_step=; Path=/; Max-Age=0; SameSite=Lax', funnel_step_cookie_clear('/'));
+same('funnel_step_cookie_clear: a deeper path', 'dop_step=; Path=/offer/a%20b; Max-Age=0; SameSite=Lax', funnel_step_cookie_clear('/offer/a%20b'));
+same('funnel_step_cookie_clear: a path that could break the header', null, funnel_step_cookie_clear('/a;b'));
+same('funnel_step_cookie_clear: raw spaces', null, funnel_step_cookie_clear('/a b'));
 
 // ── Cookie header → Request->cookies (server mode reads dop_step from here) ──
 $withCookie = make_request(['HTTP_COOKIE' => 'dop_step=p_ab12; _ga=GA1.2; seen=1']);

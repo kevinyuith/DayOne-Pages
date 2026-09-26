@@ -375,7 +375,7 @@ export async function movePage(pageId: string, folder: string | null): Promise<A
 /**
  * Duplicates the page with all its slugs (same HTML), as a draft, in the same
  * folder. Domains and routes keep pointing to the original. The sub-pages
- * (funnel) get new ids: in server mode the `dop_step` cookie is per path and
+ * (funnel) get new ids: the `dop_step` cookie is per path and
  * two slugs with the same step ids would get mixed up.
  */
 export async function duplicatePage(pageId: string): Promise<ActionResult<{ pageId: string }>> {

@@ -633,6 +633,9 @@ function filterArgs(f: HitFilter) {
 }
 
 /** Counters for the period (for the cards). */
+/** A hit the gate sent to a funnel: its first load, or a step switch (the reload to the next step, same visit). */
+export const FUNNEL_DECISIONS = ["SERVE · GATE", "SERVE · GATE · STEP"] as const;
+
 export async function hitStats(since: Date, filter: HitFilter = {}): Promise<HitStats> {
   const { data, error } = await supabaseService().rpc("hit_stats", { p_since: since.toISOString(), ...filterArgs(filter) });
   throwIf(error, "hitStats");
@@ -786,7 +789,7 @@ export async function listHits(
   else if (f.rule === "none") q = q.is("rule", null);
   if (f.unique) q = q.eq("is_unique", f.unique === "unique");
   // Served by a funnel = the gate's funnel decision (the hits from before gate_reason have it too).
-  if (f.funnel === "sent") q = q.eq("decision", "SERVE · GATE");
+  if (f.funnel === "sent") q = q.in("decision", [...FUNNEL_DECISIONS]);
   else if (f.funnel) q = q.eq("gate_reason", f.funnel);
   if (f.interaction === "yes") q = q.not("interaction", "is", null);
   else if (f.interaction === "clicked") q = q.not("clicked_at", "is", null);
