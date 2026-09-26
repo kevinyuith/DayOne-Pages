@@ -1,14 +1,16 @@
 "use client";
 
 import { useActionState, useMemo, useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { HtmlPreview } from "@/components/html-preview";
-import { CodeIcon, DuplicateIcon, FilePlusIcon, LinkIcon } from "@/components/icons";
+import { CodeIcon, DuplicateIcon, ExternalIcon, FilePlusIcon, LinkIcon } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Field, INPUT_CLASS, SELECT_CLASS, TEXTAREA_CLASS } from "@/components/ui/field";
 import { applyPlaceholderFindings, detectPlaceholders, type PlaceholderFinding } from "@/lib/pages/detect-placeholders";
 import { importHtml } from "@/lib/pages/import-html";
 import { PAGE_KIND_LABELS, type PageKind } from "@/lib/pages/types";
 import { createPage, fetchTemplateFromUrl, type CreatePageState } from "./actions";
+import { createFunnelRedirect } from "../funnels/actions";
 
 const INITIAL: CreatePageState = { attempt: 0 };
 
@@ -18,7 +20,7 @@ type TemplateChoice = { id: string; name: string; kind: PageKind; slugs_count: n
 /** New page for a dayone-main funnel (Funnel screen): created with kind FUNNEL, linked to it. */
 export type FunnelTarget = { id: string; defaultName: string };
 
-type Source = "template" | "link" | "html" | "blank";
+type Source = "template" | "link" | "html" | "blank" | "redirect";
 
 const OPTIONS: { key: Source; label: string; hint: string; Icon: typeof FilePlusIcon }[] = [
   { key: "template", label: "Copy from another template", hint: "A copy of an existing template, with all its slugs.", Icon: DuplicateIcon },
@@ -26,6 +28,9 @@ const OPTIONS: { key: Source; label: string; hint: string; Icon: typeof FilePlus
   { key: "html", label: "Copy from HTML", hint: "Paste the code of a ready-made page.", Icon: CodeIcon },
   { key: "blank", label: "Start from scratch", hint: "Starts from the blank template.", Icon: FilePlusIcon },
 ];
+
+/** Only on the Funnel screen: a funnel entry that 302s to a URL instead of serving a page. */
+const REDIRECT_OPTION = { key: "redirect" as const, label: "Redirect", hint: "302s the visitor to a URL. Use {sub1} to drop visit parameters in.", Icon: ExternalIcon };
 
 /**
  * "Create template": first the source (another template, link, pasted HTML or
@@ -52,7 +57,7 @@ export function CreatePageForm({
     return (
       <div className="flex flex-col gap-3">
         <div className="grid gap-2 sm:grid-cols-2">
-          {OPTIONS.map(({ key, label, hint, Icon }) => {
+          {(funnel ? [...OPTIONS, REDIRECT_OPTION] : OPTIONS).map(({ key, label, hint, Icon }) => {
             const disabled = key === "template" && templates.length === 0;
             return (
               <button
@@ -84,7 +89,73 @@ export function CreatePageForm({
     );
   }
 
+  if (source === "redirect" && funnel) {
+    return <RedirectSource funnel={funnel} onBack={() => setSource(null)} onCancel={onCancel} />;
+  }
+
   return <SourceForm key={source} source={source} folderId={folderId} templates={templates} funnel={funnel} onBack={() => setSource(null)} onCancel={onCancel} />;
+}
+
+/** Create a redirect entry of the funnel: a name and the destination URL template. */
+function RedirectSource({ funnel, onBack, onCancel }: { funnel: FunnelTarget; onBack: () => void; onCancel?: () => void }) {
+  const router = useRouter();
+  const [name, setName] = useState(funnel.defaultName);
+  const [url, setUrl] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [pending, start] = useTransition();
+
+  const submit = () =>
+    start(async () => {
+      const r = await createFunnelRedirect(funnel.id, name, url);
+      if (!r.ok) {
+        setError(r.reason);
+        return;
+      }
+      router.refresh();
+      onCancel?.();
+    });
+
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        submit();
+      }}
+      className="flex flex-col gap-3"
+    >
+      <div className="flex items-center gap-2 text-sm">
+        <button type="button" onClick={onBack} disabled={pending} className="text-muted hover:text-foreground">
+          ← Options
+        </button>
+        <span className="text-muted">·</span>
+        <span className="font-medium">Redirect</span>
+      </div>
+      <Field label="Destination URL">
+        <input value={url} onChange={(e) => setUrl(e.target.value)} maxLength={2000} placeholder="https://offer.com/?utm_campaign={sub1}" disabled={pending} className={`${INPUT_CLASS} font-mono text-xs`} />
+      </Field>
+      <p className="-mt-1 text-xs text-muted">
+        Use {"{name}"} to drop a visit parameter into the URL, e.g. {"{sub1}"} or {"{fbclid}"}. Only what the URL names is carried; anything else is left out.
+      </p>
+      <Field label="Name">
+        <input value={name} onChange={(e) => setName(e.target.value)} required minLength={2} maxLength={120} disabled={pending} className={INPUT_CLASS} />
+      </Field>
+      {error ? (
+        <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+          {error}
+        </p>
+      ) : null}
+      <div className="mt-1 flex gap-2">
+        <Button type="submit" disabled={pending || !url.trim()}>
+          {pending ? "Creating…" : "Create redirect"}
+        </Button>
+        {onCancel ? (
+          <Button variant="ghost" onClick={onCancel} disabled={pending}>
+            Cancel
+          </Button>
+        ) : null}
+      </div>
+    </form>
+  );
 }
 
 function SourceForm({

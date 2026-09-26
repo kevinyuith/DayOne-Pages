@@ -3,10 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { errorReason, fail, type ActionResult } from "@/lib/action-result";
 import { purgeHost } from "@/lib/origin/purge";
-import { loadFunnelWeights, writeFunnelWeights } from "@/lib/pages/funnel-weights";
+import { funnelPageStatus, joinFunnelSplit, loadFunnelWeights, writeFunnelWeights } from "@/lib/pages/funnel-weights";
 import { isValidSlug, normalizePath } from "@/lib/pages/normalize";
 import { STARTER_HTML } from "@/lib/pages/starter-template";
-import { evenSplit, normalizeShares, setShare } from "@/lib/pages/traffic";
+import { normalizeShares } from "@/lib/pages/traffic";
 import { getFunnelVslPanel, searchProducedVsls, type FunnelVslPanel, type ProducedVsl } from "@/lib/pages/queries";
 import { isPageStatus } from "@/lib/pages/types";
 import { supabaseService } from "@/lib/supabase/service";
@@ -48,60 +48,24 @@ async function funnelOf(pageId: string): Promise<string | null> {
 
 // ── A/B test between the pages ───────────────────────────────────────────────
 
-/** A page's % (0–100) in the funnel's A/B test; the others split the rest in the proportion they had. 0 pauses. */
-export async function setPageShare(pageId: string, share: number): Promise<ActionResult> {
-  if (!UUID_RE.test(pageId)) return fail("Invalid page.");
-  if (!Number.isInteger(share) || share < 0 || share > 100) return fail("The traffic goes from 0 to 100%.");
-  try {
-    const funnelId = await funnelOf(pageId);
-    if (!funnelId) return fail("Page not found.");
-    const current = await loadFunnelWeights(funnelId);
-    await writeFunnelWeights(funnelId, current, setShare(current, pageId, share));
-    revalidatePath("/funnels");
-    return purgeFunnelDomains(funnelId);
-  } catch (cause) {
-    return fail(errorReason(cause));
-  }
-}
-
-/** Equal shares between the funnel's pages (50/50, 34/33/33…). `funnelId` = pages.funnels row. */
-export async function splitFunnelEvenly(funnelId: string): Promise<ActionResult> {
-  if (!UUID_RE.test(funnelId)) return fail("Invalid funnel.");
-  try {
-    const current = await loadFunnelWeights(funnelId);
-    await writeFunnelWeights(funnelId, current, evenSplit(Object.keys(current)));
-    revalidatePath("/funnels");
-    return purgeFunnelDomains(funnelId);
-  } catch (cause) {
-    return fail(errorReason(cause));
-  }
-}
-
 /**
- * Copies the whole funnel to the domain: one copy of each page (the ones not
- * archived), tagged with the funnel. On the domain, copies of the same funnel
- * compete for the same URL's traffic by their % (pages.resolve + split_pick).
- * A domain without a default page gets the first one.
+ * Saves the % of the funnel's published entries (pages and redirects) at once:
+ * only when they add up to exactly 100 and they are exactly the funnel's
+ * published entries (one may have been published or unpublished meanwhile).
+ * 0 pauses an entry. `funnelId` = pages.funnels row.
  */
-export async function copyFunnelToDomain(domainId: string, funnelId: string): Promise<ActionResult<{ copied: number }>> {
-  if (!UUID_RE.test(domainId) || !UUID_RE.test(funnelId)) return fail("Choose a domain.");
+export async function saveFunnelShares(funnelId: string, shares: Record<string, number>): Promise<ActionResult> {
+  if (!UUID_RE.test(funnelId)) return fail("Invalid funnel.");
+  const entries = Object.entries(shares);
+  if (entries.some(([id, w]) => !UUID_RE.test(id) || !Number.isInteger(w) || w < 0 || w > 100)) return fail("Each share goes from 0 to 100%.");
+  if (entries.reduce((n, [, w]) => n + w, 0) !== 100) return fail("The shares must add up to 100%.");
   try {
-    const db = supabaseService();
-    const { data, error } = await db.rpc("domain_funnel_copy", { p_domain: domainId, p_funnel: funnelId });
-    if (error) {
-      if (error.code === "P0002") return fail("Domain not found.");
-      throw new Error(error.message);
-    }
-    const copied = Number(data ?? 0);
-    if (!copied) return fail("This funnel has no pages yet.");
-    const got = await db.from("domains").select("domain").eq("id", domainId).maybeSingle();
-    if (got.error) throw new Error(got.error.message);
+    const current = await loadFunnelWeights(funnelId);
+    const ids = Object.keys(current);
+    if (ids.length !== entries.length || !ids.every((id) => id in shares)) return fail("The funnel's published pages changed. Reload and try again.");
+    await writeFunnelWeights(funnelId, current, shares);
     revalidatePath("/funnels");
-    revalidatePath("/domains", "layout");
-    const domain = (got.data as { domain: string } | null)?.domain;
-    const r = domain ? await purgeHost(domain) : null;
-    if (r && !r.ok && !r.skipped) return fail(`Copied, but the server cache of ${domain} wasn't cleared. It takes effect within 30 s.`);
-    return { ok: true, copied };
+    return purgeFunnelDomains(funnelId);
   } catch (cause) {
     return fail(errorReason(cause));
   }
@@ -127,6 +91,7 @@ export async function saveFunnelPage(funnelId: string, input: SaveEditorInput): 
     return fail("The HTML exceeds 5 MB. Host images and videos elsewhere and reference them by URL.");
   }
   try {
+    const before = await funnelPageStatus(funnelId, page.id);
     const { data, error } = await supabaseService().rpc("funnel_page_save", {
       p_funnel: funnelId,
       p_page: page.id,
@@ -140,6 +105,18 @@ export async function saveFunnelPage(funnelId: string, input: SaveEditorInput): 
     if (error) throw new Error(error.message);
     const row = (data as { page_updated_at: string; slug_updated_at: string | null; content_hash: string | null }[] | null)?.[0];
     if (!row) return fail("conflict");
+    // Only published pages get traffic: publishing joins the A/B test, unpublishing leaves it.
+    const nowPublished = page.status === "PUBLISHED";
+    if (nowPublished !== (before === "PUBLISHED")) {
+      if (nowPublished) {
+        await joinFunnelSplit(funnelId, page.id);
+      } else {
+        const weights = await loadFunnelWeights(funnelId);
+        await writeFunnelWeights(funnelId, weights, normalizeShares(weights));
+      }
+      revalidatePath("/funnels");
+      await purgeFunnelDomains(funnelId);
+    }
     return { ok: true, pageUpdatedAt: row.page_updated_at, slugUpdatedAt: row.slug_updated_at, contentHash: row.content_hash };
   } catch (cause) {
     return fail(errorReason(cause));
@@ -227,6 +204,102 @@ export async function removeFunnelPage(funnelId: string, pageId: string): Promis
     return fail(errorReason(cause));
   }
 }
+
+/**
+ * A redirect entry of a funnel: a FUNNEL page whose "/" slug 302s to a URL
+ * template (content_type text/x-redirect). It lives in the split like a page —
+ * its own %, status and copy-to-domain — so it uses funnel_page_add /
+ * funnel_page_save. The URL may hold {name} placeholders filled from the
+ * visit's query by the delivery server (only what the template names goes).
+ */
+const REDIRECT_URL_MAX = 2000;
+
+function cleanRedirectUrl(raw: string): string | null {
+  const url = raw.trim();
+  if (url.length > REDIRECT_URL_MAX || !/^https?:\/\//i.test(url) || /[\s<>"']/.test(url)) return null;
+  return url;
+}
+
+/**
+ * Writes a redirect's name and destination, published: a redirect has no
+ * content to review, so it is always live — it is paused with 0% traffic.
+ * Returns false when the entry changed elsewhere in between.
+ */
+async function writeRedirect(funnelId: string, pageId: string, name: string, dest: string): Promise<"ok" | "conflict" | "missing"> {
+  const db = supabaseService();
+  const { data, error } = await db.rpc("funnel_pages_summary", { p_funnel_ids: [funnelId] });
+  if (error) throw new Error(error.message);
+  const row = ((data as { page_id: string; updated_at: string; redirect: string | null; slugs: { slug: string; updated_at: string }[] }[] | null) ?? []).find((r) => r.page_id === pageId);
+  if (!row || row.redirect === null) return "missing";
+  const slug = row.slugs.find((sl) => sl.slug === "/");
+  const saved = await db.rpc("funnel_page_save", {
+    p_funnel: funnelId,
+    p_page: pageId,
+    p_name: name,
+    p_status: "PUBLISHED",
+    p_expected_page_updated_at: row.updated_at,
+    p_slug: "/",
+    p_content: dest,
+    p_expected_slug_updated_at: slug?.updated_at ?? null,
+  });
+  if (saved.error) throw new Error(saved.error.message);
+  return ((saved.data as unknown[] | null) ?? []).length === 0 ? "conflict" : "ok";
+}
+
+/** New redirect entry, live right away (paused with 0%). Returns its page id. */
+export async function createFunnelRedirect(mainFunnelId: string, name: string, url: string): Promise<ActionResult<{ pageId: string }>> {
+  const clean = name.trim();
+  if (!UUID_RE.test(mainFunnelId)) return fail("Invalid funnel.");
+  if (clean.length < NAME_MIN || clean.length > NAME_MAX) return fail(`The name has ${NAME_MIN} to ${NAME_MAX} characters.`);
+  const dest = cleanRedirectUrl(url);
+  if (!dest) return fail("Enter a full https:// destination (up to 2000 characters, no spaces).");
+  try {
+    const db = supabaseService();
+    const row = await db.rpc("funnel_for", { p_main_funnel: mainFunnelId });
+    if (row.error) {
+      if (row.error.code === "23503") return fail("This funnel no longer exists.");
+      throw new Error(row.error.message);
+    }
+    const funnelRow = String(row.data);
+    const slugs = { "/": { title: clean, content: dest, content_type: "text/x-redirect", is_active: true } };
+    const added = await db.rpc("funnel_page_add", { p_funnel: funnelRow, p_name: clean, p_slugs: slugs, p_notes: null });
+    if (added.error) throw new Error(added.error.message);
+    const pageId = String(added.data);
+    // Live right away, then it joins the A/B test (the published entries' % add up to 100, the others shrink).
+    if ((await writeRedirect(funnelRow, pageId, clean, dest)) !== "ok") return fail("The redirect was created but couldn't be published. Open it and save again.");
+    await joinFunnelSplit(funnelRow, pageId);
+    revalidatePath("/funnels");
+    const purged = await purgeFunnelDomains(funnelRow);
+    return purged.ok ? { ok: true, pageId } : purged;
+  } catch (cause) {
+    return fail(errorReason(cause));
+  }
+}
+
+/** Edit a redirect entry: name and destination URL (always live; pause it with 0%). */
+export async function saveFunnelRedirect(pageId: string, name: string, url: string): Promise<ActionResult> {
+  const clean = name.trim();
+  if (!UUID_RE.test(pageId)) return fail("Invalid redirect.");
+  if (clean.length < NAME_MIN || clean.length > NAME_MAX) return fail(`The name has ${NAME_MIN} to ${NAME_MAX} characters.`);
+  const dest = cleanRedirectUrl(url);
+  if (!dest) return fail("Enter a full https:// destination (up to 2000 characters, no spaces).");
+  try {
+    const funnelId = await funnelOf(pageId);
+    if (!funnelId) return fail("Redirect not found.");
+    const before = await funnelPageStatus(funnelId, pageId);
+    const r = await writeRedirect(funnelId, pageId, clean, dest);
+    if (r === "missing") return fail("This entry is not a redirect.");
+    if (r === "conflict") return fail("The redirect changed elsewhere. Reload and try again.");
+    // A redirect saved while still a draft (made before redirects were always live) goes live and joins the split.
+    if (before !== "PUBLISHED") await joinFunnelSplit(funnelId, pageId);
+    revalidatePath("/funnels");
+    return purgeFunnelDomains(funnelId);
+  } catch (cause) {
+    return fail(errorReason(cause));
+  }
+}
+
+// ── The funnel's VSL split (pages.funnels.vsl) ───────────────────────────────
 
 // ── The funnel's VSL split (pages.funnels.vsl) ───────────────────────────────
 // The split is ours: saved only here, nothing goes to VTurb. The delivery

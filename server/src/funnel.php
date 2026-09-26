@@ -369,7 +369,7 @@ function split_pick(array $route, array $cookies, ?callable $rand = null): array
     $value = implode(',', array_slice([$pick['page_id'], ...$keep], 0, SPLIT_MAX_IDS));
 
     $chosen = [...$route];
-    foreach (['page_id', 'slug_id', 'content_type', 'content_hash', 'funnel'] as $k) {
+    foreach (['page_id', 'slug_id', 'content_type', 'content_hash', 'funnel', 'redirect'] as $k) {
         if (array_key_exists($k, $pick)) {
             $chosen[$k] = $pick[$k];
         }
@@ -382,6 +382,25 @@ function split_pick(array $route, array $cookies, ?callable $rand = null): array
 function split_cookie(string $value): string
 {
     return SPLIT_COOKIE . "=$value; Path=/; Max-Age=2592000; HttpOnly; Secure; SameSite=Lax";
+}
+
+/**
+ * A funnel redirect's destination: the stored URL TEMPLATE with every {name}
+ * replaced by the visit's query param `name` (URL-encoded; missing = empty).
+ * ONLY what the template names goes through — nothing else is appended.
+ */
+function funnel_redirect_url(string $template, string $rawQuery): string
+{
+    $q = [];
+    parse_str($rawQuery, $q);
+    return (string) (preg_replace_callback(
+        '/\{([A-Za-z0-9_]{1,64})\}/',
+        static function (array $m) use ($q): string {
+            $v = $q[$m[1]] ?? '';
+            return rawurlencode(is_scalar($v) ? (string) $v : '');
+        },
+        $template,
+    ) ?? $template);
 }
 
 /**

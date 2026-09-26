@@ -187,6 +187,8 @@ type FunnelPageRow = {
   created_at: string;
   updated_at: string;
   slugs: SiteSlugSummary[];
+  /** The destination URL template when the entry is a redirect (content_type text/x-redirect); null for a page. */
+  redirect: string | null;
 };
 
 async function funnelPages(funnelIds: string[] | null): Promise<FunnelPageRow[]> {
@@ -206,6 +208,8 @@ export type FunnelBoardPage = {
   status: PageStatus;
   /** The page's % (0–100) in the funnel's A/B test; a funnel's pages add up to 100. 0 = paused. */
   weight: number;
+  /** The destination URL template when this entry is a redirect (302), not a page; null for a page. */
+  redirect: string | null;
 };
 
 /** A row of the Funnel screen: the dayone-main funnel (null = funnel pages with no funnel) and its pages. */
@@ -227,7 +231,7 @@ export async function getFunnelBoard(since: Date): Promise<{ rows: FunnelBoardRo
   throwIf(funnels.error, "main_funnels");
   throwIf(stats.error, "funnel_page_stats");
 
-  const toPage = (r: FunnelPageRow): FunnelBoardPage => ({ id: r.page_id, funnelId: r.funnel_id, name: r.name, status: r.status, weight: r.weight });
+  const toPage = (r: FunnelPageRow): FunnelBoardPage => ({ id: r.page_id, funnelId: r.funnel_id, name: r.name, status: r.status, weight: r.weight, redirect: r.redirect });
   const list = ((funnels.data ?? []) as MainFunnel[]).map((f) => ({ funnel: f, pages: pages.filter((r) => r.main_funnel_id === f.id).map(toPage) }));
   const known = new Set(list.map((l) => l.funnel.id));
   const orphans = pages.filter((r) => !r.main_funnel_id || !known.has(r.main_funnel_id)).map(toPage);

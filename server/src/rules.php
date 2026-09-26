@@ -136,6 +136,8 @@ function gate_pick(array $routes, array $gate, Request $req): ?array
         'slug_id' => (string) ($first['page_id'] ?? ''),
         'content_type' => (string) ($first['content_type'] ?? 'text/html; charset=utf-8'),
         'content_hash' => (string) ($first['content_hash'] ?? ''),
+        // A funnel entry can be a redirect (content_type text/x-redirect): its URL template is in `redirect`.
+        'redirect' => is_string($first['redirect'] ?? null) ? $first['redirect'] : null,
         'preserve_query' => true,
         'split' => array_map(
             fn (array $c): array => [
@@ -144,6 +146,7 @@ function gate_pick(array $routes, array $gate, Request $req): ?array
                 'content_type' => (string) ($c['content_type'] ?? 'text/html; charset=utf-8'),
                 'content_hash' => (string) ($c['content_hash'] ?? ''),
                 'weight' => (int) ($c['weight'] ?? 0),
+                'redirect' => is_string($c['redirect'] ?? null) ? $c['redirect'] : null,
             ],
             $split,
         ),

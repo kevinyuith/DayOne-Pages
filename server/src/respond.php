@@ -97,6 +97,21 @@ function decide_route(array $route, Request $req, ?array $cond = null): ?array
         case 'SERVE':
             // A/B test between the pages of a funnel: the route becomes the drawn page.
             [$route, $splitCookie] = split_pick($route, $req->cookies);
+            // A funnel entry that is a redirect (gate): 302 to its URL template, filled from the query.
+            if (!empty($route['redirect'])) {
+                $location = funnel_redirect_url((string) $route['redirect'], $req->rawQuery);
+                [$rStatus, $rHeaders] = redirect_to(['redirect_url' => $location, 'preserve_query' => false, 'status_code' => 302], $req);
+                if (isset($route['split_count'])) {
+                    if (!str_contains((string) ($rHeaders['Vary'] ?? ''), 'Cookie')) {
+                        $rHeaders['Vary'] = trim(($rHeaders['Vary'] ?? '') . ', Cookie', ', ');
+                    }
+                    if ($splitCookie !== null) {
+                        $rHeaders['Set-Cookie'] = [...(array) ($rHeaders['Set-Cookie'] ?? []), split_cookie($splitCookie)];
+                    }
+                }
+                $route = [...$route, 'action' => 'REDIRECT', 'redirect_url' => $location];
+                return [$rStatus, $rHeaders, '', 'redirect', $route];
+            }
             $r = serve_slug($route, $req);
             if (isset($route['split_count'])) {
                 if (!str_contains((string) ($r[1]['Vary'] ?? ''), 'Cookie')) {

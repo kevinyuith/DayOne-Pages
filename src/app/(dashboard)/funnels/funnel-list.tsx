@@ -3,17 +3,17 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Fragment, useMemo, useState, useTransition } from "react";
-import { ChevronRightIcon, PencilIcon, PlusIcon } from "@/components/icons";
+import { ChevronRightIcon, FileIcon, LinkIcon, PencilIcon, PlusIcon, TrashIcon } from "@/components/icons";
 import { Badge, PAGE_STATUS_TONE } from "@/components/ui/badge";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { SELECT_BASE } from "@/components/ui/field";
+import { INPUT_CLASS } from "@/components/ui/field";
 import type { FunnelBoardPage, FunnelBoardRow, VersionStats } from "@/lib/pages/queries";
-import { PAGE_STATUS_LABELS, type PageKind, type PageStatus } from "@/lib/pages/types";
+import { PAGE_STATUS_LABELS, type PageKind } from "@/lib/pages/types";
 import { CreatePageForm, type FunnelTarget } from "../templates/create-page-form";
-import { evenSplit, setShare } from "@/lib/pages/traffic";
-import { copyFunnelToDomain, setPageShare, splitFunnelEvenly } from "./actions";
+import { evenSplit, normalizeShares } from "@/lib/pages/traffic";
+import { createFunnelRedirect, removeFunnelPage, saveFunnelRedirect, saveFunnelShares } from "./actions";
 import { FunnelFilterBar, NO_FUNNEL_FILTERS, funnelFilterOptions, funnelMatches } from "./funnel-filters";
 import { FunnelVslsPanel } from "./funnel-vsls";
 
@@ -22,37 +22,36 @@ import { FunnelVslsPanel } from "./funnel-vsls";
  * collapsed. Open, it shows the A/B test between its pages, one row per
  * page: the traffic % (the funnel's % always add up to 100), real loads
  * (views), how many clicked out (clicks) and the rate, summing the copies on
- * all domains. Clicking the page opens the editor; "Copy to domain" takes the
- * whole funnel, and on the domain the pages compete for the same URL by weight.
+ * all domains. Clicking a page opens the editor, a redirect its form. The %
+ * are typed in the rows and saved together, only when they add up to 100.
  */
 
-const STATUS_DOT: Record<PageStatus, string> = { PUBLISHED: "bg-emerald-500", DRAFT: "bg-amber-500", ARCHIVED: "bg-foreground/30" };
 const UNLINKED = "unlinked";
 
 const num = (n: number) => n.toLocaleString("en-US");
 const pct = (n: number) => `${n.toLocaleString("en-US", { maximumFractionDigits: 2, minimumFractionDigits: 2 })}%`;
 const rate = (s: VersionStats | undefined) => (s && s.views > 0 ? pct((s.clicks / s.views) * 100) : "—");
 
+/** Does the funnel have somewhere to send a click: a published page or redirect with a share above 0? */
+const isLive = (pages: FunnelBoardPage[]) => pages.some((p) => p.status === "PUBLISHED" && p.weight > 0);
+
 /** The funnel's numbers: the sum of its pages. */
 function sum(pages: FunnelBoardPage[], stats: Record<string, VersionStats>): VersionStats {
   return pages.reduce((t, p) => ({ views: t.views + (stats[p.id]?.views ?? 0), clicks: t.clicks + (stats[p.id]?.clicks ?? 0) }), { views: 0, clicks: 0 });
 }
 
-const GRID = "grid grid-cols-[1.5rem_3.5rem_minmax(12rem,1fr)_8rem_4rem_5rem_6rem_6rem_6rem_6rem] items-center gap-3";
+const GRID = "grid grid-cols-[1.5rem_4.5rem_minmax(12rem,1fr)_8rem_4rem_5rem_6rem_6rem_6rem_6rem] items-center gap-3";
 
 export function FunnelList({
   rows,
   stats,
   templates,
-  domains,
   days,
   initialOpen,
 }: {
   rows: FunnelBoardRow[];
   /** Per library page: loads (views) and outbound clicks (clicks). */
   stats: Record<string, VersionStats>;
-  /** Where "Copy to domain" can take the funnel. */
-  domains: { id: string; domain: string }[];
   /** For "copy from another template" (includes other funnels' pages). */
   templates: { id: string; name: string; kind: PageKind; slugs_count: number }[];
   days: number;
@@ -62,6 +61,8 @@ export function FunnelList({
   const [query, setQuery] = useState("");
   // New page: the same flow as "Create template" (source, preview, placeholders), already linked to the funnel.
   const [creating, setCreating] = useState<FunnelTarget | null>(null);
+  // Redirect entry dialog: create (page = null) or edit an existing redirect.
+  const [redir, setRedir] = useState<{ mainFunnelId: string; page: FunnelBoardPage | null; defaultName: string } | null>(null);
   const [filters, setFilters] = useState(NO_FUNNEL_FILTERS);
   // The tab open inside each funnel (Pages by default).
   const [tabOf, setTabOf] = useState<Record<string, "pages" | "vsls">>({});
@@ -158,7 +159,13 @@ export function FunnelList({
                   className={`${GRID} w-full border-b border-border px-4 py-3 text-left text-sm transition-colors hover:bg-foreground/[0.03] ${isOpen ? "bg-foreground/[0.03]" : ""}`}
                 >
                   <ChevronRightIcon className={`size-4 text-muted transition-transform ${isOpen ? "rotate-90" : ""}`} />
-                  <span className="w-fit rounded-md bg-foreground/10 px-1.5 py-0.5 font-mono text-xs font-semibold">{f?.code ?? "—"}</span>
+                  <span className="flex items-center gap-1">
+                    {/* No published page or redirect with traffic: the funnel has nowhere to send a click. */}
+                    <span className="w-2 text-center font-bold text-red-600 dark:text-red-400" title={f && !isLive(r.pages) ? "No published page or redirect: this funnel gets no traffic." : undefined}>
+                      {f && !isLive(r.pages) ? "!" : ""}
+                    </span>
+                    <span className="w-fit rounded-md bg-foreground/10 px-1.5 py-0.5 font-mono text-xs font-semibold">{f?.code ?? "—"}</span>
+                  </span>
                   <span className="truncate font-medium">{f ? f.name : "Pages without a funnel"}</span>
                   <span className="truncate text-muted">{f?.platform ?? ""}</span>
                   <span className="text-muted">{f?.niche ?? ""}</span>
@@ -199,7 +206,7 @@ export function FunnelList({
                         ) : null}
                         {r.pages.length ? (
                           // The key resets the edited weights when the server returns the new ones.
-                          <PagesTable key={r.pages.map((p) => `${p.id}:${p.weight}`).join()} funnelId={f ? (r.pages[0]?.funnelId ?? null) : null} pages={r.pages} stats={stats} />
+                          <PagesTable key={r.pages.map((p) => `${p.id}:${p.weight}:${p.status}`).join()} funnelId={f ? (r.pages[0]?.funnelId ?? null) : null} pages={r.pages} stats={stats} onEditRedirect={f ? (p) => setRedir({ mainFunnelId: f.id, page: p, defaultName: p.name }) : undefined} />
                         ) : null}
                         {f ? (
                           <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
@@ -210,7 +217,6 @@ export function FunnelList({
                             >
                               <PlusIcon className="size-3.5" /> New page
                             </button>
-                            {r.pages.length ? <CopyToDomain funnelId={r.pages[0].funnelId} domains={domains} /> : null}
                           </div>
                         ) : null}
                       </>
@@ -227,6 +233,10 @@ export function FunnelList({
       <Dialog open={creating !== null} title={creating ? `New page · ${creating.defaultName}` : "New page"} onClose={() => setCreating(null)} className="sm:max-w-2xl">
         {creating ? <CreatePageForm key={creating.id} templates={templates} funnel={creating} onCancel={() => setCreating(null)} /> : null}
       </Dialog>
+
+      <Dialog open={redir !== null} title={redir?.page ? "Edit redirect" : "New redirect"} onClose={() => setRedir(null)} className="sm:max-w-xl">
+        {redir ? <RedirectForm key={redir.page?.id ?? "new"} target={redir} onDone={() => setRedir(null)} onCancel={() => setRedir(null)} /> : null}
+      </Dialog>
     </div>
   );
 }
@@ -236,35 +246,59 @@ export function FunnelList({
  * %; on leaving it, the others split the rest in the proportion they had (the
  * % always add up to 100 — traffic.ts, the same math the action saves).
  */
-function PagesTable({ funnelId, pages, stats }: { funnelId: string | null; pages: FunnelBoardPage[]; stats: Record<string, VersionStats> }) {
+function PagesTable({ funnelId, pages, stats, onEditRedirect }: { funnelId: string | null; pages: FunnelBoardPage[]; stats: Record<string, VersionStats>; onEditRedirect?: (p: FunnelBoardPage) => void }) {
   const router = useRouter();
-  const [shares, setShares] = useState<Record<string, number>>(() => Object.fromEntries(pages.map((p) => [p.id, p.weight])));
-  const [draft, setDraft] = useState<{ id: string; value: string } | null>(null);
+  // Only a published page or redirect gets traffic, so only those hold a share (they add up to 100).
+  const live = pages.filter((p) => p.status === "PUBLISHED");
+  // The saved shares, shown as each one's real share of the traffic: the stored values rescaled to 100
+  // (the proportions the server uses). All at 0 = nothing is served, so they stay at 0.
+  const [saved] = useState<Record<string, number>>(() => {
+    const raw = Object.fromEntries(live.map((p) => [p.id, p.weight]));
+    return live.some((p) => p.weight > 0) ? normalizeShares(raw) : raw;
+  });
+  // The fields as typed. Nothing is saved until Save, and Save only works when they add up to 100.
+  const [text, setText] = useState<Record<string, string>>(() => Object.fromEntries(live.map((p) => [p.id, String(saved[p.id] ?? 0)])));
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const editHref = (p: FunnelBoardPage) => `/funnels/${p.id}/edit`;
-  // Highest share first (by the saved %: the rows move when the field is left, not while typing).
-  const sorted = [...pages].sort((a, b) => (shares[b.id] ?? 0) - (shares[a.id] ?? 0) || a.name.localeCompare(b.name));
+  // Highest saved share first (the rows don't move while typing).
+  const sorted = [...pages].sort((a, b) => (saved[b.id] ?? -1) - (saved[a.id] ?? -1) || a.name.localeCompare(b.name));
 
-  // The value comes from the field (not the state): leaving right after typing still saves the new number.
-  const commit = (p: FunnelBoardPage, raw: string) => {
-    setDraft(null);
-    const value = Math.max(0, Math.min(100, Math.round(Number(raw) || 0)));
-    if (value === shares[p.id]) return;
-    setShares(setShare(shares, p.id, value));
+  const valueOf = (id: string): number | null => {
+    const t = (text[id] ?? "").trim();
+    return /^\d{1,3}$/.test(t) && Number(t) <= 100 ? Number(t) : null;
+  };
+  const values = live.map((p) => valueOf(p.id));
+  const valid = values.every((v) => v !== null);
+  const total = values.reduce<number>((n, v) => n + (v ?? 0), 0);
+  const dirty = live.some((p) => valueOf(p.id) !== (saved[p.id] ?? 0));
+  const canSave = !!funnelId && valid && total === 100 && dirty && !pending;
+
+  const evenly = () => {
+    const even = evenSplit(live.map((p) => p.id));
+    setText(Object.fromEntries(live.map((p) => [p.id, String(even[p.id] ?? 0)])));
+  };
+  const reset = () => {
+    setError(null);
+    setText(Object.fromEntries(live.map((p) => [p.id, String(saved[p.id] ?? 0)])));
+  };
+  // Deletes a page or redirect from the funnel; the published ones left are rescaled to 100.
+  const remove = (p: FunnelBoardPage) => {
+    const what = p.redirect !== null ? `the redirect "${p.name}"` : `the page "${p.name}"`;
+    const lost = p.redirect !== null ? "" : " Its HTML will be lost.";
+    if (!window.confirm(`Delete ${what} from the funnel?${lost} Copies on domains stay, but stop getting traffic.`)) return;
     start(async () => {
-      const r = await setPageShare(p.id, value);
+      const r = await removeFunnelPage(p.funnelId, p.id);
       setError(r.ok ? null : r.reason);
-      router.refresh();
+      if (r.ok) router.refresh();
     });
   };
-  const evenly = () => {
-    if (!funnelId) return;
-    setShares(evenSplit(pages.map((p) => p.id)));
+  const save = () => {
+    if (!canSave || !funnelId) return;
     start(async () => {
-      const r = await splitFunnelEvenly(funnelId);
+      const r = await saveFunnelShares(funnelId, Object.fromEntries(live.map((p) => [p.id, valueOf(p.id) ?? 0])));
       setError(r.ok ? null : r.reason);
-      router.refresh();
+      if (r.ok) router.refresh();
     });
   };
 
@@ -280,7 +314,7 @@ function PagesTable({ funnelId, pages, stats }: { funnelId: string | null; pages
               <th className="px-3 py-2 text-right font-medium">Clicks</th>
               <th className="px-3 py-2 text-right font-medium">CTR</th>
               <th className="px-3 py-2 text-right">
-                {pages.length > 1 && funnelId ? (
+                {live.length > 1 && funnelId ? (
                   <button type="button" onClick={evenly} disabled={pending} className="text-xs font-medium text-muted hover:text-foreground">
                     Split evenly
                   </button>
@@ -291,23 +325,26 @@ function PagesTable({ funnelId, pages, stats }: { funnelId: string | null; pages
           <tbody>
             {sorted.map((p) => {
               const s = stats[p.id];
-              const w = shares[p.id] ?? 0;
               return (
                 <tr key={p.id} className="border-b border-border last:border-0 hover:bg-foreground/[0.03]">
                   <td className="whitespace-nowrap px-3 py-2">
-                    {pages.length > 1 ? (
+                    {p.status !== "PUBLISHED" ? (
+                      <span className="text-xs text-muted" title="Only a published page gets traffic.">
+                        —
+                      </span>
+                    ) : live.length > 1 ? (
                       <span className="inline-flex items-center gap-1">
                         <input
                           type="number"
                           min={0}
                           max={100}
-                          value={draft?.id === p.id ? draft.value : String(w)}
-                          onChange={(e) => setDraft({ id: p.id, value: e.target.value })}
-                          onBlur={(e) => commit(p, e.currentTarget.value)}
-                          onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+                          value={text[p.id] ?? ""}
+                          onChange={(e) => setText({ ...text, [p.id]: e.target.value })}
+                          onKeyDown={(e) => e.key === "Enter" && save()}
+                          disabled={pending}
                           aria-label={`Traffic of ${p.name}`}
-                          title="Share of the funnel's traffic (0 = paused). The pages always add up to 100%."
-                          className="h-7 w-14 rounded-md border border-border bg-transparent px-1.5 text-right text-xs tabular-nums"
+                          title="Share of the funnel's traffic (0 = paused)."
+                          className={`h-7 w-14 rounded-md border bg-transparent px-1.5 text-right text-xs tabular-nums ${valueOf(p.id) === null ? "border-red-500" : "border-border"}`}
                         />
                         <span className="text-xs text-muted">%</span>
                       </span>
@@ -316,20 +353,33 @@ function PagesTable({ funnelId, pages, stats }: { funnelId: string | null; pages
                     )}
                   </td>
                   <td className="px-3 py-2">
-                    <Link href={editHref(p)} className="flex items-center gap-2">
-                      <span className={`size-2.5 shrink-0 rounded-full ${STATUS_DOT[p.status]}`} />
-                      <span className="font-medium">{p.name}</span>
-                      <Badge tone={PAGE_STATUS_TONE[p.status]}>{PAGE_STATUS_LABELS[p.status]}</Badge>
-                    </Link>
+                    {p.redirect !== null ? (
+                      <button type="button" onClick={() => onEditRedirect?.(p)} className="flex max-w-full items-center gap-2 text-left" title={p.redirect}>
+                        <LinkIcon className="size-4 shrink-0 text-muted" />
+                        <span className="font-medium">{p.name}</span>
+                        <span className="truncate font-mono text-xs text-muted">→ {p.redirect}</span>
+                      </button>
+                    ) : (
+                      <Link href={editHref(p)} className="flex items-center gap-2">
+                        <FileIcon className="size-4 shrink-0 text-muted" />
+                        <span className="font-medium">{p.name}</span>
+                        <Badge tone={PAGE_STATUS_TONE[p.status]}>{PAGE_STATUS_LABELS[p.status]}</Badge>
+                      </Link>
+                    )}
                   </td>
-                  <td className="px-3 py-2 text-right tabular-nums">{num(s?.views ?? 0)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{num(s?.clicks ?? 0)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{rate(s)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{p.redirect !== null ? "—" : num(s?.views ?? 0)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{p.redirect !== null ? "—" : num(s?.clicks ?? 0)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{p.redirect !== null ? "—" : rate(s)}</td>
                   <td className="px-3 py-2 text-right">
                     <span className="inline-flex items-center gap-3 text-xs">
-                      <Link href={editHref(p)} className="inline-flex items-center gap-1 font-medium text-accent hover:underline">
-                        <PencilIcon className="size-3.5" /> Edit
-                      </Link>
+                      {p.redirect === null ? (
+                        <Link href={editHref(p)} className="inline-flex items-center gap-1 font-medium text-accent hover:underline">
+                          <PencilIcon className="size-3.5" /> Edit
+                        </Link>
+                      ) : null}
+                      <button type="button" onClick={() => remove(p)} disabled={pending} className="inline-flex items-center gap-1 font-medium text-red-600 hover:underline disabled:opacity-50 dark:text-red-400">
+                        <TrashIcon className="size-3.5" /> Delete
+                      </button>
                     </span>
                   </td>
                 </tr>
@@ -338,38 +388,99 @@ function PagesTable({ funnelId, pages, stats }: { funnelId: string | null; pages
           </tbody>
         </table>
       </div>
+      {live.length > 1 && funnelId ? (
+        <div className="flex items-center justify-end gap-3 text-xs">
+          <span className={valid && total === 100 ? "tabular-nums text-muted" : "font-medium tabular-nums text-red-600 dark:text-red-400"}>
+            Total {total}%{valid && total !== 100 ? " · must be 100%" : ""}
+          </span>
+          {dirty ? (
+            <Button size="sm" variant="ghost" onClick={reset} disabled={pending}>
+              Reset
+            </Button>
+          ) : null}
+          <Button size="sm" onClick={save} disabled={!canSave}>
+            {pending ? "Saving…" : "Save"}
+          </Button>
+        </div>
+      ) : null}
       {error ? <Alert tone="danger">{error}</Alert> : null}
     </div>
   );
 }
 
-/** Copies the whole funnel (all pages) to a domain; there they compete for the same URL by weight. */
-function CopyToDomain({ funnelId, domains }: { funnelId: string; domains: { id: string; domain: string }[] }) {
+
+/** Create or edit a funnel redirect entry: name, destination URL template, and (when editing) status. */
+function RedirectForm({ target, onDone, onCancel }: { target: { mainFunnelId: string; page: FunnelBoardPage | null; defaultName: string }; onDone: () => void; onCancel: () => void }) {
   const router = useRouter();
-  const [domainId, setDomainId] = useState(domains[0]?.id ?? "");
-  const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
+  const [name, setName] = useState(target.page?.name ?? target.defaultName);
+  const [url, setUrl] = useState(target.page?.redirect ?? "");
+  const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
-  if (!domains.length) return null;
-  const onCopy = () =>
+
+  const submit = () =>
     start(async () => {
-      const r = await copyFunnelToDomain(domainId, funnelId);
-      const name = domains.find((d) => d.id === domainId)?.domain ?? "the domain";
-      setNotice(r.ok ? { ok: true, text: `Copied ${r.copied} ${r.copied === 1 ? "page" : "pages"} to ${name}.` } : { ok: false, text: r.reason });
+      const r = target.page
+        ? await saveFunnelRedirect(target.page.id, name, url)
+        : await createFunnelRedirect(target.mainFunnelId, name, url);
+      if (!r.ok) {
+        setError(r.reason);
+        return;
+      }
+      onDone();
       router.refresh();
     });
+
+  const remove = () => {
+    const page = target.page;
+    if (!page || !window.confirm(`Remove the redirect "${page.name}"? Copies on domains stay, but stop getting traffic.`)) return;
+    start(async () => {
+      const r = await removeFunnelPage(page.funnelId, page.id);
+      if (!r.ok) {
+        setError(r.reason);
+        return;
+      }
+      onDone();
+      router.refresh();
+    });
+  };
+
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      {notice ? <span className={`text-xs ${notice.ok ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>{notice.text}</span> : null}
-      <select value={domainId} onChange={(e) => setDomainId(e.target.value)} aria-label="Domain" className={`${SELECT_BASE} h-8 w-56 text-xs`} disabled={pending}>
-        {domains.map((d) => (
-          <option key={d.id} value={d.id}>
-            {d.domain}
-          </option>
-        ))}
-      </select>
-      <Button size="sm" variant="secondary" onClick={onCopy} disabled={pending || !domainId}>
-        {pending ? "Copying…" : "Copy funnel to domain"}
-      </Button>
-    </div>
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        submit();
+      }}
+      className="flex flex-col gap-4"
+    >
+      {error ? <Alert tone="danger">{error}</Alert> : null}
+      <label className="flex flex-col gap-1.5">
+        <span className="text-xs font-medium text-muted">Name</span>
+        <input value={name} onChange={(e) => setName(e.target.value)} maxLength={120} className={INPUT_CLASS} placeholder="Offer redirect" />
+      </label>
+      <label className="flex flex-col gap-1.5">
+        <span className="text-xs font-medium text-muted">Destination URL</span>
+        <input value={url} onChange={(e) => setUrl(e.target.value)} maxLength={2000} className={`${INPUT_CLASS} font-mono text-xs`} placeholder="https://offer.com/?utm_campaign={sub1}" />
+        <span className="text-xs text-muted">
+          Use {"{name}"} to drop a visit parameter into the URL, e.g. {"{sub1}"} or {"{fbclid}"}. Only what the URL names is carried; anything else is left out.
+        </span>
+      </label>
+      <div className="flex items-center justify-between gap-2">
+        {target.page ? (
+          <Button type="button" variant="ghost" onClick={remove} disabled={pending} className="text-red-600 hover:text-red-700 dark:text-red-400">
+            Delete
+          </Button>
+        ) : (
+          <span />
+        )}
+        <div className="flex gap-2">
+          <Button type="button" variant="secondary" onClick={onCancel} disabled={pending}>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={pending}>
+            {pending ? "Saving…" : target.page ? "Save" : "Create redirect"}
+          </Button>
+        </div>
+      </div>
+    </form>
   );
 }

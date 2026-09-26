@@ -4,11 +4,10 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { errorReason, fail, type ActionResult } from "@/lib/action-result";
 import { fetchPublicHtml } from "@/lib/pages/fetch-page";
-import { loadFunnelWeights, writeFunnelWeights } from "@/lib/pages/funnel-weights";
+import { joinFunnelSplit, publishFunnelPage } from "@/lib/pages/funnel-weights";
 import { isValidSlug, normalizePath } from "@/lib/pages/normalize";
 import { STARTER_HTML } from "@/lib/pages/starter-template";
 import { funnelStarterHtml, refreshPageIds } from "@/lib/pages/subpages";
-import { setShare } from "@/lib/pages/traffic";
 import { FOLDER_MAX_DEPTH, FOLDER_NAME_MAX, cleanFolderName, folderName, isFolderPath, joinFolder, parentFolder } from "@/lib/pages/folders";
 import { isPageStatus, isTemplateKind, type PageKind, type PageStatus } from "@/lib/pages/types";
 import { supabaseService } from "@/lib/supabase/service";
@@ -145,9 +144,10 @@ export async function createPage(prev: CreatePageState, fd: FormData): Promise<C
       const added = await db.rpc("funnel_page_add", { p_funnel: funnelRow, p_name: name, p_slugs: slugs, p_notes: notes });
       if (added.error) throw new Error(added.error.message);
       pageId = String(added.data);
-      // Funnel A/B test (the % add up to 100): the new page joins with its share and the others shrink proportionally.
-      const weights = await loadFunnelWeights(funnelRow);
-      await writeFunnelWeights(funnelRow, weights, setShare(weights, pageId, 100 / Object.keys(weights).length));
+      // A copy of another template is a ready page: it goes in published and joins the A/B test
+      // (the published pages' % add up to 100, the others shrink). The other sources start as a
+      // draft, which gets no traffic until it is published in the editor.
+      if (source === "template" && (await publishFunnelPage(funnelRow, pageId))) await joinFunnelSplit(funnelRow, pageId);
     } catch (cause) {
       return { error: errorReason(cause), attempt };
     }
