@@ -55,7 +55,7 @@ export default async function DomainDetailPage({ params }: { params: Params }) {
             <p className="mt-2 text-xs text-red-600 dark:text-red-400">{domain.last_check_error}</p>
           ) : null}
           <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2">
-            <DomainStatusSelect domainId={domain.id} value={domain.status} />
+            <DomainStatusSelect domainId={domain.id} value={domain.status} verified={domain.last_check_ok === true} />
             <DomainTypeSelect domainId={domain.id} value={domain.type} />
           </div>
           <div className="mt-4 flex flex-wrap gap-2">

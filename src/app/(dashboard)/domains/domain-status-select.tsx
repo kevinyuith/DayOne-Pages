@@ -12,10 +12,25 @@ import { setDomainStatus } from "./actions";
  * are ignored and every slug goes straight to the sub1's funnel). Saves
  * immediately, like the type select.
  */
-export function DomainStatusSelect({ domainId, value, showLabel = true }: { domainId: string; value: DomainStatus; showLabel?: boolean }) {
+export function DomainStatusSelect({ domainId, value, verified, showLabel = true }: { domainId: string; value: DomainStatus; verified: boolean; showLabel?: boolean }) {
   const [status, setStatus] = useState<DomainStatus>(value);
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
+
+  // Not verified yet: served as Disabled, and locked until Verify passes (which sets it Active).
+  if (!verified) {
+    return (
+      <div className="flex flex-col gap-1">
+        <label className="flex items-center gap-2 text-sm">
+          {showLabel ? <span className="text-muted">Status</span> : null}
+          <select value="DISABLED" disabled aria-label="Domain status" title="Verify the domain to activate it — until then it isn't served." className={`${SELECT_CLASS} h-8 w-36 cursor-not-allowed text-sm opacity-70`}>
+            <option value="DISABLED">{DOMAIN_STATUS_LABELS.DISABLED}</option>
+          </select>
+        </label>
+        <span className="text-xs text-muted">Verify to activate</span>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-1">

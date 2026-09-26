@@ -83,7 +83,7 @@ export default async function DomainsPage() {
                 </Td>
                 <Td>{d.type ? DOMAIN_TYPE_LABELS[d.type] : <span className="text-muted">—</span>}</Td>
                 <Td>
-                  <DomainStatusSelect domainId={d.id} value={d.status} showLabel={false} />
+                  <DomainStatusSelect domainId={d.id} value={d.status} verified={d.last_check_ok === true} showLabel={false} />
                 </Td>
                 <Td>
                   {d.last_checked_at ? (

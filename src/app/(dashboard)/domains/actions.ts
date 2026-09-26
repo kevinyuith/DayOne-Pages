@@ -145,11 +145,15 @@ export async function verifyDomain(id: string): Promise<VerifyResult> {
         last_checked_at: new Date().toISOString(),
         last_check_ok: result.ok,
         last_check_error: result.ok ? null : result.error,
+        // Verified OK → the domain goes live automatically. An unverified domain is served as Disabled (resolve).
+        ...(result.ok ? { status: "ACTIVE" as const } : {}),
       })
       .eq("id", id);
     if (updateError) throw new Error(updateError.message);
 
     revalidateDomain(id);
+    // Its serving status changed (Disabled → Active on the first OK): clear the delivery cache so it takes effect now.
+    if (result.ok) await purgeHost((data as { domain: string }).domain);
     return result.ok ? { ok: true, healthy: true, via: result.via } : { ok: true, healthy: false, error: result.error };
   } catch (cause) {
     return fail(errorReason(cause));
@@ -385,7 +389,14 @@ export async function setDomainType(id: string, type: DomainType): Promise<Actio
 export async function setDomainStatus(id: string, status: DomainStatus): Promise<ActionResult> {
   if (!isDomainStatus(status)) return fail("Invalid status.");
   try {
-    const { data, error } = await supabaseService().from("domains").update({ status }).eq("id", id).select("domain").single();
+    const db = supabaseService();
+    // A domain that isn't verified is served as Disabled and can't be changed here; Verify it first (that sets it Active).
+    const current = await db.from("domains").select("last_check_ok").eq("id", id).maybeSingle();
+    if (current.error) throw new Error(current.error.message);
+    if ((current.data as { last_check_ok: boolean | null } | null)?.last_check_ok !== true) {
+      return fail("Verify the domain first — an unverified domain stays Disabled.");
+    }
+    const { data, error } = await db.from("domains").update({ status }).eq("id", id).select("domain").single();
     if (error) throw new Error(error.message);
     revalidateDomain(id);
     return purgeAfterWrite(data.domain, "Status saved");
