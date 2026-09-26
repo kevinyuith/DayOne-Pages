@@ -64,16 +64,16 @@ cache_put_content('vsl01', $plain);
 $vslRoute = ['slug_id' => $vslSlug, 'content_hash' => 'vsl01', 'content_type' => 'text/html', 'funnel' => false, 'match_type' => 'GATE', 'vsl' => $split];
 [$status, $headers, $body] = serve_slug($vslRoute, make_request(['HTTP_COOKIE' => "dop_vsl=$vB"]));
 same('serve: 200', 200, $status);
-same('serve: ETag with the video', "\"vsl01-v$vB-b3\"", $headers['ETag']);
+same('serve: ETag with the video', "\"vsl01-v$vB-b4\"", $headers['ETag']);
 check('serve: Vary with Cookie', str_contains($headers['Vary'], 'Cookie'));
 check('serve: no Set-Cookie when the cookie is already right', !isset($headers['Set-Cookie']));
 check('serve: body plays B', str_contains((string) $body, 'data-vturb-id="' . $vB . '"'));
-same('serve: 304 with the same video', 304, serve_slug($vslRoute, make_request(['HTTP_COOKIE' => "dop_vsl=$vB", 'HTTP_IF_NONE_MATCH' => "\"vsl01-v$vB-b3\""]))[0]);
-same('serve: no 304 shortcut on the bare hash (the video may change)', 200, serve_slug($vslRoute, make_request(['HTTP_COOKIE' => "dop_vsl=$vB", 'HTTP_IF_NONE_MATCH' => '"vsl01-b3"']))[0]);
+same('serve: 304 with the same video', 304, serve_slug($vslRoute, make_request(['HTTP_COOKIE' => "dop_vsl=$vB", 'HTTP_IF_NONE_MATCH' => "\"vsl01-v$vB-b4\""]))[0]);
+same('serve: no 304 shortcut on the bare hash (the video may change)', 200, serve_slug($vslRoute, make_request(['HTTP_COOKIE' => "dop_vsl=$vB", 'HTTP_IF_NONE_MATCH' => '"vsl01-b4"']))[0]);
 [$status, $headers] = serve_slug($vslRoute, make_request());
 check('serve: new visitor gets Set-Cookie dop_vsl', is_array($headers['Set-Cookie'] ?? null) && str_starts_with(end($headers['Set-Cookie']), 'dop_vsl='), json_encode($headers['Set-Cookie'] ?? null));
 
 // Page of a funnel without a split: exactly as before.
 [$status, $headers, $body] = serve_slug(['slug_id' => $vslSlug, 'content_hash' => 'vsl01', 'content_type' => 'text/html', 'funnel' => false, 'match_type' => 'GATE'], make_request());
-same('no split: ETag is just the hash', '"vsl01-b3"', $headers['ETag']);
+same('no split: ETag is just the hash', '"vsl01-b4"', $headers['ETag']);
 check('no split: Vary without Cookie, no cookie, player untouched', !str_contains($headers['Vary'], 'Cookie') && !isset($headers['Set-Cookie']) && str_contains((string) $body, 'data-vturb-id="' . $vOld . '"'));

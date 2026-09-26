@@ -109,6 +109,7 @@ export default async function LogsPage({
                 Loaded
               </Th>
               <Th>Interaction</Th>
+              <Th>Time on page</Th>
               <Th>Country</Th>
               <Th>State</Th>
               <Th>Language</Th>
@@ -223,6 +224,7 @@ export default async function LogsPage({
                   <Td className="whitespace-nowrap">
                     <Interaction hit={h} />
                   </Td>
+                  <Td className="whitespace-nowrap tabular-nums">{h.duration_ms !== null ? formatDuration(h.duration_ms) : <span className="text-muted">—</span>}</Td>
                   <Td className="text-muted">{h.country || "—"}</Td>
                   <Td className="whitespace-nowrap text-muted">{h.region || "—"}</Td>
                   <Td className="whitespace-nowrap" title={h.accept_language ?? undefined}>
@@ -327,6 +329,14 @@ function gateReason(hit: HitLogRow): string {
     default:
       return "";
   }
+}
+
+/** A time on the page: "45s", "2m 13s", "1h 05m". */
+function formatDuration(ms: number): string {
+  const s = Math.round(ms / 1000);
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`;
+  return `${Math.floor(s / 3600)}h ${String(Math.floor((s % 3600) / 60)).padStart(2, "0")}m`;
 }
 
 /** The visitor's first interaction (kind and time to it) and whether they clicked out of the page. */

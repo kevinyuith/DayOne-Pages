@@ -145,6 +145,13 @@ function supabase_log_click(string $visitId): ?bool
     return is_bool($found) ? $found : null;
 }
 
+/** How long the visit's page stayed open (the longest report wins): same as supabase_log_load. */
+function supabase_log_duration(string $visitId, int $ms): ?bool
+{
+    $found = supabase_fire('log_duration', ['p_visit_id' => $visitId, 'p_ms' => $ms]);
+    return is_bool($found) ? $found : null;
+}
+
 /** A visit's first interaction (mouse, scroll, touch, key): same as supabase_log_load. */
 function supabase_log_interact(string $visitId, string $kind, ?int $ms): ?bool
 {
