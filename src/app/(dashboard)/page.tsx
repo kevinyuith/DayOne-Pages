@@ -53,14 +53,20 @@ export default async function DashboardPage({
   const scope = domains.find((d) => d.id === filters.domain)?.domain;
 
   // The 5 numbers for the filtered period. Total is every request; the rest are UNIQUE visitors
-  // (distinct IPs): all of them, the ones a rule caught as a bot or as suspicious, and the ones whose
-  // page loaded. They overlap (a bot can have loaded), so they aren't parts of a whole.
+  // (distinct IPs): the ones that got a 200, the ones a rule caught as a bot or as suspicious, and the
+  // ones whose page loaded — over the ones that passed the gate, the connect rate. They overlap (a bot
+  // can have loaded), so they aren't parts of a whole.
   const stats5: Stat[] = [
     { label: "Total requests", value: num.format(stats.total), detail: range.label },
-    { label: "Unique visitors", value: num.format(stats.uniques), detail: "Distinct IPs" },
+    { label: "Unique visitors", value: num.format(stats.uniques), detail: "Distinct IPs · 200" },
     { label: "Bots (Unique)", value: num.format(stats.botsUnique), series: "bots", ...share(stats.botsUnique, stats.uniques, "of visitors") },
     { label: "Suspicious (Unique)", value: num.format(stats.suspiciousUnique), series: "blocked", ...share(stats.suspiciousUnique, stats.uniques, "of visitors") },
-    { label: "Loaded (Unique)", value: num.format(stats.loadedUnique), series: "served", ...share(stats.loadedUnique, stats.uniques, "of visitors") },
+    {
+      label: "Loaded (Unique)",
+      value: num.format(stats.loadedUnique),
+      series: "served",
+      ...share(stats.loadedUnique, stats.gateUnique, `connect rate · ${num.format(stats.gateUnique)} passed`),
+    },
   ];
 
   return (

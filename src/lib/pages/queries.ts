@@ -583,7 +583,20 @@ export type Overview = {
 
 // ── Traffic (hits) ───────────────────────────────────────────────────────────
 
-export type HitStats = { total: number; served: number; blocked: number; bots: number; uniques: number; botsUnique: number; suspiciousUnique: number; loadedUnique: number };
+export type HitStats = {
+  total: number;
+  served: number;
+  blocked: number;
+  bots: number;
+  /** Distinct IPs that got a 200. */
+  uniques: number;
+  botsUnique: number;
+  suspiciousUnique: number;
+  /** Distinct IPs that passed the gate (a funnel page served by the gate, 200). */
+  gateUnique: number;
+  /** Of those, the ones whose page loaded: loadedUnique / gateUnique is the connect rate. */
+  loadedUnique: number;
+};
 export type HitBucket = { bucket: string; served: number; blocked: number; bots: number };
 export type HitRow = {
   created_at: string;
@@ -632,6 +645,7 @@ export async function hitStats(since: Date, filter: HitFilter = {}): Promise<Hit
     uniques: n(r?.uniques),
     botsUnique: n(r?.bots_unique),
     suspiciousUnique: n(r?.suspicious_unique),
+    gateUnique: n(r?.gate_unique),
     loadedUnique: n(r?.loaded_unique),
   };
 }
