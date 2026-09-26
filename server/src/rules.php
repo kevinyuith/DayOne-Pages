@@ -8,13 +8,23 @@
  * HTML, only content hashes, so the decision is made here, per request,
  * without going back to Supabase.
  *
- * decide() calls this before the domain's routes. The rules walk: the first
- * one whose conditions ALL match marks the click with the rule's LABEL and it
- * gets the domain's page at the requested slug. No match (clean traffic) and
- * the slug is allowed ("/" or a gate_slug) → the sub1's [F…] token names the
- * funnel, whose split decides the page (sticky dop_pg). Any other slug → the
- * domain's page at that slug (404 when no page has it). Nothing is detected
- * in code: bot/suspicious are the rules you write.
+ * decide() calls this before the domain's routes. The domain's status
+ * (pages.domains.status, in the gate data) comes first: DISABLED answers 404
+ * to every slug (the domain serves nothing; the rules don't run); LOCKED
+ * runs the rules but no slug is allowed — a clean click always gets the
+ * domain's page, never the funnel; UNLOCKED ignores the rules and the
+ * gate_slugs — every slug goes straight to the sub1's [F…] funnel (404 when
+ * the token is missing or the funnel has no live page). ACTIVE is the
+ * behavior below.
+ *
+ * The rules walk: the first one whose conditions ALL match marks the click
+ * with the rule's LABEL and it gets the domain's page at the requested slug.
+ * No match (clean traffic) and the slug is allowed ("/" or a gate_slug) → the
+ * sub1's [F…] token names the funnel, whose split decides the page (sticky
+ * dop_pg). Any other slug → the domain's page at that slug (404 when no page
+ * has it). "/" is just a gate_slug like the others: take it out of the list
+ * and the root stays on the safe page. Nothing is detected in code:
+ * bot/suspicious are the rules you write.
  *
  * The conditions are the hit log's fields (rule_conditions_match): the click's
  * sub ids (sub1, sub11), ANY URL parameter (param), country, device, language,
@@ -31,8 +41,8 @@ defined('DAYONE_ENTRY') || (http_response_code(404) && exit);
 const GATE_MATCH = 'GATE';
 const GATE_SAFE_MATCH = 'GATE-SAFE';
 
-/** Why a clean click got the domain's page instead of a funnel (pages.hits.gate_reason). */
-const GATE_REASONS = ['slug_not_allowed', 'no_funnel_token', 'funnel_not_live'];
+/** Why a click didn't go to a funnel (pages.hits.gate_reason): by the slug/sub1, or by the domain's status. */
+const GATE_REASONS = ['slug_not_allowed', 'no_funnel_token', 'funnel_not_live', 'domain_disabled', 'domain_locked', 'domain_unlocked'];
 
 /** The rule-only condition keys (the base ones are conditions_match's). */
 const RULE_OWN_CONDITIONS = ['sub1', 'sub11', 'param', 'user_agent', 'user_agent_mode', 'ips', 'ips_mode', 'asns', 'asns_mode', 'hostname', 'hostname_mode'];
@@ -42,8 +52,9 @@ const RULE_OWN_CONDITIONS = ['sub1', 'sub11', 'param', 'user_agent', 'user_agent
  * through to the domain's normal flow (only when there are no routes/the host
  * isn't a domain — with routes, the gate always answers: the safe page is the
  * fallback). The route carries `_rule_label`/`_rule`/`_rule_reason`/`_rule_tags`/`_funnel`
- * for the traffic log, and `_gate_reason` when a clean click didn't go to the
- * funnel: slug_not_allowed, no_funnel_token or funnel_not_live (GATE_REASONS).
+ * for the traffic log, and `_gate_reason` when the click didn't go to the
+ * funnel: slug_not_allowed, no_funnel_token, funnel_not_live, or the domain's
+ * status (domain_disabled, domain_locked, domain_unlocked) — GATE_REASONS.
  */
 function gate_pick(array $routes, array $gate, Request $req): ?array
 {
@@ -55,29 +66,45 @@ function gate_pick(array $routes, array $gate, Request $req): ?array
     // safe page for this URL; null when no page has the slug → the gate's
     // non-funnel answers 404 via decide()).
     $domainPage = gate_domain_page($routes);
+    $status = gate_domain_status($gate);
+
+    // DISABLED: the domain serves nothing — 404 for every slug, no rules walk.
+    if ($status === 'DISABLED') {
+        return gate_always_404($domainId, $req->path, 'domain_disabled');
+    }
 
     // 1) The rules walk: the first match marks the click with the rule's label
     //    and it gets the domain's page at this slug. Nothing is detected in code.
-    $rules = is_array($gate['rules'] ?? null) ? $gate['rules'] : [];
-    foreach ($rules as $rule) {
-        if (!is_array($rule)) {
-            continue;
+    //    An UNLOCKED domain skips the walk: every click is funnel-bound.
+    if ($status !== 'UNLOCKED') {
+        $rules = is_array($gate['rules'] ?? null) ? $gate['rules'] : [];
+        foreach ($rules as $rule) {
+            if (!is_array($rule)) {
+                continue;
+            }
+            $cond = is_array($rule['conditions'] ?? null) ? $rule['conditions'] : [];
+            if (!rule_conditions_match($cond, $req)) {
+                continue;
+            }
+            return gate_flag_route($domainPage, GATE_SAFE_MATCH, [
+                '_rule_label' => (string) ($rule['label'] ?? ''),
+                '_rule' => (string) ($rule['name'] ?? ''),
+                '_rule_reason' => (string) ($rule['reason'] ?? ''),
+                '_rule_tags' => is_array($rule['tags'] ?? null) ? array_values(array_filter($rule['tags'], 'is_string')) : [],
+            ]);
         }
-        $cond = is_array($rule['conditions'] ?? null) ? $rule['conditions'] : [];
-        if (!rule_conditions_match($cond, $req)) {
-            continue;
-        }
-        return gate_flag_route($domainPage, GATE_SAFE_MATCH, [
-            '_rule_label' => (string) ($rule['label'] ?? ''),
-            '_rule' => (string) ($rule['name'] ?? ''),
-            '_rule_reason' => (string) ($rule['reason'] ?? ''),
-            '_rule_tags' => is_array($rule['tags'] ?? null) ? array_values(array_filter($rule['tags'], 'is_string')) : [],
-        ]);
     }
 
-    // 2) Clean traffic. The funnel only takes over on an allowed slug ("/" or
-    //    one of the domain's gate_slugs); any other slug gets the domain's page.
-    if (!gate_slug_allowed($req->path, $gate['gate_slugs'] ?? null)) {
+    // LOCKED: the rules still mark the log, but no slug is allowed — a clean
+    // click always gets the domain's page at the requested slug, never the funnel.
+    if ($status === 'LOCKED') {
+        return gate_flag_route($domainPage, GATE_SAFE_MATCH, ['_gate_reason' => 'domain_locked']);
+    }
+
+    // 2) Clean traffic. The funnel only takes over on an allowed slug (one of
+    //    the domain's gate_slugs — "/" included when it's there); any other
+    //    slug gets the domain's page. An UNLOCKED domain allows every slug.
+    if ($status !== 'UNLOCKED' && !gate_slug_allowed($req->path, $gate['gate_slugs'] ?? null)) {
         return gate_flag_route($domainPage, GATE_SAFE_MATCH, ['_gate_reason' => 'slug_not_allowed']);
     }
     $params = [];
@@ -87,8 +114,12 @@ function gate_pick(array $routes, array $gate, Request $req): ?array
     $funnel = $code !== null && is_array($gate['funnels'] ?? null) ? ($gate['funnels'][$code] ?? null) : null;
     $split = is_array($funnel['split'] ?? null) ? array_values(array_filter($funnel['split'], 'is_array')) : [];
     if ($split === []) {
-        // No token, or a funnel without a live split (the data only has funnels
-        // with a live page): the domain's page at "/".
+        // An UNLOCKED domain serves funnels only: no token, or a funnel without
+        // a live split (the data only has funnels with a live page) → 404.
+        if ($status === 'UNLOCKED') {
+            return gate_always_404($domainId, $req->path, 'domain_unlocked', $code);
+        }
+        // No token, or a funnel without a live split: the domain's page at "/".
         return gate_flag_route($domainPage, GATE_SAFE_MATCH, ['_funnel' => $code, '_gate_reason' => $code === null ? 'no_funnel_token' : 'funnel_not_live']);
     }
 
@@ -135,12 +166,46 @@ function gate_domain_page(array $routes): ?array
     return null;
 }
 
-/** Is this slug allowed to go to the funnel? "/" always is; the domain's gate_slugs add the others. */
+/** The domain's serving status (pages.domains.status), from the gate data; unknown or missing = ACTIVE (an old cache). */
+function gate_domain_status(array $gate): string
+{
+    $status = strtoupper((string) ($gate['status'] ?? 'ACTIVE'));
+    // The 20260925n rename: a cache from before it can still say BLOCKED/ALLOWED.
+    $status = ['BLOCKED' => 'LOCKED', 'ALLOWED' => 'UNLOCKED'][$status] ?? $status;
+    return in_array($status, ['ACTIVE', 'DISABLED', 'LOCKED', 'UNLOCKED'], true) ? $status : 'ACTIVE';
+}
+
+/**
+ * A route that always 404s (a SERVE without a slug): a DISABLED domain serves
+ * nothing, and an UNLOCKED one serves funnels only. The status goes to the log
+ * as the gate reason (and the [F…] code, when there was one, as the funnel).
+ */
+function gate_always_404(string $domainId, string $path, string $reason, ?string $code = null): array
+{
+    $route = [
+        'route_id' => null,
+        'domain_id' => $domainId,
+        'priority' => -4,
+        'match_type' => GATE_SAFE_MATCH,
+        'conditions' => [],
+        'action' => 'SERVE',
+        'page_id' => null,
+        'slug' => $path,
+        'slug_id' => null,
+        'content_type' => null,
+        'content_hash' => null,
+        'preserve_query' => true,
+        '_gate_reason' => $reason,
+    ];
+    if ($code !== null) {
+        $route['_funnel'] = $code;
+    }
+    return $route;
+}
+
+/** Is this slug allowed to go to the funnel? The gate_slugs are the whole set — "/" included when it's there. */
 function gate_slug_allowed(string $path, mixed $gateSlugs): bool
 {
-    if ($path === '/') {
-        return true;
-    }
     foreach (is_array($gateSlugs) ? $gateSlugs : [] as $slug) {
         if (is_string($slug) && strcasecmp($slug, $path) === 0) {
             return true;
@@ -202,6 +267,16 @@ function rule_conditions_match(array $cond, Request $req): bool
         $v = $name !== '' ? $read($name) : null;
         if (array_key_exists('equals', $p)) {
             if ($v === null || strcasecmp($v, (string) $p['equals']) !== 0) {
+                return false;
+            }
+        } elseif (array_key_exists('not_equals', $p)) {
+            // The parameter is there but not this value (an unreplaced macro: "_CLICKID_").
+            if ($v === null || strcasecmp($v, (string) $p['not_equals']) === 0) {
+                return false;
+            }
+        } elseif (array_key_exists('absent_or_equals', $p)) {
+            // Missing, or exactly this value (a macro never replaced: "_PLACEMENT_").
+            if ($v !== null && strcasecmp($v, (string) $p['absent_or_equals']) !== 0) {
                 return false;
             }
         } elseif (array_key_exists('contains', $p)) {

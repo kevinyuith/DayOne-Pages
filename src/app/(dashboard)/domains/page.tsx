@@ -3,13 +3,14 @@ import Link from "next/link";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { RowAction } from "@/components/row-action";
-import { Badge, DOMAIN_STATUS_TONE } from "@/components/ui/badge";
+import { Badge } from "@/components/ui/badge";
 import { Table, Td, Th, Tr } from "@/components/ui/table";
 import { listDomains, listTemplates, unregisteredHosts } from "@/lib/pages/queries";
-import { DOMAIN_STATUS_LABELS, DOMAIN_TYPE_LABELS } from "@/lib/pages/types";
+import { DOMAIN_TYPE_LABELS } from "@/lib/pages/types";
 import { APP_TZ } from "@/lib/time-zone";
-import { registerSeenDomain, removeDomain, setDomainStatus, verifyDomain } from "./actions";
+import { registerSeenDomain, removeDomain, verifyDomain } from "./actions";
 import { DomainForm } from "./domain-form";
+import { DomainStatusSelect } from "./domain-status-select";
 
 export const metadata: Metadata = {
   title: "Domains",
@@ -82,7 +83,7 @@ export default async function DomainsPage() {
                 </Td>
                 <Td>{d.type ? DOMAIN_TYPE_LABELS[d.type] : <span className="text-muted">—</span>}</Td>
                 <Td>
-                  <Badge tone={DOMAIN_STATUS_TONE[d.status]}>{DOMAIN_STATUS_LABELS[d.status]}</Badge>
+                  <DomainStatusSelect domainId={d.id} value={d.status} showLabel={false} />
                 </Td>
                 <Td>
                   {d.last_checked_at ? (
@@ -99,11 +100,6 @@ export default async function DomainsPage() {
                 <Td className="text-right">
                   <div className="flex flex-wrap justify-end gap-1">
                     <RowAction action={verifyDomain.bind(null, d.id)} label="Verify" pendingLabel="Verifying…" />
-                    {d.status === "ACTIVE" ? (
-                      <RowAction action={setDomainStatus.bind(null, d.id, "PAUSED")} label="Pause" variant="ghost" />
-                    ) : (
-                      <RowAction action={setDomainStatus.bind(null, d.id, "ACTIVE")} label="Activate" variant="ghost" />
-                    )}
                     <RowAction
                       action={removeDomain.bind(null, d.id)}
                       label="Remove"

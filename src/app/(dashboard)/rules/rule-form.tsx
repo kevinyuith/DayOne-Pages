@@ -123,9 +123,19 @@ const COND_TYPES: { type: CondType; label: string; repeat?: true }[] = [
 ];
 const COND_LABEL = Object.fromEntries(COND_TYPES.map((c) => [c.type, c.label])) as Record<CondType, string>;
 
-/** A URL parameter row: "contains" is the rule's `param` (one per rule); the others go into `query`. */
-type ParamRowMode = "present" | "absent" | "equals" | "contains";
-const PARAM_ROW_MODES: ParamRowMode[] = ["present", "absent", "equals", "contains"];
+/** A URL parameter row: "contains"/"not equals"/"absent or equals" is the rule's `param` (one per rule); the others go into `query`. */
+type ParamRowMode = "present" | "absent" | "equals" | "not_equals" | "absent_or_equals" | "contains";
+const PARAM_ROW_MODES: ParamRowMode[] = ["present", "absent", "equals", "not_equals", "absent_or_equals", "contains"];
+const PARAM_ROW_LABELS: Record<ParamRowMode, string> = {
+  present: "present",
+  absent: "absent",
+  equals: "equals",
+  not_equals: "not equals",
+  absent_or_equals: "absent or equals",
+  contains: "contains",
+};
+/** Modes that post as the rule's single `param` (the rest go into `query`). */
+const PARAM_AS_PARAM: ReadonlySet<ParamRowMode> = new Set(["contains", "not_equals", "absent_or_equals"]);
 type Row = { id: number; type: CondType; key?: string; mode?: ParamRowMode; value?: string };
 
 /** A saved rule's rows: one per condition it has (an old sub1/sub11 condition shows as a URL parameter). */
@@ -175,7 +185,7 @@ function ConditionsBuilder({ initial, disabled }: { initial: ReturnType<typeof r
   };
   const remove = (id: number) => setRows((cur) => cur.filter((r) => r.id !== id));
   const patch = (id: number, p: Partial<Row>) => setRows((cur) => cur.map((r) => (r.id === id ? { ...r, ...p } : r)));
-  const containsTaken = (id: number) => rows.some((r) => r.id !== id && r.type === "param" && r.mode === "contains");
+  const containsTaken = (id: number) => rows.some((r) => r.id !== id && r.type === "param" && PARAM_AS_PARAM.has(r.mode ?? "present"));
 
   const input = `${INPUT_BASE} min-w-0 flex-1`;
   const op = "shrink-0 text-sm text-muted";
@@ -272,14 +282,14 @@ function ConditionsBuilder({ initial, disabled }: { initial: ReturnType<typeof r
           </>
         );
       case "param": {
-        // "contains" posts as the rule's `param`, the rest as a `query` row. The value field
+        // "contains"/"not equals"/"absent or equals" posts as the rule's `param`, the rest as a `query` row. The value field
         // stays in the form even when unused (read-only, empty): the query lists are parallel.
-        const contains = r.mode === "contains";
-        const needsValue = r.mode === "equals" || contains;
+        const asParam = PARAM_AS_PARAM.has(r.mode ?? "present");
+        const needsValue = r.mode === "equals" || asParam;
         return (
           <>
             <input
-              name={contains ? "param_name" : "query_key"}
+              name={asParam ? "param_name" : "query_key"}
               value={r.key ?? ""}
               onChange={(e) => patch(r.id, { key: e.target.value })}
               required
@@ -289,7 +299,7 @@ function ConditionsBuilder({ initial, disabled }: { initial: ReturnType<typeof r
               aria-label="Parameter name"
             />
             <select
-              name={contains ? "param_mode" : "query_mode"}
+              name={asParam ? "param_mode" : "query_mode"}
               value={r.mode ?? "present"}
               onChange={(e) => patch(r.id, { mode: e.target.value as ParamRowMode })}
               className={`${SELECT_BASE} w-32 shrink-0`}
@@ -297,13 +307,13 @@ function ConditionsBuilder({ initial, disabled }: { initial: ReturnType<typeof r
               aria-label="Parameter match"
             >
               {PARAM_ROW_MODES.map((m) => (
-                <option key={m} value={m} disabled={m === "contains" && containsTaken(r.id)}>
-                  {m}
+                <option key={m} value={m} disabled={PARAM_AS_PARAM.has(m) && containsTaken(r.id)}>
+                  {PARAM_ROW_LABELS[m]}
                 </option>
               ))}
             </select>
             <input
-              name={contains ? "param_value" : "query_value"}
+              name={asParam ? "param_value" : "query_value"}
               value={needsValue ? (r.value ?? "") : ""}
               onChange={(e) => patch(r.id, { value: e.target.value })}
               readOnly={!needsValue}

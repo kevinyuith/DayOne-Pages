@@ -25,6 +25,9 @@ export const HIT_FILTER_OPTIONS = {
     ["no_funnel_token", "No [F…] in sub1"],
     ["slug_not_allowed", "Slug not allowed"],
     ["funnel_not_live", "Funnel: no live page"],
+    ["domain_disabled", "Domain: disabled"],
+    ["domain_locked", "Domain: locked"],
+    ["domain_unlocked", "Domain: unlocked"],
   ],
   interaction: [
     ["yes", "Interacted"],

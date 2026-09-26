@@ -317,7 +317,7 @@ function FilterInput({ name, label, value, placeholder, maxLength, className }: 
   );
 }
 
-/** Why a clean click got the domain's page instead of the funnel. */
+/** Why a click didn't go to a funnel: by the slug/sub1, or by the domain's status. */
 function gateReason(hit: HitLogRow): string {
   switch (hit.gate_reason) {
     case "slug_not_allowed":
@@ -326,6 +326,12 @@ function gateReason(hit: HitLogRow): string {
       return "No [F…] in sub1";
     case "funnel_not_live":
       return `${hit.funnel ?? "Funnel"}: no live page`;
+    case "domain_disabled":
+      return "Domain: disabled";
+    case "domain_locked":
+      return "Domain: locked";
+    case "domain_unlocked":
+      return hit.funnel ? `${hit.funnel}: no live page (domain: unlocked)` : "Domain: unlocked, no [F…] in sub1";
     default:
       return "";
   }

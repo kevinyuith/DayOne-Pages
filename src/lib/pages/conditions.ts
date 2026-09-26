@@ -64,9 +64,11 @@ const paramRule = z
     equals: z.string().min(1).max(300).optional(),
     contains: z.string().min(1).max(300).optional(),
     present: z.literal(true).optional(),
+    not_equals: z.string().min(1).max(300).optional(),
+    absent_or_equals: z.string().min(1).max(300).optional(),
   })
-  .refine((p) => [p.equals !== undefined, p.contains !== undefined, p.present !== undefined].filter(Boolean).length === 1, {
-    message: "choose exactly one of equals, contains or present",
+  .refine((p) => [p.equals !== undefined, p.contains !== undefined, p.present !== undefined, p.not_equals !== undefined, p.absent_or_equals !== undefined].filter(Boolean).length === 1, {
+    message: "choose exactly one of equals, contains, present, not equals or absent or equals",
   });
 const IPV4_RE = /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/;
 
@@ -117,7 +119,7 @@ export const ruleConditionsSchema = conditionsSchema
 export type RuleConditions = z.infer<typeof ruleConditionsSchema>;
 
 /** The generic parameter's matcher, in the form. */
-export type ParamMode = "equals" | "contains" | "present";
+export type ParamMode = "equals" | "contains" | "present" | "not_equals" | "absent_or_equals";
 
 /** A row of the parameters form. */
 export type QueryRuleRow = { key: string; mode: QueryMode; value: string };
@@ -252,6 +254,12 @@ export function parseRuleConditionsForm(fd: FormData): { ok: true; value: RuleCo
     if (mode === "equals") {
       if (!value) return { ok: false, reason: "The parameter needs a value (equals)." };
       raw.param = { name: paramName, equals: value };
+    } else if (mode === "not_equals") {
+      if (!value) return { ok: false, reason: "The parameter needs a value (not equals)." };
+      raw.param = { name: paramName, not_equals: value };
+    } else if (mode === "absent_or_equals") {
+      if (!value) return { ok: false, reason: "The parameter needs a value (absent or equals)." };
+      raw.param = { name: paramName, absent_or_equals: value };
     } else if (mode === "contains") {
       if (!value) return { ok: false, reason: "The parameter needs a value (contains)." };
       raw.param = { name: paramName, contains: value };
@@ -335,8 +343,9 @@ export function ruleConditionsToForm(c: RuleConditions | null | undefined): Retu
     sub1: c?.sub1 ?? "",
     sub11: c?.sub11 ?? "",
     paramName: p?.name ?? "",
-    paramMode: p?.equals !== undefined ? "equals" : p?.contains !== undefined ? "contains" : "present",
-    paramValue: p?.equals ?? p?.contains ?? "",
+    paramMode:
+      p?.equals !== undefined ? "equals" : p?.not_equals !== undefined ? "not_equals" : p?.absent_or_equals !== undefined ? "absent_or_equals" : p?.contains !== undefined ? "contains" : "present",
+    paramValue: p?.equals ?? p?.not_equals ?? p?.absent_or_equals ?? p?.contains ?? "",
     userAgent: c?.user_agent ?? "",
     userAgentMode: c?.user_agent_mode === "block" ? "block" : "allow",
     ips: (c?.ips ?? []).join(", "),
@@ -354,7 +363,20 @@ export function summarizeRuleConditions(c: RuleConditions | null | undefined): s
   const parts: string[] = [];
   if (c.sub11) parts.push(`sub11 = ${c.sub11}`);
   if (c.sub1) parts.push(`sub1 = ${c.sub1}`);
-  if (c.param) parts.push(`?${c.param.name} ${c.param.equals !== undefined ? `= ${c.param.equals}` : c.param.contains !== undefined ? `~ ${c.param.contains}` : "present"}`);
+  if (c.param)
+    parts.push(
+      `?${c.param.name} ${
+        c.param.equals !== undefined
+          ? `= ${c.param.equals}`
+          : c.param.not_equals !== undefined
+            ? `!= ${c.param.not_equals}`
+            : c.param.absent_or_equals !== undefined
+              ? `absent or = ${c.param.absent_or_equals}`
+              : c.param.contains !== undefined
+                ? `~ ${c.param.contains}`
+                : "present"
+      }`,
+    );
   if (c.user_agent) parts.push(`UA ${c.user_agent_mode === "block" ? "not " : ""}~ /${c.user_agent}/i`);
   if (c.ips?.length) parts.push(`IP ${c.ips_mode === "block" ? "not " : ""}in ${c.ips.join(", ")}`);
   if (c.asns?.length) parts.push(`ASN ${c.asns_mode === "block" ? "not " : ""}in ${c.asns.join(", ")}`);

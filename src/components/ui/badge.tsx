@@ -18,4 +18,4 @@ export function Badge({ tone = "neutral", children, className = "" }: { tone?: T
 }
 
 export const PAGE_STATUS_TONE: Record<PageStatus, Tone> = { DRAFT: "warning", PUBLISHED: "success", ARCHIVED: "neutral" };
-export const DOMAIN_STATUS_TONE: Record<DomainStatus, Tone> = { ACTIVE: "success", PAUSED: "warning", ARCHIVED: "neutral" };
+export const DOMAIN_STATUS_TONE: Record<DomainStatus, Tone> = { ACTIVE: "success", DISABLED: "neutral", LOCKED: "warning", UNLOCKED: "info" };

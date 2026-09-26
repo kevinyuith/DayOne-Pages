@@ -156,7 +156,7 @@ function plain_page(string $title, string $text): string
 }
 
 /**
- * The 404 of every domain (path with no page, unknown or paused domain, block
+ * The 404 of every domain (path with no page, unknown or disabled domain, block
  * with status 404): the generic web-server "404 Not Found", in English and
  * unbranded, so it says nothing about what runs here.
  */

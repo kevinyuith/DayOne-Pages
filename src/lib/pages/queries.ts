@@ -701,8 +701,8 @@ export type HitLogRow = HitRow & {
   rule: string | null;
   rule_reason: string | null;
   rule_tags: string[] | null;
-  /** Why a clean click got the domain's page instead of a funnel (no rule matched); null otherwise. */
-  gate_reason: "slug_not_allowed" | "no_funnel_token" | "funnel_not_live" | null;
+  /** Why a click didn't go to a funnel: by the slug/sub1, or by the domain's status; null otherwise. */
+  gate_reason: "slug_not_allowed" | "no_funnel_token" | "funnel_not_live" | "domain_disabled" | "domain_locked" | "domain_unlocked" | null;
   /** The funnel code of the sub1's [F…] token, when there was one. */
   funnel: string | null;
   /** The Accept-Language header as the browser sent it. */

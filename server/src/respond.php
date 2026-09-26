@@ -22,8 +22,8 @@
  * for barring, never for swapping the content.
  *
  * None matched: robots.txt has a default response; the rest is 404.
- * No routes at all (paused or unknown domain): 404 for everything, even
- * robots.txt — a domain that is offline answers nothing.
+ * No routes at all (an unknown domain, or one with no published page): 404
+ * for everything, even robots.txt — a domain that is offline answers nothing.
  */
 declare(strict_types=1);
 

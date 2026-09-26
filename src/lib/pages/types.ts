@@ -41,13 +41,23 @@ export function isDomainType(v: unknown): v is DomainType {
   return typeof v === "string" && (DOMAIN_TYPES as readonly string[]).includes(v);
 }
 
-export const DOMAIN_STATUSES = ["ACTIVE", "PAUSED", "ARCHIVED"] as const;
+/**
+ * What the domain does with a click (the gate reads it per request): ACTIVE =
+ * the gate as configured; DISABLED = 404 for every slug; LOCKED = the rules
+ * run, but no slug goes to the funnel (always the domain's page); UNLOCKED =
+ * the rules are ignored and every slug goes straight to the sub1's funnel.
+ */
+export const DOMAIN_STATUSES = ["ACTIVE", "DISABLED", "LOCKED", "UNLOCKED"] as const;
 export type DomainStatus = (typeof DOMAIN_STATUSES)[number];
 export const DOMAIN_STATUS_LABELS: Record<DomainStatus, string> = {
   ACTIVE: "Active",
-  PAUSED: "Paused",
-  ARCHIVED: "Archived",
+  DISABLED: "Disabled",
+  LOCKED: "Locked",
+  UNLOCKED: "Unlocked",
 };
+export function isDomainStatus(v: unknown): v is DomainStatus {
+  return typeof v === "string" && (DOMAIN_STATUSES as readonly string[]).includes(v);
+}
 
 /**
  * A page (pages.pages): a template, a domain's page or a funnel's page.

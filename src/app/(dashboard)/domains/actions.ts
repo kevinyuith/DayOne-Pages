@@ -8,7 +8,7 @@ import { isValidDomain, normalizeHost } from "@/lib/pages/normalize";
 import { rewriteCopyAngle } from "@/lib/pages/copy-angle";
 import { PLACEHOLDER_FIELDS, emptyPlaceholders } from "@/lib/pages/placeholders";
 import { applyVariation, describeVariation, pickVariation, type VariationOptions, type VariationStats } from "@/lib/pages/variation";
-import { isDomainType, type DomainStatus, type DomainType } from "@/lib/pages/types";
+import { isDomainStatus, isDomainType, type DomainStatus, type DomainType } from "@/lib/pages/types";
 import { supabaseService } from "@/lib/supabase/service";
 
 /**
@@ -27,9 +27,10 @@ function revalidateDomain(id?: string) {
 }
 
 /**
- * After pausing or activating a domain: purges the server cache so it takes
- * effect immediately. The database write already happened; if the purge fails,
- * the new state takes effect when the cache expires — the message says so.
+ * After a write that changes what a domain serves (status, pages, slugs):
+ * purges the server cache so it takes effect immediately. The database write
+ * already happened; if the purge fails, the new state takes effect when the
+ * cache expires — the message says so.
  */
 async function purgeAfterWrite(domain: string, done: string): Promise<ActionResult> {
   const r = await purgeHost(domain);
@@ -349,12 +350,14 @@ export async function savePlaceholders(domainId: string, prev: PlaceholdersFormS
 
 const SLUG_RE = /^\/([a-z0-9._~-]+(\/[a-z0-9._~-]+)*)?$/;
 
-/** The domain's allowed slugs (gate_slugs): besides "/", the paths where a clean click goes to the funnel of its sub1. */
+/** The domain's allowed slugs (gate_slugs): the whole set where a clean click goes to the funnel of its sub1 — "/" included when it's there. */
 export async function saveGateSlugs(domainId: string, slugs: string[]): Promise<ActionResult<{ slugs: string[] }>> {
   if (!UUID_RE.test(domainId)) return fail("Invalid domain.");
-  const clean = Array.from(new Set(slugs.map((s) => s.trim()).filter(Boolean))).filter((s) => s !== "/");
+  const clean = Array.from(new Set(slugs.map((s) => s.trim()).filter(Boolean)));
   const bad = clean.find((s) => !SLUG_RE.test(s));
   if (bad) return fail(`Invalid slug "${bad}". Use the format /oferta (lowercase, no trailing slash).`);
+  // Canonical order, like the database check: "/" first, then as typed.
+  clean.sort((a, b) => (a === "/" ? -1 : b === "/" ? 1 : 0));
   try {
     const { data, error } = await supabaseService().from("domains").update({ gate_slugs: clean }).eq("id", domainId).select("domain").single();
     if (error) throw new Error(error.message);
@@ -380,12 +383,12 @@ export async function setDomainType(id: string, type: DomainType): Promise<Actio
 }
 
 export async function setDomainStatus(id: string, status: DomainStatus): Promise<ActionResult> {
-  if (status !== "ACTIVE" && status !== "PAUSED") return fail("Invalid status.");
+  if (!isDomainStatus(status)) return fail("Invalid status.");
   try {
     const { data, error } = await supabaseService().from("domains").update({ status }).eq("id", id).select("domain").single();
     if (error) throw new Error(error.message);
     revalidateDomain(id);
-    return purgeAfterWrite(data.domain, status === "ACTIVE" ? "Domain activated" : "Domain paused");
+    return purgeAfterWrite(data.domain, "Status saved");
   } catch (cause) {
     return fail(errorReason(cause));
   }

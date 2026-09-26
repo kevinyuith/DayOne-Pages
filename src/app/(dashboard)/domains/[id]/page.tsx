@@ -7,7 +7,8 @@ import { Badge, DOMAIN_STATUS_TONE } from "@/components/ui/badge";
 import { getDomainDetail, listTemplates } from "@/lib/pages/queries";
 import { DOMAIN_STATUS_LABELS } from "@/lib/pages/types";
 import { APP_TZ } from "@/lib/time-zone";
-import { removeDomain, setDomainStatus, verifyDomain } from "../actions";
+import { removeDomain, verifyDomain } from "../actions";
+import { DomainStatusSelect } from "../domain-status-select";
 import { DomainPagesPanel } from "./domain-pages-panel";
 import { DomainTypeSelect } from "./domain-type-select";
 import { GateSlugsForm } from "./gate-slugs-form";
@@ -53,16 +54,12 @@ export default async function DomainDetailPage({ params }: { params: Params }) {
           {domain.last_check_error && !domain.last_check_ok ? (
             <p className="mt-2 text-xs text-red-600 dark:text-red-400">{domain.last_check_error}</p>
           ) : null}
-          <div className="mt-4">
+          <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2">
+            <DomainStatusSelect domainId={domain.id} value={domain.status} />
             <DomainTypeSelect domainId={domain.id} value={domain.type} />
           </div>
           <div className="mt-4 flex flex-wrap gap-2">
             <RowAction action={verifyDomain.bind(null, domain.id)} label="Verify DNS" pendingLabel="Verifying…" />
-            {domain.status === "ACTIVE" ? (
-              <RowAction action={setDomainStatus.bind(null, domain.id, "PAUSED")} label="Pause" variant="ghost" />
-            ) : (
-              <RowAction action={setDomainStatus.bind(null, domain.id, "ACTIVE")} label="Activate" variant="ghost" />
-            )}
             <RowAction action={removeDomain.bind(null, domain.id)} label="Remove domain" variant="danger" confirm={`Remove ${domain.domain} and all its pages?`} redirectTo="/domains" />
           </div>
         </div>

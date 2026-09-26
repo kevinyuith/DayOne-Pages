@@ -17,7 +17,7 @@ $routeAt = fn (string $slug, string $hash): array => [
 ];
 
 $gate = [
-    'gate_slugs' => ['/oferta'],
+    'gate_slugs' => ['/', '/oferta'],
     'rules' => [
         ['name' => 'Datacenter US', 'label' => 'Suspicious', 'reason' => 'Datacenter IP range', 'tags' => [], 'conditions' => ['param' => ['name' => 'net', 'equals' => 'dc']]],
         ['name' => 'Bad UA', 'label' => 'Bot', 'tags' => ['scrape'], 'conditions' => ['user_agent' => 'scraperxyz|evilscraper']],
@@ -79,6 +79,11 @@ check('not allowed: oferta HTML', str_contains((string) $body, 'OFERTA'));
 check('not allowed: no funnel mark', !isset($route['_funnel']));
 same('not allowed: gate reason', 'slug_not_allowed', $route['_gate_reason'] ?? null);
 
+// "/" out of the list: the root is NOT allowed either — a clean click stays on the safe page.
+[, , , , $route] = decide($root, make_request(['REQUEST_URI' => '/?sub1=x[F23]']), [...$gate, 'gate_slugs' => ['/oferta']]);
+same('root removed: the domain page', ['GATE-SAFE', 'home01'], [$route['match_type'], $route['content_hash']]);
+same('root removed: gate reason', 'slug_not_allowed', $route['_gate_reason'] ?? null);
+
 // ── Clean but no [F…] token: the domain's page at "/" ──
 [, , , , $route] = decide($root, make_request(['REQUEST_URI' => '/?sub1=plain']), $gate);
 same('no token: domain page at /', ['GATE-SAFE', 'home01'], [$route['match_type'], $route['content_hash']]);
@@ -107,8 +112,66 @@ same('no page at the slug: 404', [404, 'notfound'], [$outcome === 'notfound' ? 4
 [, , , , $route] = decide($root, make_request(['REQUEST_URI' => '/?sub1=x[F23]']), null);
 same('no gate data: the route loop', 'home01', $route['content_hash']);
 
+// ── The domain's status (pages.domains.status, in the gate data) ──
+
+// DISABLED: 404 for every slug, even an allowed one with a token; the rules don't run.
+$disabled = [...$gate, 'status' => 'DISABLED'];
+[$st, , , $outcome, $route] = decide($root, make_request(['REQUEST_URI' => '/?sub1=x[F23]&net=dc']), $disabled);
+same('disabled: 404', [404, 'notfound'], [$st, $outcome]);
+same('disabled: gate reason', 'domain_disabled', $route['_gate_reason'] ?? null);
+check('disabled: no detection', !isset($route['_rule_label']));
+check('disabled: no funnel', !isset($route['_funnel']));
+[$st, , , $outcome, $route] = decide($oferta, make_request(['REQUEST_URI' => '/oferta']), $disabled);
+same('disabled: 404 at any slug', [404, 'notfound'], [$st, $outcome]);
+same('disabled: gate reason at any slug', 'domain_disabled', $route['_gate_reason'] ?? null);
+
+// LOCKED: the rules still run (they mark the log), but a clean click never
+// goes to the funnel — always the domain's page at the requested slug.
+$locked = [...$gate, 'status' => 'LOCKED'];
+[, , , , $route] = decide($root, make_request(['REQUEST_URI' => '/?net=dc&sub1=x[F23]']), $locked);
+same('locked: a rule still labels', ['GATE-SAFE', 'home01', 'Suspicious'], [$route['match_type'], $route['content_hash'], $route['_rule_label'] ?? null]);
+check('locked: a rule match has no gate reason', !isset($route['_gate_reason']));
+[, , $body, , $route] = decide($root, make_request(['REQUEST_URI' => '/?sub1=x[F23]']), $locked);
+same('locked: the domain page, never the funnel', ['GATE-SAFE', 'home01'], [$route['match_type'], $route['content_hash']]);
+check('locked: the safe HTML', str_contains((string) $body, 'HOME'));
+check('locked: no funnel mark', !isset($route['_funnel']));
+same('locked: gate reason', 'domain_locked', $route['_gate_reason'] ?? null);
+// Even a slug outside gate_slugs is domain_locked (the status, not the slug).
+[, , , , $route] = decide($oferta, make_request(['REQUEST_URI' => '/oferta?sub1=x[F23]']), [...$locked, 'gate_slugs' => []]);
+same('locked: any slug is domain_locked', ['GATE-SAFE', 'ofer01', 'domain_locked'], [$route['match_type'], $route['content_hash'], $route['_gate_reason'] ?? null]);
+
+// UNLOCKED: the rules are ignored and every slug is allowed — straight to the funnel.
+$unlocked = [...$gate, 'status' => 'UNLOCKED'];
+[, , , , $route] = decide($root, make_request(['REQUEST_URI' => '/?net=dc&sub1=x[F23]']), $unlocked);
+same('unlocked: a rule is ignored, to the funnel', 'GATE', $route['match_type']);
+check('unlocked: no detection', !isset($route['_rule_label']));
+check('unlocked: one of F23 pages', in_array($route['content_hash'], ['fade01', 'fade02'], true));
+[, , , , $route] = decide($oferta, make_request(['REQUEST_URI' => '/oferta?sub1=x[F23]']), [...$unlocked, 'gate_slugs' => []]);
+same('unlocked: any slug goes to the funnel', 'GATE', $route['match_type']);
+check('unlocked: funnel page at any slug', in_array($route['content_hash'], ['fade01', 'fade02'], true));
+// No token → 404 (the domain only serves funnels).
+[$st, , , $outcome, $route] = decide($root, make_request(['REQUEST_URI' => '/?sub1=plain']), $unlocked);
+same('unlocked, no token: 404', [404, 'notfound'], [$st, $outcome]);
+same('unlocked, no token: gate reason', 'domain_unlocked', $route['_gate_reason'] ?? null);
+// A funnel that isn't live → 404, the code is logged.
+[$st, , , $outcome, $route] = decide($root, make_request(['REQUEST_URI' => '/?sub1=x[F99]']), $unlocked);
+same('unlocked, not live: 404', [404, 'notfound'], [$st, $outcome]);
+same('unlocked, not live: code logged', 'F99', $route['_funnel'] ?? null);
+same('unlocked, not live: gate reason', 'domain_unlocked', $route['_gate_reason'] ?? null);
+
+// The old names (a cache from before the rename) are read as the new ones.
+[, , , , $route] = decide($root, make_request(['REQUEST_URI' => '/?sub1=x[F23]']), [...$gate, 'status' => 'BLOCKED']);
+same('old BLOCKED cache: locked behavior', ['GATE-SAFE', 'domain_locked'], [$route['match_type'], $route['_gate_reason'] ?? null]);
+[, , , , $route] = decide($root, make_request(['REQUEST_URI' => '/?sub1=x[F23]']), [...$gate, 'status' => 'ALLOWED']);
+same('old ALLOWED cache: unlocked behavior', 'GATE', $route['match_type']);
+
+// An unknown status is read as ACTIVE (an old cache).
+[, , , , $route] = decide($root, make_request(['REQUEST_URI' => '/?sub1=x[F23]']), [...$gate, 'status' => 'WEIRD']);
+same('unknown status: active behavior', 'GATE', $route['match_type']);
+
 // ── gate_slug_allowed / gate_domain_page / gate_funnel_code ──
-check('slug allowed: /', gate_slug_allowed('/', []));
+check('slug allowed: / in the list', gate_slug_allowed('/', ['/']));
+check('/ not special: not in the list', !gate_slug_allowed('/', []));
 check('slug allowed: in the list', gate_slug_allowed('/oferta', ['/oferta']));
 check('slug allowed: case-insensitive', gate_slug_allowed('/OFERTA', ['/oferta']));
 check('slug not allowed', !gate_slug_allowed('/outra', ['/oferta']));
@@ -122,6 +185,12 @@ check('sub ids: case-insensitive', rule_conditions_match(['sub1' => 'camp-x', 's
 check('param equals', rule_conditions_match(['param' => ['name' => 'net', 'equals' => 'DC9']], $req));
 check('param contains', rule_conditions_match(['param' => ['name' => 'net', 'contains' => 'dc']], $req));
 check('param present', rule_conditions_match(['param' => ['name' => 'net', 'present' => true]], $req));
+check('param not_equals: different value matches', rule_conditions_match(['param' => ['name' => 'net', 'not_equals' => '_CLICKID_']], $req));
+check('param not_equals: same value fails', !rule_conditions_match(['param' => ['name' => 'net', 'not_equals' => 'dc9']], $req));
+check('param not_equals: missing fails', !rule_conditions_match(['param' => ['name' => 'nix', 'not_equals' => 'x']], $req));
+check('param absent_or_equals: missing matches', rule_conditions_match(['param' => ['name' => 'nix', 'absent_or_equals' => '_P_']], $req));
+check('param absent_or_equals: same value matches', rule_conditions_match(['param' => ['name' => 'net', 'absent_or_equals' => 'dc9']], $req));
+check('param absent_or_equals: different value fails', !rule_conditions_match(['param' => ['name' => 'net', 'absent_or_equals' => '_P_']], $req));
 check('UA regex', rule_conditions_match(['user_agent' => 'chrome'], $req));
 check('UA + base', rule_conditions_match(['user_agent' => 'chrome', 'countries' => ['BR']], $req));
 check('empty conditions', rule_conditions_match([], $req));

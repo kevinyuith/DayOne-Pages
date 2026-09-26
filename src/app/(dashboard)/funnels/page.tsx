@@ -32,7 +32,7 @@ export default async function FunnelsPage({ searchParams }: { searchParams: Prom
         rows={board.rows}
         stats={board.stats}
         templates={templates}
-        domains={domains.filter((d) => d.status !== "ARCHIVED").map((d) => ({ id: d.id, domain: d.domain }))}
+        domains={domains.map((d) => ({ id: d.id, domain: d.domain }))}
         days={days}
         initialOpen={f ?? null}
       />
