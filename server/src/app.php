@@ -29,7 +29,8 @@ function dayone_handle(): void
         return;
     }
     if ($req->rawPath === BEACON_PATH) {
-        [$status, $headers, $body, $visitId, $notice] = handle_beacon($req, (string) file_get_contents('php://input', false, null, 0, 256));
+        // The signals JSON (sg) rides along: the body is still tiny (≲2 KB).
+        [$status, $headers, $body, $visitId, $notice] = handle_beacon($req, (string) file_get_contents('php://input', false, null, 0, 4096));
         send_response($status, $headers, $body, false);
         if ($visitId !== null) {
             if (function_exists('fastcgi_finish_request')) {

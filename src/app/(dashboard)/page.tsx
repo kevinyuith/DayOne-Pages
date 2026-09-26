@@ -1,27 +1,25 @@
-import Link from "next/link";
 import { AccessLogs } from "@/components/dashboard/access-logs";
 import { AlertBanner } from "@/components/dashboard/alert-banner";
 import { DashboardControls } from "@/components/dashboard/dashboard-controls";
 import { StatStrip, type Stat } from "@/components/dashboard/stat-card";
 import { TrafficChart } from "@/components/dashboard/traffic-chart";
-import { ChevronRightIcon } from "@/components/icons";
 import { activeFilterCount, foldIntoLocalDays, parseDashboardFilters, resolveRange } from "@/lib/pages/dashboard-filters";
-import { countOverview, hitCountries, hitStats, hitTimeseries, listDomains, recentHits, type HitFilter } from "@/lib/pages/queries";
+import { hitCountries, hitStats, hitTimeseries, listDomains, recentHits, type HitFilter } from "@/lib/pages/queries";
 
 const num = new Intl.NumberFormat("en-US");
 
 /** Fraction and "N% of requests" text (with "<1%" so something that exists never shows as 0%). */
-function share(part: number, total: number): { share: number; detail: string } {
+function share(part: number, total: number, noun = "of requests"): { share: number; detail: string } {
   if (total <= 0) return { share: 0, detail: "—" };
   const f = part / total;
   const p = Math.round(f * 100);
-  return { share: f, detail: `${part > 0 && p === 0 ? "<1" : p}% of requests` };
+  return { share: f, detail: `${part > 0 && p === 0 ? "<1" : p}% ${noun}` };
 }
 
 /**
  * Filters in the URL (see dashboard-filters.ts): period, domain, outcome,
- * device, country and bots. The cards, chart and table all follow them;
- * "Quick access" is registered data, not traffic, and doesn't change.
+ * device, country and bots. The cards (total requests and the unique-visitor
+ * counts), the chart and the table all follow them.
  */
 export default async function DashboardPage({
   searchParams,
@@ -41,8 +39,7 @@ export default async function DashboardPage({
     countries: filters.countries,
     hideBots: filters.hideBots,
   };
-  const [counts, stats, hourly, hits, countries] = await Promise.all([
-    countOverview(),
+  const [stats, hourly, hits, countries] = await Promise.all([
     hitStats(range.since, hitFilter),
     hitTimeseries(range.since, range.bucketMinutes, range.origin, hitFilter),
     recentHits(20, range.since, hitFilter),
@@ -55,19 +52,15 @@ export default async function DashboardPage({
   const filtered = activeFilterCount(filters) > 0;
   const scope = domains.find((d) => d.id === filters.domain)?.domain;
 
-  // The 5 numbers for the filtered period. Served/Blocked/Bots are the chart's series (same color);
-  // Bots overlaps the others (a bot can be served), so the fractions don't add up to 100%.
+  // The 5 numbers for the filtered period. Total is every request; the rest are UNIQUE visitors
+  // (distinct IPs): all of them, the ones a rule caught as a bot or as suspicious, and the ones whose
+  // page loaded. They overlap (a bot can have loaded), so they aren't parts of a whole.
   const stats5: Stat[] = [
     { label: "Total requests", value: num.format(stats.total), detail: range.label },
-    { label: "Served", value: num.format(stats.served), series: "served", ...share(stats.served, stats.total) },
-    { label: "Blocked", value: num.format(stats.blocked), series: "blocked", ...share(stats.blocked, stats.total) },
     { label: "Unique visitors", value: num.format(stats.uniques), detail: "Distinct IPs" },
-    { label: "Bots", value: num.format(stats.bots), series: "bots", ...share(stats.bots, stats.total) },
-  ];
-
-  const quickAccess = [
-    { label: "Domains", value: counts.domains, detail: `${counts.domainsActive} active`, href: "/domains" },
-    { label: "Page templates", value: counts.pages, detail: `${counts.domainPages} copied to domains`, href: "/templates" },
+    { label: "Bots (Unique)", value: num.format(stats.botsUnique), series: "bots", ...share(stats.botsUnique, stats.uniques, "of visitors") },
+    { label: "Suspicious (Unique)", value: num.format(stats.suspiciousUnique), series: "blocked", ...share(stats.suspiciousUnique, stats.uniques, "of visitors") },
+    { label: "Loaded (Unique)", value: num.format(stats.loadedUnique), series: "served", ...share(stats.loadedUnique, stats.uniques, "of visitors") },
   ];
 
   return (
@@ -89,23 +82,6 @@ export default async function DashboardPage({
         <AccessLogs hits={hits} filtered={filtered || filters.domain !== null} showDate={filters.range !== "today"} />
       </div>
 
-      <section className="mt-10">
-        <h2 className="mb-3 text-sm font-medium text-muted">Quick access</h2>
-        <div className="grid gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-3">
-          {quickAccess.map((s) => (
-            <Link key={s.label} href={s.href} className="group flex items-center justify-between gap-3 bg-surface px-5 py-4 transition-colors hover:bg-foreground/[0.03]">
-              <div className="min-w-0">
-                <p className="text-sm text-muted">{s.label}</p>
-                <p className="mt-1 text-2xl font-semibold tracking-tight">
-                  <span className="sensitive">{num.format(s.value)}</span>
-                </p>
-                <p className="mt-0.5 truncate text-xs text-muted">{s.detail}</p>
-              </div>
-              <ChevronRightIcon className="size-4 shrink-0 text-muted transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" />
-            </Link>
-          ))}
-        </div>
-      </section>
     </>
   );
 }

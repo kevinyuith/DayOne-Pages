@@ -84,6 +84,37 @@ export async function deleteRule(id: string): Promise<ActionResult> {
   return { ok: true };
 }
 
+/** Duplicates a rule: a copy with a free name ("… (copy)"), same label, flows, conditions and state, at the end of the walk. */
+export async function duplicateRule(id: string): Promise<ActionResult> {
+  if (!UUID_RE.test(id)) return fail("Invalid rule.");
+  try {
+    const db = supabaseService();
+    const got = await db.from("rules").select("name,label,tags,conditions,is_active,reason").eq("id", id).maybeSingle();
+    if (got.error) throw new Error(got.error.message);
+    const src = got.data as { name: string; label: string; tags: unknown; conditions: unknown; is_active: boolean; reason: string | null } | null;
+    if (!src) return fail("Rule not found.");
+    // A name that isn't taken: "<name> (copy)", then "(copy 2)"…, within 120 characters.
+    const names = new Set((((await db.from("rules").select("name")).data as { name: string }[] | null) ?? []).map((r) => r.name));
+    const base = src.name.slice(0, 108);
+    let name = `${base} (copy)`;
+    for (let i = 2; names.has(name); i++) name = `${base} (copy ${i})`;
+    const { error } = await db.rpc("rule_save", {
+      p_id: null,
+      p_name: name,
+      p_label: src.label,
+      p_tags: Array.isArray(src.tags) ? src.tags : [],
+      p_conditions: src.conditions ?? {},
+      p_is_active: src.is_active,
+      p_reason: src.reason ?? "",
+    });
+    if (error) throw new Error(error.message);
+  } catch (cause) {
+    return fail(errorReason(cause));
+  }
+  revalidateRules();
+  return { ok: true };
+}
+
 /** Pause/resume without opening the form. */
 export async function setRuleActive(id: string, active: boolean): Promise<ActionResult> {
   if (!UUID_RE.test(id)) return fail("Invalid rule.");

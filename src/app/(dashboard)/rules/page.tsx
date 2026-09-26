@@ -6,15 +6,21 @@ import { Badge } from "@/components/ui/badge";
 import { Table, Td, Th, Tr } from "@/components/ui/table";
 import { summarizeRuleConditions } from "@/lib/pages/conditions";
 import { listRules } from "@/lib/pages/rules";
-import { deleteRule, moveRule, setRuleActive } from "./actions";
+import { deleteRule, duplicateRule, moveRule, setRuleActive } from "./actions";
+import { FlowFilter } from "./flow-filter";
 import { RuleForm } from "./rule-form";
 
 export const metadata: Metadata = {
   title: "Rules",
 };
 
-export default async function RulesPage() {
-  const rules = await listRules();
+export default async function RulesPage({ searchParams }: { searchParams: Promise<{ flow?: string }> }) {
+  const { flow } = await searchParams;
+  const all = await listRules();
+  // The flows in use (the rules' tags), for the filter.
+  const flows = [...new Set(all.flatMap((r) => r.tags))].sort((a, b) => a.localeCompare(b));
+  const selected = typeof flow === "string" && flows.includes(flow) ? flow : null;
+  const rules = selected ? all.filter((r) => r.tags.includes(selected)) : all;
 
   return (
     <>
@@ -29,8 +35,17 @@ export default async function RulesPage() {
         <RuleForm />
       </section>
 
+      {all.length ? (
+        <div className="mb-3 flex items-center justify-end gap-2">
+          <FlowFilter flows={flows} value={selected} />
+        </div>
+      ) : null}
+
       {rules.length === 0 ? (
-        <EmptyState title="No rules" description="Create the first rule above. With no rules, every click is clean and goes to the funnel of its sub1." />
+        <EmptyState
+          title={selected ? `No rules with the flow "${selected}"` : "No rules"}
+          description={selected ? "Clear the filter to see every rule." : "Create the first rule above. With no rules, every click is clean and goes to the funnel of its sub1."}
+        />
       ) : (
         <Table>
           <thead>
@@ -72,6 +87,7 @@ export default async function RulesPage() {
                 <Td className="text-right">
                   <span className="inline-flex gap-2">
                     <RuleForm rule={r} />
+                    <RowAction action={duplicateRule.bind(null, r.id)} label="Duplicate" pendingLabel="…" />
                     <RowAction action={setRuleActive.bind(null, r.id, !r.is_active)} label={r.is_active ? "Pause" : "Activate"} pendingLabel="…" />
                     <RowAction action={deleteRule.bind(null, r.id)} label="Delete" variant="danger" confirm={`Delete the rule "${r.name}"?`} />
                   </span>

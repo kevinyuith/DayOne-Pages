@@ -583,7 +583,7 @@ export type Overview = {
 
 // ── Traffic (hits) ───────────────────────────────────────────────────────────
 
-export type HitStats = { total: number; served: number; blocked: number; bots: number; uniques: number };
+export type HitStats = { total: number; served: number; blocked: number; bots: number; uniques: number; botsUnique: number; suspiciousUnique: number; loadedUnique: number };
 export type HitBucket = { bucket: string; served: number; blocked: number; bots: number };
 export type HitRow = {
   created_at: string;
@@ -624,7 +624,16 @@ export async function hitStats(since: Date, filter: HitFilter = {}): Promise<Hit
   const { data, error } = await supabaseService().rpc("hit_stats", { p_since: since.toISOString(), ...filterArgs(filter) });
   throwIf(error, "hitStats");
   const r = (data as Record<string, unknown>[] | null)?.[0];
-  return { total: n(r?.total), served: n(r?.served), blocked: n(r?.blocked), bots: n(r?.bots), uniques: n(r?.uniques) };
+  return {
+    total: n(r?.total),
+    served: n(r?.served),
+    blocked: n(r?.blocked),
+    bots: n(r?.bots),
+    uniques: n(r?.uniques),
+    botsUnique: n(r?.bots_unique),
+    suspiciousUnique: n(r?.suspicious_unique),
+    loadedUnique: n(r?.loaded_unique),
+  };
 }
 
 /** Series per bucket (for the chart), gaps already filled. `origin` aligns the buckets (e.g. local midnight). */
@@ -714,6 +723,12 @@ export type HitLogRow = HitRow & {
   /** The visitor's first interaction (mouse, scroll, touch, key) and the ms from the navigation start to it; null = none reported. */
   interaction: "mouse" | "scroll" | "touch" | "key" | null;
   interaction_ms: number | null;
+  /**
+   * Device/behavior signals the beacon collected on the funnel page (informational only):
+   * capabilities at load (wd, pl, mtp, hc, dm, nl, np, sw/sh/dpr, vw/vh, ptr, hvr, chr, mob, upf, cke)
+   * and session counts when hidden/left (mm, md, wh, sc, ts, ky, ck).
+   */
+  signals: Record<string, number | string | boolean> | null;
   /** When the visitor first clicked out of the page; null = no click. */
   clicked_at: string | null;
   /** How long the page stayed open (ms, the longest report when it was hidden or left); null = never reported. */
@@ -743,7 +758,7 @@ export async function listHits(
     .select(
       "id, created_at, domain_id, host, path, outcome, status_code, country, device, is_bot, referrer_host, ip, user_agent, " +
         "hostname, asn, as_name, cookies, region, route_id, page_id, slug, decision, query, redirect_url, visit_id, rule_label, rule, rule_reason, rule_tags, gate_reason, funnel, " +
-        "loaded_at, load_ms, accept_language, interaction, interaction_ms, clicked_at, duration_ms, is_unique, domains(domain)",
+        "loaded_at, load_ms, accept_language, interaction, interaction_ms, clicked_at, duration_ms, is_unique, signals, domains(domain)",
     )
     .order("id", { ascending: false })
     .limit(limit + 1);

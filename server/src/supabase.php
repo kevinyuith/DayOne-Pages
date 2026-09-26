@@ -159,6 +159,13 @@ function supabase_log_interact(string $visitId, string $kind, ?int $ms): ?bool
     return is_bool($found) ? $found : null;
 }
 
+/** A visit's device/behavior signals (the beacon's sanitized JSON; informational): same as supabase_log_load. */
+function supabase_log_signals(string $visitId, array $signals): ?bool
+{
+    $found = supabase_fire('log_signals', ['p_visit_id' => $visitId, 'p_signals' => $signals]);
+    return is_bool($found) ? $found : null;
+}
+
 /**
  * POST to a logging RPC (pages.<fn>) with p_key: the function's result
  * (decoded JSON), or null when the call failed (only the log sees it).

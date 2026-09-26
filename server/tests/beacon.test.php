@@ -63,17 +63,33 @@ check('script: reads the id once and sends it with every notice', str_contains(B
 check('script: reports the time on the page when hidden or left', str_contains(BEACON_SCRIPT, '"pagehide"') && str_contains(BEACON_SCRIPT, '"visibilitychange"') && str_contains(BEACON_SCRIPT, 'b("d="'));
 same('beacon via GET: 404', 404, handle_beacon(make_request(['REQUEST_URI' => '/_dop/l', 'HTTP_COOKIE' => "dop_v=$id"]), '')[0]);
 
+// ── Device/behavior signals (sg=<json>): capabilities at load, event counts when hidden/left ──
+$sgCaps = rawurlencode(json_encode(['wd' => 0, 'pl' => 'iPhone', 'mtp' => 5, 'nl' => 2, 'ptr' => 'coarse', 'mob' => 1]));
+same('beacon: signals at load (the notice stays a load)', [$id, ['kind' => 'load', 'ms' => null, 'sg' => ['wd' => 0, 'pl' => 'iPhone', 'mtp' => 5, 'nl' => 2, 'ptr' => 'coarse', 'mob' => 1]]], array_slice(handle_beacon($post(), "v=$id&sg=$sgCaps"), 3, 2));
+$sgCounts = rawurlencode(json_encode(['mm' => 12, 'wh' => 3, 'ts' => 0, 'ky' => 0]));
+same('beacon: counts ride the duration notice', ['kind' => 'duration', 'ms' => 4200, 'sg' => ['mm' => 12, 'wh' => 3, 'ts' => 0, 'ky' => 0]], handle_beacon($post(), "v=$id&d=4200&sg=$sgCounts")[4]);
+same('beacon: sg that is not json → dropped, the notice still counts', ['kind' => 'duration', 'ms' => 100], handle_beacon($post(), "v=$id&d=100&sg=not-json")[4]);
+same('beacon: sg not an object → dropped', ['kind' => 'load', 'ms' => null], handle_beacon($post(), "v=$id&sg=" . rawurlencode('[1,2,3]'))[4]);
+same('beacon: sg empty object → dropped', ['kind' => 'load', 'ms' => null], handle_beacon($post(), "v=$id&sg=" . rawurlencode('{}'))[4]);
+same('beacon: sg oversized → dropped', ['kind' => 'load', 'ms' => null], handle_beacon($post(), "v=$id&sg=" . rawurlencode(json_encode(['pl' => str_repeat('x', 5000)])))[4]);
+same('beacon: sg keys and values are sanitized', ['wd' => 1, 'pl' => 'x'], handle_beacon($post(), "v=$id&sg=" . rawurlencode(json_encode(['wd' => 1, 'pl' => 'x', 'BADKEY' => 1, 'nested' => ['a' => 1], 'long' => str_repeat('y', 61), 'num01' => 5])))[4]['sg'] ?? null);
+same('beacon_parse_signals: scalar json → null', null, beacon_parse_signals('"fine"'));
+same('beacon_parse_signals: keeps bools, ints, floats, short strings', ['wd' => true, 'mm' => 3, 'dpr' => 2.5, 'ptr' => 'fine'], beacon_parse_signals('{"wd":true,"mm":3,"dpr":2.5,"ptr":"fine"}'));
+check('script: collects the capability signals', str_contains(BEACON_SCRIPT, 'N.webdriver') && str_contains(BEACON_SCRIPT, 'maxTouchPoints') && str_contains(BEACON_SCRIPT, 'pointer:fine') && str_contains(BEACON_SCRIPT, 'userAgentData'));
+check('script: counts the session events', str_contains(BEACON_SCRIPT, 'K={mm:0,md:0,wh:0,sc:0,ts:0,ky:0,ck:0}') && str_contains(BEACON_SCRIPT, 'e.isTrusted'));
+check('script: sends the signals json url-encoded', str_contains(BEACON_SCRIPT, '"sg="+encodeURIComponent(JSON.stringify('));
+
 // serve_slug: HTML gets the script and the ETag gets the version; anything that is not a page stays the same.
 $bSlug = '22222222-2222-2222-2222-222222222222';
 cache_put_content('bb01', '<html><body>hi</body></html>');
 [$status, $headers, $body] = serve_slug(['slug_id' => $bSlug, 'content_hash' => 'bb01', 'content_type' => 'text/html', 'match_type' => 'GATE'], make_request());
 same('serve funnel html: body with the script', '<html><body>hi' . BEACON_SCRIPT . '</body></html>', $body);
-same('serve funnel html: ETag with version', '"bb01-b4"', $headers['ETag']);
+same('serve funnel html: ETag with version', '"bb01-b5"', $headers['ETag']);
 same('serve funnel html: old ETag (no version) → 200', 200, serve_slug(['slug_id' => $bSlug, 'content_hash' => 'bb01', 'content_type' => 'text/html', 'match_type' => 'GATE'], make_request(['HTTP_IF_NONE_MATCH' => '"bb01"']))[0]);
 [$status, $headers, $body] = serve_slug(['slug_id' => $bSlug, 'content_hash' => 'bb01', 'content_type' => 'text/html', 'match_type' => 'GATE-SAFE'], make_request());
 same('serve the safe page: body untouched', '<html><body>hi</body></html>', $body);
 same('serve the safe page: ETag is just the hash', '"bb01"', $headers['ETag']);
-same('serve the safe page: an old ETag with the version → 200 (the script goes away)', 200, serve_slug(['slug_id' => $bSlug, 'content_hash' => 'bb01', 'content_type' => 'text/html', 'match_type' => 'GATE-SAFE'], make_request(['HTTP_IF_NONE_MATCH' => '"bb01-b4"']))[0]);
+same('serve the safe page: an old ETag with the version → 200 (the script goes away)', 200, serve_slug(['slug_id' => $bSlug, 'content_hash' => 'bb01', 'content_type' => 'text/html', 'match_type' => 'GATE-SAFE'], make_request(['HTTP_IF_NONE_MATCH' => '"bb01-b5"']))[0]);
 [$status, $headers, $body] = serve_slug(['slug_id' => $bSlug, 'content_hash' => 'bb01', 'content_type' => 'text/css'], make_request(['REQUEST_URI' => '/app.css']));
 same('serve css: body untouched', '<html><body>hi</body></html>', $body);
 same('serve css: ETag is just the hash', '"bb01"', $headers['ETag']);

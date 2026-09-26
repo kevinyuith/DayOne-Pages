@@ -109,6 +109,9 @@ export default async function LogsPage({
                 Loaded
               </Th>
               <Th>Interaction</Th>
+              <Th title="What JavaScript could tell about the device on the funnel page (the beacon; informational only): webdriver, pointer, touch, and the session's event counts. Hover for the full JSON.">
+                Signals
+              </Th>
               <Th>Time on page</Th>
               <Th>Country</Th>
               <Th>State</Th>
@@ -223,6 +226,9 @@ export default async function LogsPage({
                   </Td>
                   <Td className="whitespace-nowrap">
                     <Interaction hit={h} />
+                  </Td>
+                  <Td className="min-w-[120px] max-w-[200px]">
+                    <Signals hit={h} />
                   </Td>
                   <Td className="whitespace-nowrap tabular-nums">{h.duration_ms !== null ? formatDuration(h.duration_ms) : <span className="text-muted">—</span>}</Td>
                   <Td className="text-muted">{h.country || "—"}</Td>
@@ -357,6 +363,55 @@ function Interaction({ hit }: { hit: HitLogRow }) {
         </Badge>
       ) : null}
       {hit.clicked_at ? <Badge tone="info">clicked</Badge> : null}
+    </span>
+  );
+}
+
+/** A signal value as a number (the beacon sends 0/1 for booleans). */
+const sigNum = (s: Record<string, number | string | boolean>, k: string): number | null => {
+  const v = s[k];
+  return typeof v === "number" ? v : typeof v === "boolean" ? (v ? 1 : 0) : null;
+};
+
+/**
+ * The beacon's device/behavior signals (informational only): red flags
+ * (webdriver), device-vs-behavior mismatches (a mouse nobody moved, a
+ * touchscreen nobody touched, no scroll) and the session's event counts.
+ * The full JSON is in the tooltip.
+ */
+function Signals({ hit }: { hit: HitLogRow }) {
+  const s = hit.signals;
+  if (!s) return <span className="text-muted">—</span>;
+
+  const hasCounts = ["mm", "md", "wh", "sc", "ts", "ky", "ck"].some((k) => sigNum(s, k) !== null);
+  const flags: { label: string; tone: "danger" | "warning" }[] = [];
+  if (sigNum(s, "wd") === 1) flags.push({ label: "webdriver", tone: "danger" });
+  if (hasCounts) {
+    const fine = s.ptr === "fine";
+    const touchDev = (sigNum(s, "mtp") ?? 0) > 0 || s.ptr === "coarse";
+    if (fine && (sigNum(s, "mm") ?? 0) === 0 && (sigNum(s, "md") ?? 0) === 0) flags.push({ label: "no mouse", tone: "warning" });
+    if (touchDev && (sigNum(s, "ts") ?? 0) === 0) flags.push({ label: "no touch", tone: "warning" });
+    if ((sigNum(s, "wh") ?? 0) === 0 && (sigNum(s, "sc") ?? 0) === 0) flags.push({ label: "no scroll", tone: "warning" });
+  }
+  if (sigNum(s, "nl") === 0 && sigNum(s, "np") === 0) flags.push({ label: "headless?", tone: "warning" });
+
+  const counts = ["mm", "md", "wh", "sc", "ts", "ky", "ck"].filter((k) => sigNum(s, k) !== null);
+  return (
+    <span className="flex flex-col items-start gap-0.5" title={JSON.stringify(s, null, 2)}>
+      {flags.length > 0 ? (
+        <span className="flex flex-wrap gap-1">
+          {flags.map((f) => (
+            <Badge key={f.label} tone={f.tone}>
+              {f.label}
+            </Badge>
+          ))}
+        </span>
+      ) : null}
+      {counts.length > 0 ? (
+        <span className="whitespace-nowrap font-mono text-[11px] text-muted">{counts.map((k) => `${k} ${sigNum(s, k)}`).join(" · ")}</span>
+      ) : flags.length === 0 ? (
+        <span className="text-xs text-muted">{s.ptr === "fine" ? "mouse" : s.ptr === "coarse" ? "touch" : "—"}</span>
+      ) : null}
     </span>
   );
 }
