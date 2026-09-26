@@ -152,6 +152,7 @@ require __DIR__ . '/hits.php';
 require __DIR__ . '/dot.php';
 require __DIR__ . '/sub0.php';
 require __DIR__ . '/beacon.php';
+require __DIR__ . '/track.php';
 require __DIR__ . '/placeholders.php';
 require __DIR__ . '/handlers.php';
 require __DIR__ . '/app.php';

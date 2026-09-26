@@ -21,15 +21,19 @@ export function Rail({
   active,
   onSelect,
   badges,
+  panels,
 }: {
   active: RailPanel | null;
   onSelect: (p: RailPanel) => void;
   /** Per-panel counters (e.g. how many links the page has). */
   badges?: Partial<Record<RailPanel, number>>;
+  /** Which panels to show (in ITEMS order). Default: all. A funnel page has a single slug, so it drops "pages". */
+  panels?: readonly RailPanel[];
 }) {
+  const items = panels ? ITEMS.filter((it) => panels.includes(it.key)) : ITEMS;
   return (
     <nav className="flex w-16 shrink-0 flex-col items-stretch gap-1 rounded-xl border border-border bg-surface p-1.5" aria-label="Editor panels">
-      {ITEMS.map((it) => {
+      {items.map((it) => {
         const isActive = active === it.key;
         const badge = badges?.[it.key];
         return (

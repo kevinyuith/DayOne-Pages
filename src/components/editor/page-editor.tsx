@@ -159,7 +159,9 @@ export function PageEditor({
   const [selection, setSelection] = useState<SelectionInfo | null>(null);
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>("settings");
   const [hiddenCount, setHiddenCount] = useState(0);
-  const [panel, setPanel] = useState<RailPanel | null>("pages");
+  // A funnel page is a single slug ("/"), so it has no Pages tab; it opens on the Funnel panel.
+  const railPanels: readonly RailPanel[] = scope === "funnel" ? ["funnel", "widgets", "layers", "links"] : ["pages", "funnel", "widgets", "layers", "links"];
+  const [panel, setPanel] = useState<RailPanel | null>(scope === "funnel" ? "funnel" : "pages");
   const [showMarkers, setShowMarkers] = useState(true);
   const [currentPageId, setCurrentPageId] = useState<string | null>(null);
   const [previewDoc, setPreviewDoc] = useState("");
@@ -551,7 +553,7 @@ export function PageEditor({
       {/* Body: rail + panel | canvas | inspector */}
       <div className="flex min-h-0 flex-1 gap-2">
         <div className="hidden shrink-0 gap-2 md:flex">
-          <Rail active={panel} onSelect={togglePanel} badges={{ links: outline.links.length, funnel: activeSteps.length > 1 ? activeSteps.length : 0 }} />
+          <Rail active={panel} onSelect={togglePanel} panels={railPanels} badges={{ links: outline.links.length, funnel: activeSteps.length > 1 ? activeSteps.length : 0 }} />
           {panel ? (
             <aside className="flex w-64 shrink-0 flex-col rounded-xl border border-border bg-surface">
               {panel === "pages" ? (

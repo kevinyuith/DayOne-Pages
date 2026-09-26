@@ -207,7 +207,9 @@ function serve_slug(array $route, Request $req): array
         }
     }
 
-    $etag = '"' . $hash . $abTag . ($funnel ? '-' . $funnel['step'] : '') . $vslTag . $ptag . $tag . '"';
+    // A funnel page (any mode) carries the per-step tracker loader (track.php); the version goes into the ETag.
+    $track = track_applies($body);
+    $etag = '"' . $hash . $abTag . ($funnel ? '-' . $funnel['step'] : '') . $vslTag . $ptag . $tag . ($track ? TRACK_ETAG : '') . '"';
     if ($funnel || $abTag !== '' || $vslTag !== '') {
         $headers['Vary'] .= ', Cookie';
     }
@@ -218,7 +220,13 @@ function serve_slug(array $route, Request $req): array
     }
 
     $body = placeholders_apply($body, $values, $headers['Content-Type']);
-    return [200, $headers, $beacon ? beacon_inject($body) : $body];
+    if ($beacon) {
+        $body = beacon_inject($body);
+    }
+    if ($track) {
+        $body = track_inject($body);
+    }
+    return [200, $headers, $body];
 }
 
 function etag_matches(string $header, string $etag): bool
