@@ -658,3 +658,22 @@ export function GearIcon(props: IconProps) {
     </svg>
   );
 }
+
+export function SparklesIcon(props: IconProps) {
+  return (
+    <svg {...baseProps(props)}>
+      <path d="M10 3.5 11.6 8a2 2 0 0 0 1.4 1.4l4.5 1.6-4.5 1.6a2 2 0 0 0-1.4 1.4L10 18.5 8.4 14A2 2 0 0 0 7 12.6L2.5 11 7 9.4A2 2 0 0 0 8.4 8Z" />
+      <path d="M18.5 3v4M16.5 5h4M18 16v3M16.5 17.5h3" />
+    </svg>
+  );
+}
+
+export function DownloadIcon(props: IconProps) {
+  return (
+    <svg {...baseProps(props)}>
+      <path d="M12 4v11" />
+      <path d="m7 10 5 5 5-5" />
+      <path d="M5 20h14" />
+    </svg>
+  );
+}

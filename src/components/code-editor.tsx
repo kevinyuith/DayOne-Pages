@@ -1,8 +1,10 @@
 "use client";
 
 import { pickedCompletion, type CompletionContext, type CompletionResult } from "@codemirror/autocomplete";
+import { css } from "@codemirror/lang-css";
 import { html } from "@codemirror/lang-html";
 import { EditorState } from "@codemirror/state";
+import { EditorView } from "@codemirror/view";
 import dynamic from "next/dynamic";
 import { useMemo, useSyncExternalStore } from "react";
 import { openPlaceholderAt, placeholderToken, suggestPlaceholders } from "@/lib/pages/placeholders";
@@ -72,18 +74,24 @@ export function CodeEditor({
   value,
   onChange,
   placeholderValues = null,
+  language = "html",
+  compact = false,
 }: {
   value: string;
   onChange: (value: string) => void;
   /** Placeholder values (domain page), shown in the "{{" list. Template: null. */
   placeholderValues?: Record<string, string> | null;
+  language?: "html" | "css";
+  /** Narrow boxes (the Code panel): smaller text and long lines wrap. */
+  compact?: boolean;
 }) {
   const dark = usePrefersDark();
   const extensions = useMemo(() => {
     // The SAME function on every call: CodeMirror recognizes the source by reference.
     const placeholders = [{ autocomplete: placeholderCompletions(placeholderValues) }];
-    return [html({ autoCloseTags: true, matchClosingTags: true }), EditorState.languageData.of(() => placeholders)];
-  }, [placeholderValues]);
+    const lang = language === "css" ? css() : html({ autoCloseTags: true, matchClosingTags: true });
+    return [lang, EditorState.languageData.of(() => placeholders), ...(compact ? [EditorView.lineWrapping] : [])];
+  }, [placeholderValues, language, compact]);
 
   return (
     <CodeMirror
@@ -92,8 +100,8 @@ export function CodeEditor({
       extensions={extensions}
       theme={dark ? "dark" : "light"}
       height="100%"
-      className="h-full text-[13px] [&_.cm-editor]:h-full [&_.cm-scroller]:overflow-auto"
-      basicSetup={{ lineNumbers: true, foldGutter: true, highlightActiveLine: true, autocompletion: true }}
+      className={`h-full ${compact ? "text-[12px]" : "text-[13px]"} [&_.cm-editor]:h-full [&_.cm-scroller]:overflow-auto`}
+      basicSetup={{ lineNumbers: true, foldGutter: true, highlightActiveLine: !compact, autocompletion: true }}
     />
   );
 }

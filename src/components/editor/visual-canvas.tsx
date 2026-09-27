@@ -20,6 +20,7 @@ import {
 import { clearLink, setLink } from "@/lib/pages/links";
 import { insertPlaceholder, openPlaceholderAt, suggestPlaceholders, type PlaceholderOption } from "@/lib/pages/placeholders";
 import { syncRuntime } from "@/lib/pages/runtime";
+import { patchStyles } from "@/lib/pages/source-split";
 import { normalizePages, pageById, pageOf, setCurrent, startPage } from "@/lib/pages/subpages";
 
 /**
@@ -352,13 +353,29 @@ export const VisualCanvas = forwardRef<
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Reloads only when the html comes from outside (≠ our last serialize).
+  // Reloads only when the html comes from outside (≠ our last serialize). A change
+  // that touched only CSS (Code panel) is patched into the live document instead.
+  // A reload keeps the scroll position (again on load, once images have their size).
   useEffect(() => {
     if (html === lastSerializedRef.current) return;
+    const prev = lastSerializedRef.current;
     lastSerializedRef.current = html;
+    const d = doc();
+    if (d?.body && patchStyles(d, prev, html)) {
+      emitSelect(); // the inspector re-reads the computed style
+      return;
+    }
+    const win = iframeRef.current?.contentWindow;
+    const x = win?.scrollX ?? 0;
+    const y = win?.scrollY ?? 0;
     selectedRef.current = null;
     setRect(null);
     writeDoc(html);
+    if (x || y) {
+      const w = iframeRef.current?.contentWindow;
+      w?.scrollTo(x, y);
+      w?.addEventListener("load", () => w.scrollTo(x, y), { once: true });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [html]);
 

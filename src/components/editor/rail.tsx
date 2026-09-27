@@ -1,13 +1,13 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { GridIcon, LayersIcon, LinkIcon, PagesIcon, RouteIcon } from "@/components/icons";
+import { CodeIcon, GridIcon, LayersIcon, LinkIcon, PagesIcon, RouteIcon } from "@/components/icons";
 
 /**
  * The icon bar on the left of the editor (as in the reference builder):
  * each icon opens a panel beside it; clicking the active one collapses the panel.
  */
-export type RailPanel = "pages" | "funnel" | "widgets" | "layers" | "links";
+export type RailPanel = "pages" | "funnel" | "widgets" | "layers" | "links" | "code";
 
 const ITEMS: { key: RailPanel; label: string; icon: ReactNode }[] = [
   { key: "pages", label: "Pages", icon: <PagesIcon className="size-5" /> },
@@ -15,6 +15,7 @@ const ITEMS: { key: RailPanel; label: string; icon: ReactNode }[] = [
   { key: "widgets", label: "Widgets", icon: <GridIcon className="size-5" /> },
   { key: "layers", label: "Layers", icon: <LayersIcon className="size-5" /> },
   { key: "links", label: "Links", icon: <LinkIcon className="size-5" /> },
+  { key: "code", label: "Source", icon: <CodeIcon className="size-5" /> },
 ];
 
 export function Rail({

@@ -8,6 +8,7 @@ import { Inspector, type InspectorCallbacks, type InspectorTab, type LinkDestina
 import { LayersPanel } from "@/components/editor/panels/layers-panel";
 import { LinksPanel } from "@/components/editor/panels/links-panel";
 import { PagesPanel } from "@/components/editor/panels/pages-panel";
+import { SourcePanel } from "@/components/editor/panels/source-panel";
 import { SubPagesPanel, type SubPagesActions } from "@/components/editor/panels/subpages-panel";
 import { WidgetsPanel } from "@/components/editor/panels/widgets-panel";
 import { Rail, type RailPanel } from "@/components/editor/rail";
@@ -64,7 +65,13 @@ import {
 import type { ActionResult } from "@/lib/action-result";
 import { AUTO_PLACEHOLDERS, PLACEHOLDER_FIELDS, applyPlaceholders, placeholderToken } from "@/lib/pages/placeholders";
 import { APP_TZ } from "@/lib/time-zone";
-import { fetchTemplateFromUrl, templateRootHtml, type SaveEditorInput, type SaveEditorResult } from "@/app/(dashboard)/templates/actions";
+import {
+  editCodeWithAiAction,
+  fetchTemplateFromUrl,
+  templateRootHtml,
+  type SaveEditorInput,
+  type SaveEditorResult,
+} from "@/app/(dashboard)/templates/actions";
 
 /**
  * What the editor does with the page, without knowing where it lives: template
@@ -158,8 +165,11 @@ export function PageEditor({
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>("settings");
   const [hiddenCount, setHiddenCount] = useState(0);
   // A funnel page is a single slug ("/"), so it has no Pages tab; it opens on the Funnel panel.
-  const railPanels: readonly RailPanel[] = scope === "funnel" ? ["funnel", "widgets", "layers", "links"] : ["pages", "funnel", "widgets", "layers", "links"];
+  const railPanels: readonly RailPanel[] =
+    scope === "funnel" ? ["funnel", "widgets", "layers", "links", "code"] : ["pages", "funnel", "widgets", "layers", "links", "code"];
   const [panel, setPanel] = useState<RailPanel | null>(scope === "funnel" ? "funnel" : "pages");
+  const [codeOpened, setCodeOpened] = useState(false);
+  if (panel === "code" && !codeOpened) setCodeOpened(true);
   const [showMarkers, setShowMarkers] = useState(true);
   const [currentPageId, setCurrentPageId] = useState<string | null>(null);
   const [previewDoc, setPreviewDoc] = useState("");
@@ -275,6 +285,7 @@ export function PageEditor({
   );
 
   // Shortcuts: ⌘S saves, ⌘Z undoes, ⌘⇧Z redoes. Capture phase to get there before CodeMirror.
+  // The Code panel's editors hold drafts: there ⌘Z is the editor's own undo (data-own-undo).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const meta = e.metaKey || e.ctrlKey;
@@ -283,7 +294,7 @@ export function PageEditor({
       if (k === "s") {
         e.preventDefault();
         save();
-      } else if (k === "z") {
+      } else if (k === "z" && !(e.target instanceof Element && e.target.closest("[data-own-undo]"))) {
         e.preventDefault();
         if (e.shiftKey) redo();
         else undo();
@@ -293,11 +304,12 @@ export function PageEditor({
     return () => window.removeEventListener("keydown", onKey, true);
   }, [save, undo, redo]);
 
-  // Leave guard when there are unsaved changes.
+  // Leave guard when there are unsaved changes (or edits the Code panel hasn't applied yet).
+  const [sourcePending, setSourcePending] = useState(false);
   const dirtyRef = useRef(dirty);
   useEffect(() => {
-    dirtyRef.current = dirty;
-  }, [dirty]);
+    dirtyRef.current = dirty || sourcePending;
+  }, [dirty, sourcePending]);
   useEffect(() => {
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
       if (dirtyRef.current) e.preventDefault();
@@ -555,7 +567,7 @@ export function PageEditor({
       <div className="flex min-h-0 flex-1 gap-2">
         <div className="hidden shrink-0 gap-2 md:flex">
           <Rail active={panel} onSelect={togglePanel} panels={railPanels} badges={{ links: outline.links.length, funnel: activeSteps.length > 1 ? activeSteps.length : 0 }} />
-          {panel ? (
+          {panel && panel !== "code" ? (
             <aside className="flex w-64 shrink-0 flex-col rounded-xl border border-border bg-surface">
               {panel === "pages" ? (
                 <PagesPanel
@@ -591,6 +603,19 @@ export function PageEditor({
                   onReplaceAll={replaceAllLinks}
                 />
               )}
+            </aside>
+          ) : null}
+          {/* Mounted the first time it opens, then kept: its drafts and undo history survive switching panels. */}
+          {codeOpened ? (
+            <aside className={`${panel === "code" ? "flex" : "hidden"} w-80 shrink-0 flex-col rounded-xl border border-border bg-surface`}>
+              <SourcePanel
+                content={content}
+                onApply={updateContent}
+                onPendingChange={setSourcePending}
+                fileName={exportFileName(name, slug.slug)}
+                placeholderValues={placeholders}
+                aiEdit={editCodeWithAiAction}
+              />
             </aside>
           ) : null}
         </div>
@@ -714,6 +739,16 @@ export function PageEditor({
       </div>
     </div>
   );
+}
+
+/** "Sales page" + "/offer" → "sales-page-offer" (the Code panel's Export). */
+function exportFileName(pageName: string, slugPath: string): string {
+  const clean = (s: string) =>
+    s
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+  return [clean(pageName) || "page", clean(slugPath)].filter(Boolean).join("-");
 }
 
 function PageSettings({
