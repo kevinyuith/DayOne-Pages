@@ -150,7 +150,7 @@ export function replaceAll(doc: Document, to: string): number {
   return n;
 }
 
-/** Applies `fn` to a Document parsed from the HTML and returns the resulting HTML (code mode). */
+/** Applies `fn` to a Document parsed from the HTML and returns the resulting HTML (no canvas mounted). */
 export function mutateHtml(html: string, fn: (doc: Document) => void): string {
   const doc = parseHtml(html);
   fn(doc);

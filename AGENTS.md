@@ -58,7 +58,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 - Company data in `pages.domains.placeholders`, with `company.*` keys (`llc` = legal name, `number`, `address`, `phone`, `email`; list in `src/lib/pages/placeholders.ts`). `{{company.name}}` is not stored: it is the legal name without the legal suffix (LLC, Inc., Ltda, GmbH…), by `companyName()` / `company_name()` — the same suffix list on both sides, tested by the same cases (`server/tests/company-names.json`; `npm run check:company-name` and the PHP suite). Automatic on every visit: `url`, `domain`, `slug`, `date`, `year`, `lang`, `language` — language from the visitor's Accept-Language (`en` without it), today's date in New York spelled out in that language.
 - The delivery server replaces them when serving (`server/src/placeholders.php`); the dashboard does the same replacement only in the preview (in `en`). The rules and the language/month tables are the same on both sides — change one, change the other: only known keys, an empty value becomes empty text, values are HTML-escaped.
-- In the editor, typing `{{` opens the placeholder list (text on the canvas, Text/Link fields of the inspector, code mode). The list comes from `PLACEHOLDER_OPTIONS`/`suggestPlaceholders`: a new placeholder is added only in `placeholders.ts`.
+- In the editor, typing `{{` opens the placeholder list (text on the canvas, Text/Link fields of the inspector, the Source panel's editors). The list comes from `PLACEHOLDER_OPTIONS`/`suggestPlaceholders`: a new placeholder is added only in `placeholders.ts`.
 
 ## Funnel (the steps of a slug)
 
