@@ -20,7 +20,7 @@ export const navGroups: NavGroup[] = [
   {
     items: [
       { href: "/", label: "Dashboard", description: "Overview of your workspace.", icon: DashboardIcon },
-      { href: "/templates", label: "Page templates", description: "Build page templates; each domain gets its own copy.", icon: PagesIcon },
+      { href: "/templates", label: "Pages", description: "Build page templates; each domain gets its own copy.", icon: PagesIcon },
       { href: "/domains", label: "Domains", description: "Point domains and route each path.", icon: GlobeIcon },
       { href: "/rules", label: "Rules", description: "Traffic rules on /: the first match decides the click's route.", icon: FilterIcon },
       { href: "/funnels", label: "Funnel", description: "Your funnel.", icon: FunnelIcon },
