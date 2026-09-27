@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { errorReason, fail, type ActionResult } from "@/lib/action-result";
+import { CODE_AI_MAX_INSTRUCTIONS, editCodeWithAi, type CodeKind } from "@/lib/pages/code-ai";
 import { fetchPublicHtml } from "@/lib/pages/fetch-page";
 import { joinFunnelSplit, publishFunnelPage } from "@/lib/pages/funnel-weights";
 import { isValidSlug, normalizePath } from "@/lib/pages/normalize";
@@ -211,6 +212,31 @@ export async function templateRootHtml(templateId: string): Promise<ActionResult
 export async function fetchTemplateFromUrl(url: string): Promise<ActionResult<{ html: string; finalUrl: string }>> {
   const r = await fetchPublicHtml(url);
   return r.ok ? { ok: true, html: r.html, finalUrl: r.finalUrl } : fail(r.reason);
+}
+
+/**
+ * The editor's Code panel, "Edit with AI": the edited HTML or Page CSS comes
+ * back to the panel (code-ai.ts); nothing is saved. `context` = the page's
+ * HTML, sent along for a CSS edit.
+ */
+export async function editCodeWithAiAction(input: {
+  kind: CodeKind;
+  code: string;
+  instructions: string;
+  context: string | null;
+}): Promise<ActionResult<{ code: string }>> {
+  const instructions = typeof input.instructions === "string" ? input.instructions.trim() : "";
+  if (input.kind !== "html" && input.kind !== "css") return fail("Unknown code kind.");
+  if (typeof input.code !== "string") return fail("Missing code.");
+  if (!instructions) return fail("Describe the change.");
+  if (instructions.length > CODE_AI_MAX_INSTRUCTIONS) return fail(`Keep the description under ${CODE_AI_MAX_INSTRUCTIONS} characters.`);
+  if (input.kind === "html" && !input.code.trim()) return fail("There is no HTML to edit.");
+  try {
+    const r = await editCodeWithAi(input.kind, input.code, instructions, typeof input.context === "string" ? input.context : null);
+    return r.ok ? { ok: true, code: r.code } : fail(r.reason);
+  } catch (cause) {
+    return fail(errorReason(cause));
+  }
 }
 
 export type SaveEditorInput = {
