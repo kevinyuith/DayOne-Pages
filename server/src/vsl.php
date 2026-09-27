@@ -24,8 +24,10 @@
  * The draw only happens in the step being served (funnel.php cuts the others
  * first), so a Pre Lander → VSL page draws when the visitor reaches the VSL.
  * A response that drew a video says which one: the `video_id` cookie (not
- * HttpOnly, for the page's own trackers) and, through the route, the server's
- * click event to dot (dot.php). Nothing else in the page changes.
+ * HttpOnly, for the page's own trackers — dot.js reads it) and, through the
+ * route, the server's click event to dot (dot.php). A funnel page that drew no
+ * video deletes an older video_id cookie, so it always speaks for the page it
+ * came with. Nothing else in the page changes.
  */
 declare(strict_types=1);
 
@@ -109,6 +111,12 @@ function vsl_placeholder_apply(string $html, mixed $vsl, array $cookies, ?callab
 function video_id_cookie(string $video): string
 {
     return VIDEO_ID_NAME . "=$video; Path=/; Max-Age=2592000; Secure; SameSite=Lax";
+}
+
+/** Deletes it: a funnel page that drew no video (see serve_slug). */
+function video_id_cookie_clear(): string
+{
+    return VIDEO_ID_NAME . "=; Path=/; Max-Age=0; Secure; SameSite=Lax";
 }
 
 /**

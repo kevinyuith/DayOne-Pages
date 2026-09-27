@@ -243,6 +243,10 @@ function serve_slug(array $route, Request $req): array
     if ($video !== null) {
         $vslTag = '-v' . $video;
         $headers['Set-Cookie'] = [...(array) ($headers['Set-Cookie'] ?? []), video_id_cookie($video)];
+    } elseif ($beacon && isset($req->cookies[VIDEO_ID_NAME])) {
+        // A funnel page that drew no video: an older video_id (another page, another funnel) must not
+        // reach this page's trackers — the cookie only speaks for the response that drew it.
+        $headers['Set-Cookie'] = [...(array) ($headers['Set-Cookie'] ?? []), video_id_cookie_clear()];
     }
     if ($vslCookie !== null) {
         $headers['Set-Cookie'] = [...(array) ($headers['Set-Cookie'] ?? []), vsl_cookie($vslCookie)];
