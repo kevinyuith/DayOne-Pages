@@ -100,6 +100,11 @@ function dayone_handle(): void
     if ($outcome === 'served' && $route !== null && beacon_applies($route, $req)) {
         $visitId = beacon_new_visit_id();
         $headers['Set-Cookie'] = [...(array) ($headers['Set-Cookie'] ?? []), beacon_cookie($visitId)];
+        // The funnel page the visitor got (the split's pick), for the page's tracker: see beacon.php.
+        $pageCookie = page_id_cookie((string) ($route['page_id'] ?? ''));
+        if ($pageCookie !== null) {
+            $headers['Set-Cookie'][] = $pageCookie;
+        }
     }
     if ($cfg['debug_headers']) {
         $headers['X-Cache'] = $resolved['xcache'];

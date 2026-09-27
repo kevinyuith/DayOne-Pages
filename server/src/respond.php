@@ -113,6 +113,10 @@ function decide_route(array $route, Request $req, ?array $cond = null): ?array
                 return [$rStatus, $rHeaders, '', 'redirect', $route];
             }
             $r = serve_slug($route, $req);
+            // The video the VSL split drew for this response (dot.php sends it with the click).
+            if (is_string($r[3]['video'] ?? null)) {
+                $route['_video'] = $r[3]['video'];
+            }
             if (isset($route['split_count'])) {
                 if (!str_contains((string) ($r[1]['Vary'] ?? ''), 'Cookie')) {
                     $r[1]['Vary'] = trim(($r[1]['Vary'] ?? '') . ', Cookie', ', ');
@@ -149,6 +153,10 @@ function robots_default(): array
     return [200, ['Content-Type' => 'text/plain; charset=utf-8', 'Cache-Control' => 'public, max-age=3600'], "User-agent: *\nAllow: /\n"];
 }
 
+/**
+ * Serves a slug. The 4th element (on 200/304) says what the response drew:
+ * `video` = the VSL split's video, or null.
+ */
 function serve_slug(array $route, Request $req): array
 {
     $slugId = (string) ($route['slug_id'] ?? '');
@@ -210,16 +218,34 @@ function serve_slug(array $route, Request $req): array
         $body = $funnel['html'];
     }
 
-    // VSL split of the funnel: the page's A/B player gets the video drawn for
-    // this visitor (dop_vsl cookie); the video goes into the ETag.
+    // VSL split of the funnel: the page's A/B player and {{video_id}} get the
+    // video drawn for this visitor (dop_vsl cookie) — only in the step being
+    // served; the video goes into the ETag, the video_id cookie and (through
+    // the 4th element) the dot click.
     $vsl = vsl_apply($body, $route['vsl'] ?? null, $req->cookies);
     $vslTag = '';
+    $video = null;
+    $vslCookie = null;
     if ($vsl) {
         $body = $vsl['html'];
-        $vslTag = '-v' . $vsl['tag'];
-        if ($vsl['cookie'] !== null) {
-            $headers['Set-Cookie'] = [...(array) ($headers['Set-Cookie'] ?? []), vsl_cookie($vsl['cookie'])];
+        $video = $vsl['tag'];
+        $vslCookie = $vsl['cookie'];
+    }
+    // The same draw: the cookie the A/B player just got, if it drew.
+    $vp = vsl_placeholder_apply($body, $route['vsl'] ?? null, $vslCookie !== null ? [...$req->cookies, VSL_COOKIE => $vslCookie] : $req->cookies);
+    if ($vp) {
+        $body = $vp['html'];
+        if ($vp['tag'] !== '') {
+            $video ??= $vp['tag'];
+            $vslCookie ??= $vp['cookie'];
         }
+    }
+    if ($video !== null) {
+        $vslTag = '-v' . $video;
+        $headers['Set-Cookie'] = [...(array) ($headers['Set-Cookie'] ?? []), video_id_cookie($video)];
+    }
+    if ($vslCookie !== null) {
+        $headers['Set-Cookie'] = [...(array) ($headers['Set-Cookie'] ?? []), vsl_cookie($vslCookie)];
     }
 
     // A funnel page (any mode) carries the per-step tracker loader (track.php); the version goes into the ETag.
@@ -231,7 +257,7 @@ function serve_slug(array $route, Request $req): array
     $headers['ETag'] = $etag;
 
     if ($req->ifNoneMatch !== null && etag_matches($req->ifNoneMatch, $etag)) {
-        return [304, $headers, null];
+        return [304, $headers, null, ['video' => $video]];
     }
 
     $body = placeholders_apply($body, $values, $headers['Content-Type']);
@@ -241,7 +267,7 @@ function serve_slug(array $route, Request $req): array
     if ($track) {
         $body = track_inject($body);
     }
-    return [200, $headers, $body];
+    return [200, $headers, $body, ['video' => $video]];
 }
 
 function etag_matches(string $header, string $etag): bool

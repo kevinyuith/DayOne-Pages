@@ -15,6 +15,17 @@
  *
  * The page builder keeps its HTML inside a JSON string (quotes as \", "<" as
  * <), so the player's tag is found in both forms: plain and JSON-escaped.
+ *
+ * {{video_id}} (vsl_placeholder_apply): any page can take the draw by writing
+ * the placeholder where a VTurb video id goes — e.g. in VTurb's single-video
+ * embed, `<vturb-smartplayer id="vid-{{video_id}}">` and
+ * `…/players/{{video_id}}/v4/player.js`. It becomes the same video the A/B
+ * player would get (same dop_vsl draw); with no video in the split, empty.
+ * The draw only happens in the step being served (funnel.php cuts the others
+ * first), so a Pre Lander → VSL page draws when the visitor reaches the VSL.
+ * A response that drew a video says which one: the `video_id` cookie (not
+ * HttpOnly, for the page's own trackers) and, through the route, the server's
+ * click event to dot (dot.php). Nothing else in the page changes.
  */
 declare(strict_types=1);
 
@@ -23,6 +34,10 @@ defined('DAYONE_ENTRY') || (http_response_code(404) && exit);
 /** Cookie of the VSL draw: the videos (VTurb player ids) already drawn for the visitor, this funnel's first. */
 const VSL_COOKIE = 'dop_vsl';
 const VSL_MAX_IDS = 10;
+/** The placeholder that becomes the drawn video's id. */
+const VSL_PLACEHOLDER_RE = '/\{\{\s*video_id\s*\}\}/';
+/** The cookie that carries the drawn video. */
+const VIDEO_ID_NAME = 'video_id';
 
 /**
  * Swaps the video of the page's A/B players for the one drawn for this
@@ -38,7 +53,21 @@ function vsl_apply(string $html, mixed $vsl, array $cookies, ?callable $rand = n
     if ($videos === [] || !str_contains($html, 'ab-test') || preg_match(vsl_player_re(), $html) !== 1) {
         return null;
     }
+    ['pick' => $pick, 'cookie' => $cookie] = vsl_draw($videos, $cookies, $rand);
+    $out = preg_replace_callback(vsl_player_re(), static fn (array $m): string => vsl_player_tag($m[0], $m['q'], $pick), $html) ?? $html;
+    return ['html' => $out, 'tag' => $pick, 'cookie' => $cookie];
+}
 
+/**
+ * The visitor's video: the one dop_vsl already has for this funnel, otherwise
+ * one drawn by the weights. `cookie` is the new dop_vsl value, or null if it
+ * didn't change.
+ *
+ * @param list<array{id: string, weight: int}> $videos  non-empty (vsl_videos)
+ * @return array{pick: string, cookie: ?string}
+ */
+function vsl_draw(array $videos, array $cookies, ?callable $rand = null): array
+{
     // Weight 0 = paused: it isn't in the list, so not even visitors who had it stay on it.
     $raw = (string) ($cookies[VSL_COOKIE] ?? '');
     $known = preg_match('/^[0-9a-f]{24}(,[0-9a-f]{24})*$/', $raw) === 1 ? explode(',', $raw) : [];
@@ -51,12 +80,35 @@ function vsl_apply(string $html, mixed $vsl, array $cookies, ?callable $rand = n
         }
     }
     $pick ??= ab_pick($videos, $rand)['id'];
-
-    $out = preg_replace_callback(vsl_player_re(), static fn (array $m): string => vsl_player_tag($m[0], $m['q'], $pick), $html) ?? $html;
-
     $keep = array_values(array_filter($known, fn ($id) => !in_array($id, $ids, true)));
     $value = implode(',', array_slice([$pick, ...$keep], 0, VSL_MAX_IDS));
-    return ['html' => $out, 'tag' => $pick, 'cookie' => $value === $raw ? null : $value];
+    return ['pick' => $pick, 'cookie' => $value === $raw ? null : $value];
+}
+
+/**
+ * {{video_id}} in the served step → the visitor's video (vsl_draw); with no
+ * video in the funnel's split, empty text. null = no placeholder in the HTML
+ * (nothing drawn). `tag` is the video ('' when empty).
+ *
+ * @return array{html: string, tag: string, cookie: ?string}|null
+ */
+function vsl_placeholder_apply(string $html, mixed $vsl, array $cookies, ?callable $rand = null): ?array
+{
+    if (!str_contains($html, '{{') || preg_match(VSL_PLACEHOLDER_RE, $html) !== 1) {
+        return null;
+    }
+    $videos = vsl_videos($vsl);
+    if ($videos === []) {
+        return ['html' => (string) preg_replace(VSL_PLACEHOLDER_RE, '', $html), 'tag' => '', 'cookie' => null];
+    }
+    ['pick' => $pick, 'cookie' => $cookie] = vsl_draw($videos, $cookies, $rand);
+    return ['html' => (string) preg_replace(VSL_PLACEHOLDER_RE, $pick, $html), 'tag' => $pick, 'cookie' => $cookie];
+}
+
+/** The video_id cookie (not HttpOnly: the page's trackers read it). */
+function video_id_cookie(string $video): string
+{
+    return VIDEO_ID_NAME . "=$video; Path=/; Max-Age=2592000; Secure; SameSite=Lax";
 }
 
 /**

@@ -808,7 +808,7 @@ function PlaceholdersMenu({ values }: { values: Record<string, string> | null })
                   {placeholderToken(r.key)}
                 </button>
                 <span className="min-w-0 flex-1 truncate text-muted" title={value ?? r.hint}>
-                  {copied === r.key ? "copied" : values ? value || "(empty on this domain)" : r.label}
+                  {copied === r.key ? "copied" : values ? (value === undefined ? r.label : value || "(empty on this domain)") : r.label}
                 </span>
               </li>
             );

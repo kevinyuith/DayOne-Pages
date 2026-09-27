@@ -22,6 +22,13 @@ check('html served as .txt: no', !beacon_applies($html, make_request(['REQUEST_U
 // Cookie and id.
 check('id = 32 hex', preg_match('/^[0-9a-f]{32}$/', beacon_new_visit_id()) === 1);
 check('different ids', beacon_new_visit_id() !== beacon_new_visit_id());
+// ── The funnel page's id: a cookie (nothing in the page changes) ──
+$pid = '11111111-aaaa-4aaa-8aaa-0000000000b1';
+same('page_id cookie (not HttpOnly: the page script reads it)', "page_id=$pid; Path=/; Max-Age=86400; Secure; SameSite=Lax", page_id_cookie($pid));
+same('page_id cookie: uppercase id is lowercased', "page_id=$pid; Path=/; Max-Age=86400; Secure; SameSite=Lax", page_id_cookie(strtoupper($pid)));
+same('page_id cookie: not a uuid → none', null, page_id_cookie('p_abc'));
+same('page_id cookie: empty → none', null, page_id_cookie(''));
+
 same('cookie (not HttpOnly: the script reads the id once, at load)', 'dop_v=' . str_repeat('a', 32) . '; Path=/; Max-Age=600; Secure; SameSite=Lax', beacon_cookie(str_repeat('a', 32)));
 
 // POST /_dop/l.
@@ -84,12 +91,12 @@ $bSlug = '22222222-2222-2222-2222-222222222222';
 cache_put_content('bb01', '<html><body>hi</body></html>');
 [$status, $headers, $body] = serve_slug(['slug_id' => $bSlug, 'content_hash' => 'bb01', 'content_type' => 'text/html', 'match_type' => 'GATE'], make_request());
 same('serve funnel html: body with the script', '<html><body>hi' . BEACON_SCRIPT . '</body></html>', $body);
-same('serve funnel html: ETag with version', '"bb01-b5"', $headers['ETag']);
+same('serve funnel html: ETag with version', '"bb01' . BEACON_ETAG . '"', $headers['ETag']);
 same('serve funnel html: old ETag (no version) → 200', 200, serve_slug(['slug_id' => $bSlug, 'content_hash' => 'bb01', 'content_type' => 'text/html', 'match_type' => 'GATE'], make_request(['HTTP_IF_NONE_MATCH' => '"bb01"']))[0]);
 [$status, $headers, $body] = serve_slug(['slug_id' => $bSlug, 'content_hash' => 'bb01', 'content_type' => 'text/html', 'match_type' => 'GATE-SAFE'], make_request());
 same('serve the safe page: body untouched', '<html><body>hi</body></html>', $body);
 same('serve the safe page: ETag is just the hash', '"bb01"', $headers['ETag']);
-same('serve the safe page: an old ETag with the version → 200 (the script goes away)', 200, serve_slug(['slug_id' => $bSlug, 'content_hash' => 'bb01', 'content_type' => 'text/html', 'match_type' => 'GATE-SAFE'], make_request(['HTTP_IF_NONE_MATCH' => '"bb01-b5"']))[0]);
+same('serve the safe page: an old ETag with the version → 200 (the script goes away)', 200, serve_slug(['slug_id' => $bSlug, 'content_hash' => 'bb01', 'content_type' => 'text/html', 'match_type' => 'GATE-SAFE'], make_request(['HTTP_IF_NONE_MATCH' => '"bb01' . BEACON_ETAG . '"']))[0]);
 [$status, $headers, $body] = serve_slug(['slug_id' => $bSlug, 'content_hash' => 'bb01', 'content_type' => 'text/css'], make_request(['REQUEST_URI' => '/app.css']));
 same('serve css: body untouched', '<html><body>hi</body></html>', $body);
 same('serve css: ETag is just the hash', '"bb01"', $headers['ETag']);
@@ -111,7 +118,7 @@ check('found at once: no wait', beacon_record(static fn () => true, $sleep) === 
 // ── decide() end to end: only the gate's funnel page carries the notice; the safe page doesn't ──
 $bDom = '99999999-0000-4000-8000-0000000000b1';
 cache_put_content('bsafe1', '<html><body>SAFE PAGE</body></html>');
-cache_put_content('bfun01', '<html><body>FUNNEL PAGE</body></html>');
+cache_put_content('bfun01', '<html><head><script src="dot.js"></script></head><body>FUNNEL PAGE</body></html>');
 $bRoutes = [[
     'route_id' => null, 'domain_id' => $bDom, 'priority' => 0, 'match_type' => 'PAGE', 'conditions' => [], 'action' => 'SERVE',
     'page_id' => '88888888-0000-4000-8000-0000000000b1', 'slug' => '/', 'slug_id' => '44444444-0000-4000-8000-0000000000b1',
@@ -125,6 +132,8 @@ $bGate = [
 [, $hd, $body, , $route] = decide($bRoutes, make_request(['REQUEST_URI' => '/?sub1=' . rawurlencode('[F5]')]), $bGate);
 check('decide: the funnel page (GATE) carries the notice', str_contains((string) $body, 'FUNNEL PAGE') && str_contains((string) $body, 'data-dop-beacon') && ($route['match_type'] ?? '') === 'GATE' && beacon_applies($route, make_request()));
 check('decide: the funnel page\'s ETag has the version', str_ends_with((string) $hd['ETag'], BEACON_ETAG . '"'), (string) $hd['ETag']);
+check('decide: the funnel page\'s head is untouched (page_id goes in a cookie)', str_contains((string) $body, '<head><script src="dot.js"></script></head>') && !str_contains((string) $body, 'page_id'));
+same('decide: the route carries the drawn page (app.php sets its cookie)', "page_id=11111111-aaaa-4aaa-8aaa-0000000000b1; Path=/; Max-Age=86400; Secure; SameSite=Lax", page_id_cookie((string) ($route['page_id'] ?? '')));
 [, $hd, $body, , $route] = decide($bRoutes, make_request(['REQUEST_URI' => '/']), $bGate);
 check('decide: the safe page (no [F…]) has no notice', str_contains((string) $body, 'SAFE PAGE') && !str_contains((string) $body, 'data-dop-beacon') && !beacon_applies($route, make_request()));
 [, $hd, $body, , $route] = decide($bRoutes, make_request(['REQUEST_URI' => '/?sub1=' . rawurlencode('[F5]'), 'HTTP_USER_AGENT' => 'x scraperxyz']), $bGate);

@@ -133,6 +133,9 @@ function dot_click_payload(Request $req, array $ctx, array $server): ?array
         'wbraid' => $ids['wbraid'] ?? null,
         'gbraid' => $ids['gbraid'] ?? null,
         'dotid' => $dotid,
+        // The funnel page the gate served (the split's pick) and the VSL video drawn for this response.
+        'page_id' => ($route['match_type'] ?? '') === GATE_MATCH ? $str($route['page_id'] ?? null) : null,
+        'video_id' => $str($route['_video'] ?? null),
     ];
     foreach (['sub1', 'sub2', 'sub3', 'sub4', 'sub5', 'sub6', 'sub7', 'sub8', 'sub9', 'sub10', 'sub11'] as $sub) {
         $payload[$sub] = $q($sub);
@@ -150,6 +153,7 @@ function dot_click_payload(Request $req, array $ctx, array $server): ?array
             'sent_to_funnel' => ($route['match_type'] ?? '') === GATE_MATCH,
             'funnel' => $str($route['_funnel'] ?? null),
             'page_id' => $str($route['page_id'] ?? null),
+            'video_id' => $str($route['_video'] ?? null),
             'slug' => $str($route['slug'] ?? null),
             'gate_reason' => $str($route['_gate_reason'] ?? null),
             'rule_label' => $str($route['_rule_label'] ?? null),

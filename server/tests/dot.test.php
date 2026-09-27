@@ -46,6 +46,14 @@ same('metadata: the click ids', ['ttclid' => 'E_C_P_abc'], $meta['click_ids']);
 same('metadata: what this server did', ['hit_id' => 42, 'decision' => 'SERVE · GATE', 'sent_to_funnel' => true, 'funnel' => 'F9', 'page_id' => 'p-1', 'country' => 'US', 'region' => 'Texas', 'device' => 'mobile', 'asn' => 7922, 'as_name' => 'COMCAST'],
     array_intersect_key($meta['dayone_pages'], array_flip(['hit_id', 'sent_to_funnel', 'funnel', 'decision', 'page_id', 'country', 'region', 'device', 'asn', 'as_name'])));
 
+// The funnel page and the VSL video: fields of their own (dot's video_id column) and in the metadata.
+same('page_id: the funnel page the gate served', 'p-1', $p['page_id']);
+check('no video drawn: no video_id', !array_key_exists('video_id', $p) && $meta['dayone_pages']['video_id'] === null);
+$pv = dot_click_payload($req, ['route' => $route + ['_video' => str_repeat('b', 24)]], $dotServer);
+same('video_id: the video this response drew', [str_repeat('b', 24), str_repeat('b', 24)], [$pv['video_id'], json_decode($pv['_metadata'], true)['dayone_pages']['video_id']]);
+$ps = dot_click_payload($dotReq('/?fbclid=F1'), ['route' => ['action' => 'SERVE', 'match_type' => 'GATE-SAFE', 'page_id' => 'safe-1']], []);
+check('the safe page: no page_id field (not a funnel page), it stays in the metadata', !array_key_exists('page_id', $ps) && json_decode($ps['_metadata'], true)['dayone_pages']['page_id'] === 'safe-1');
+
 // A click a rule caught (the safe page): sent too, with the rule.
 $safe = ['action' => 'SERVE', 'match_type' => 'GATE-SAFE', '_rule_label' => 'Bot', '_rule' => 'DC', '_rule_reason' => 'Datacenter', '_rule_tags' => ['FB']];
 $m = json_decode(dot_click_payload($dotReq('/?fbclid=F1'), ['route' => $safe], [])['_metadata'], true)['dayone_pages'];

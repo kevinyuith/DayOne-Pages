@@ -39,6 +39,12 @@
  * BEACON_ETAG so old copies of the script are not reused by the browser.
  *
  * It only measures. It doesn't change what the visitor sees.
+ *
+ * THE PAGE THE VISITOR GOT (the A/B test between a funnel's pages picks it):
+ * the same response sets the `page_id` cookie to the funnel page's id (1 day;
+ * not HttpOnly, so the page's own trackers can read it). The server's click
+ * event to dot (dot.php) carries it too. Nothing in the page or its URL
+ * changes.
  */
 declare(strict_types=1);
 
@@ -82,6 +88,19 @@ function beacon_applies(array $route, Request $req): bool
     }
     $type = (string) ($route['content_type'] ?? '') ?: 'text/html';
     return str_starts_with(strtolower($type), 'text/html') && is_logged_path($req->path);
+}
+
+/** The cookie that carries the funnel page's id. */
+const PAGE_ID_NAME = 'page_id';
+
+/** The page_id cookie for the served funnel page; null when the id isn't a uuid. */
+function page_id_cookie(string $pageId): ?string
+{
+    $id = strtolower($pageId);
+    if (preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/', $id) !== 1) {
+        return null;
+    }
+    return PAGE_ID_NAME . "=$id; Path=/; Max-Age=86400; Secure; SameSite=Lax";
 }
 
 /** The script before the last </body>; without </body>, at the end. */

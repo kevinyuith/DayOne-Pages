@@ -42,6 +42,8 @@ export const AUTO_PLACEHOLDERS = [
   { key: "year", label: "Current year", note: "e.g. © {{year}}" },
   { key: "lang", label: "Visitor's language", note: "code: en, pt, es…" },
   { key: "language", label: "Language name", note: "English, Português, Español…" },
+  // Filled by the funnel's VSL split (server/src/vsl.php), not with the domain's data: funnel pages only.
+  { key: "video_id", label: "VSL video (funnel)", note: "the VTurb video drawn for the visitor from the funnel's VSLs tab" },
 ] as const;
 
 /** Each language's name in that language. No entry: the code itself. */

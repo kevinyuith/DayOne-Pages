@@ -64,16 +64,44 @@ cache_put_content('vsl01', $plain);
 $vslRoute = ['slug_id' => $vslSlug, 'content_hash' => 'vsl01', 'content_type' => 'text/html', 'funnel' => false, 'match_type' => 'GATE', 'vsl' => $split];
 [$status, $headers, $body] = serve_slug($vslRoute, make_request(['HTTP_COOKIE' => "dop_vsl=$vB"]));
 same('serve: 200', 200, $status);
-same('serve: ETag with the video', "\"vsl01-v$vB-b5\"", $headers['ETag']);
+same('serve: ETag with the video', "\"vsl01-v$vB" . BEACON_ETAG . '"', $headers['ETag']);
 check('serve: Vary with Cookie', str_contains($headers['Vary'], 'Cookie'));
-check('serve: no Set-Cookie when the cookie is already right', !isset($headers['Set-Cookie']));
+same('serve: dop_vsl already right → only the video_id cookie', [video_id_cookie($vB)], $headers['Set-Cookie'] ?? null);
 check('serve: body plays B', str_contains((string) $body, 'data-vturb-id="' . $vB . '"'));
-same('serve: 304 with the same video', 304, serve_slug($vslRoute, make_request(['HTTP_COOKIE' => "dop_vsl=$vB", 'HTTP_IF_NONE_MATCH' => "\"vsl01-v$vB-b5\""]))[0]);
-same('serve: no 304 shortcut on the bare hash (the video may change)', 200, serve_slug($vslRoute, make_request(['HTTP_COOKIE' => "dop_vsl=$vB", 'HTTP_IF_NONE_MATCH' => '"vsl01-b5"']))[0]);
+same('serve: 304 with the same video', 304, serve_slug($vslRoute, make_request(['HTTP_COOKIE' => "dop_vsl=$vB", 'HTTP_IF_NONE_MATCH' => "\"vsl01-v$vB" . BEACON_ETAG . '"']))[0]);
+same('serve: the drawn video comes out as the 4th element (for the dot click)', ['video' => $vB], serve_slug($vslRoute, make_request(['HTTP_COOKIE' => "dop_vsl=$vB"]))[3] ?? null);
+same('serve: no 304 shortcut on the bare hash (the video may change)', 200, serve_slug($vslRoute, make_request(['HTTP_COOKIE' => "dop_vsl=$vB", 'HTTP_IF_NONE_MATCH' => '"vsl01' . BEACON_ETAG . '"']))[0]);
 [$status, $headers] = serve_slug($vslRoute, make_request());
 check('serve: new visitor gets Set-Cookie dop_vsl', is_array($headers['Set-Cookie'] ?? null) && str_starts_with(end($headers['Set-Cookie']), 'dop_vsl='), json_encode($headers['Set-Cookie'] ?? null));
 
 // Page of a funnel without a split: exactly as before.
 [$status, $headers, $body] = serve_slug(['slug_id' => $vslSlug, 'content_hash' => 'vsl01', 'content_type' => 'text/html', 'funnel' => false, 'match_type' => 'GATE'], make_request());
-same('no split: ETag is just the hash', '"vsl01-b5"', $headers['ETag']);
+same('no split: ETag is just the hash (and the notice version)', '"vsl01' . BEACON_ETAG . '"', $headers['ETag']);
 check('no split: Vary without Cookie, no cookie, player untouched', !str_contains($headers['Vary'], 'Cookie') && !isset($headers['Set-Cookie']) && str_contains((string) $body, 'data-vturb-id="' . $vOld . '"'));
+
+// ── {{video_id}}: any page takes the draw where a VTurb video id goes ──
+$embed = '<vturb-smartplayer id="vid-{{video_id}}"></vturb-smartplayer><script>s.src="https://scripts.converteai.net/acc/players/{{ video_id }}/v4/player.js"</script>';
+$r = vsl_placeholder_apply("<html><head></head><body>$embed</body></html>", $split, [], $fixed(0));
+check('{{video_id}}: every occurrence becomes the drawn video (spaces inside are fine)', $r !== null && substr_count($r['html'], $vA) === 2 && !str_contains($r['html'], 'video_id}}'), $r['html'] ?? '');
+same('{{video_id}}: tag = the video; new visitor → dop_vsl cookie', [$vA, $vA], [$r['tag'], $r['cookie']]);
+$r = vsl_placeholder_apply($embed, $split, ['dop_vsl' => $vB], $fixed(0));
+same('{{video_id}}: sticky — the cookie\'s video, no new cookie', [$vB, null], [$r['tag'], $r['cookie']]);
+$r = vsl_placeholder_apply($embed, [], []);
+check('{{video_id}}: no video in the split → empty, nothing drawn', $r !== null && $r['tag'] === '' && $r['cookie'] === null && str_contains($r['html'], 'id="vid-"'));
+check('no {{video_id}}: null (no draw)', vsl_placeholder_apply('<p>{{company.name}}</p>', $split, []) === null && vsl_placeholder_apply('<p>x</p>', $split, []) === null);
+same('video_id cookie (not HttpOnly: the page\'s trackers read it)', "video_id=$vA; Path=/; Max-Age=2592000; Secure; SameSite=Lax", video_id_cookie($vA));
+
+// serve_slug: a Pre Lander → VSL page with {{video_id}} in the VSL: no draw on the Pre Lander, the draw on the VSL.
+$steps = '<!doctype html><html><head><script src="dot.js"></script></head><body>'
+    . '<section data-dop-page="p_pre" data-dop-kind="presell" data-dop-start><h1>PRE</h1><a href="#next-step">go</a></section>'
+    . '<section data-dop-page="p_vsl" data-dop-kind="main" hidden>' . $embed . '</section></body></html>';
+cache_put_content('vsl02', $steps);
+$stepRoute = ['slug_id' => $vslSlug, 'content_hash' => 'vsl02', 'content_type' => 'text/html', 'funnel' => true, 'match_type' => 'GATE', 'vsl' => $split];
+[$status, $headers, $body] = serve_slug($stepRoute, make_request());
+check('Pre Lander: no draw — no video, no dop_vsl/video_id cookie', str_contains((string) $body, 'PRE') && !preg_match('/dop_vsl=|video_id=/', implode(';', (array) ($headers['Set-Cookie'] ?? []))) && !str_contains((string) $headers['ETag'], '-v'), json_encode($headers));
+[$status, $headers, $body] = serve_slug($stepRoute, make_request(['HTTP_COOKIE' => 'dop_step=p_vsl']));
+$cookies = implode(' | ', (array) ($headers['Set-Cookie'] ?? []));
+check('VSL step: drawn — embed filled, dop_vsl + video_id cookies', !str_contains((string) $body, '{{') && preg_match('/vid-([ab]{24})"/', (string) $body, $vm) === 1 && str_contains($cookies, 'dop_vsl=' . $vm[1]) && str_contains($cookies, 'video_id=' . $vm[1]), $cookies);
+check('VSL step: the page\'s head is untouched (video_id goes in a cookie)', str_contains((string) $body, '<head><script src="dot.js"></script></head>'));
+check('VSL step: ETag with the step and the video', str_contains((string) $headers['ETag'], '-p_vsl-v' . ($vm[1] ?? '')), (string) $headers['ETag']);
+
