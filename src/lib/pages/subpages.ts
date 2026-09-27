@@ -37,7 +37,7 @@
  *
  * Everything here operates on a Document (live canvas or parsed from the HTML) and
  * returns enough for the panel: `listPages`. The mutations save nothing — the
- * caller serializes (the canvas via `commit`, code mode via `mutateHtml`).
+ * caller serializes (the canvas via `commit`, otherwise `mutateHtml`).
  */
 
 import {

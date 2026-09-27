@@ -116,9 +116,9 @@ canvas show everything in both modes — the cut only happens on the delivery
 server.
 
 The Links, Layers and Funnel panels are derived from the current HTML
-(`parseHtml`, with the same uids the canvas assigns), so they also work in
-Code mode: the change is applied to the HTML and the editor reloads the
-canvas.
+(`parseHtml`, with the same uids the canvas assigns), so they follow every
+change — including the ones made in the Source panel (the code: HTML, Page
+CSS and Base CSS).
 
 ## Run the dashboard
 

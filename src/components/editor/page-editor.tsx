@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { CodeEditor } from "@/components/code-editor";
 import { Inspector, type InspectorCallbacks, type InspectorTab, type LinkDestination } from "@/components/editor/inspector";
 import { LayersPanel } from "@/components/editor/panels/layers-panel";
 import { LinksPanel } from "@/components/editor/panels/links-panel";
@@ -15,7 +14,6 @@ import { Rail, type RailPanel } from "@/components/editor/rail";
 import { VisualCanvas, type CanvasHandle } from "@/components/editor/visual-canvas";
 import { HtmlPreview } from "@/components/html-preview";
 import {
-  CodeIcon,
   DesktopIcon,
   EyeIcon,
   LinkIcon,
@@ -101,8 +99,8 @@ export type EditorNav = {
 /**
  * The page editor in builder form: topbar (Preview/Publish/Saved,
  * undo/redo), icon bar + panel on the left (Pages, Widgets,
- * Layers, Links), canvas in the middle (visual click editing OR code) and
- * inspector on the right (Style/Settings).
+ * Layers, Links, Source — the code), canvas in the middle (visual click
+ * editing) and inspector on the right (Style/Settings).
  *
  * Visual editing writes back into the SAME HTML per slug — nothing changes in the model
  * or on the server. Local state is the truth while editing; the server only
@@ -110,15 +108,13 @@ export type EditorNav = {
  * kept for the next save; on `conflict`, the screen warns and offers to reload).
  *
  * Links: the Links panel and the layer tree are derived from the current HTML
- * (`parseHtml` → the same uids as the canvas), so they work in both modes. The
- * changes go through `applyDocChange`: on the live canvas when it is
- * mounted (without reloading the iframe), or on the HTML in code mode.
+ * (`parseHtml` → the same uids as the canvas), so they work with or without
+ * the canvas. The changes go through `applyDocChange`: on the live canvas when
+ * it is mounted (without reloading the iframe), or on the HTML (preview).
  */
 
 type Device = "desktop" | "tablet" | "mobile";
-type Mode = "visual" | "code";
 const DEVICE_W: Record<Device, string> = { desktop: "100%", tablet: "820px", mobile: "390px" };
-const OUTLINE_DEBOUNCE_MS = 250;
 
 export function PageEditor({
   page,
@@ -157,7 +153,6 @@ export function PageEditor({
   const [message, setMessage] = useState<{ tone: "success" | "danger" | "warning"; text: string } | null>(null);
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
 
-  const [mode, setMode] = useState<Mode>("visual");
   const [previewing, setPreviewing] = useState(false);
   const [device, setDevice] = useState<Device>("desktop");
   const [previewBase, setPreviewBase] = useState<string>(domains[0] ?? "");
@@ -239,21 +234,22 @@ export function PageEditor({
   const fullDoc = useMemo(() => isFullDocument(content), [content]);
 
   // ── Links + layers, derived from the current HTML ──────────────────────────
-  // Client only (DOMParser) and debounced: in code mode CodeMirror
-  // fires on every keystroke. An effect, not a memo, so it does not diverge from SSR.
+  // Client only (DOMParser). An effect, not a memo, so it does not diverge from SSR. No
+  // debounce: changes come ready from the canvas, and the Source panel already waits for a
+  // pause in typing before applying.
   useEffect(() => {
     const t = setTimeout(() => {
       const d = parseHtml(content);
       const pages = listPages(d);
       const root = currentPageId ? pageById(d, currentPageId) : null;
       setOutline({ links: extractLinks(d), layers: buildLayers(d, root), pages });
-      // In code mode the canvas is not mounted to pick the sub-page:
+      // Without the canvas (preview, a fragment) nothing picks the sub-page:
       // fall back to the start page (or drop it, if the slug is a single page again).
       if (pages.length && (!currentPageId || !pages.some((p) => p.id === currentPageId))) setCurrentPageId(startPage(d)?.getAttribute("data-dop-page") ?? null);
       else if (!pages.length && currentPageId) setCurrentPageId(null);
-    }, mode === "code" ? OUTLINE_DEBOUNCE_MS : 0); // in visual mode the change comes ready from the canvas
+    }, 0);
     return () => clearTimeout(t);
-  }, [content, currentPageId, mode]);
+  }, [content, currentPageId]);
 
   const save = useCallback(
     (override?: { status?: PageStatus }) => {
@@ -404,13 +400,6 @@ export function PageEditor({
     }
     setPreviewing(on);
   };
-  const switchMode = (m: Mode) => {
-    if (m === "code") {
-      canvasRef.current?.clearSelection();
-      setSelection(null);
-    }
-    setMode(m);
-  };
 
   const callbacks: InspectorCallbacks = {
     setText: (v) => canvasRef.current?.setText(v),
@@ -431,14 +420,13 @@ export function PageEditor({
     [updateContent],
   );
 
-  /** Ensures the canvas is mounted (leaves preview / code) and runs `fn` on it. */
+  /** Ensures the canvas is mounted (leaves preview) and runs `fn` on it. */
   const withCanvas = useCallback(
     (fn: (c: CanvasHandle) => void) => {
       const now = canvasRef.current;
       if (now) return fn(now);
       if (!isFullDocument(contentRef.current)) return;
       setPreviewing(false);
-      setMode("visual");
       // The canvas mounts on React's next commit and writes the document in its
       // mount effect — before this timeout runs.
       setTimeout(() => {
@@ -633,10 +621,6 @@ export function PageEditor({
                   baseHref={baseHref}
                   className="h-full w-full"
                 />
-              ) : mode === "code" ? (
-                <div className="h-full bg-surface">
-                  <CodeEditor value={content} onChange={updateContent} placeholderValues={placeholders} />
-                </div>
               ) : fullDoc ? (
                 <VisualCanvas
                   ref={canvasRef}
@@ -653,7 +637,7 @@ export function PageEditor({
               ) : (
                 <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
                   <p className="text-sm font-medium">Visual editing needs a complete HTML document.</p>
-                  <p className="max-w-sm text-xs text-muted">This content is a fragment. Wrap it in a document to edit it on the canvas, or use Code mode.</p>
+                  <p className="max-w-sm text-xs text-muted">This content is a fragment. Wrap it in a document to edit it on the canvas, or edit it in the Source panel.</p>
                   <Button size="sm" onClick={() => updateContent(wrapFragment(content, { title: name }))}>
                     Wrap fragment in a document
                   </Button>
@@ -662,7 +646,7 @@ export function PageEditor({
             </div>
           </div>
 
-          {/* Bottom bar: device, mode, preview base, hidden count */}
+          {/* Bottom bar: device, preview base, link markers, hidden count */}
           <div className="flex flex-wrap items-center gap-2 border-t border-border px-3 py-2">
             <div className="flex items-center gap-0.5 rounded-lg border border-border p-0.5">
               <Seg active={device === "desktop"} title="Desktop" onClick={() => setDevice("desktop")}>
@@ -676,15 +660,6 @@ export function PageEditor({
               </Seg>
             </div>
 
-            <div className="flex items-center gap-0.5 rounded-lg border border-border p-0.5">
-              <Seg active={mode === "visual" && !previewing} title="Visual" onClick={() => switchMode("visual")}>
-                <EyeIcon className="size-4" />
-              </Seg>
-              <Seg active={mode === "code" && !previewing} title="Code" onClick={() => switchMode("code")}>
-                <CodeIcon className="size-4" />
-              </Seg>
-            </div>
-
             <select value={previewBase} onChange={(e) => setPreviewBase(e.target.value)} aria-label="Base domain" className={`${SELECT_BASE} h-8 w-40 text-xs`}>
               <option value="">No base domain</option>
               {domains.map((d) => (
@@ -694,7 +669,7 @@ export function PageEditor({
               ))}
             </select>
 
-            {mode === "visual" && !previewing ? (
+            {!previewing ? (
               <button
                 type="button"
                 onClick={() => setShowMarkers((v) => !v)}
@@ -707,7 +682,7 @@ export function PageEditor({
                 <LinkIcon className="size-3.5" /> {outline.links.length} {outline.links.length === 1 ? "link" : "links"}
               </button>
             ) : null}
-            {hiddenCount > 0 && mode === "visual" && !previewing ? (
+            {hiddenCount > 0 && !previewing ? (
               <span className="inline-flex items-center gap-1 text-xs text-muted">
                 <EyeIcon className="size-3.5" /> {hiddenCount} hidden
               </span>

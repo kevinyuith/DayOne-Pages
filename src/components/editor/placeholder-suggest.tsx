@@ -8,7 +8,7 @@ import { insertPlaceholder, openPlaceholderAt, placeholderToken, suggestPlacehol
  * list right below; arrows choose, Enter/Tab insert, Esc closes.
  * `PlaceholderList` is just the list (the canvas positions it at the caret);
  * `PlaceholderField` is an input/textarea with the list below it (inspector).
- * Code mode uses CodeMirror's own autocomplete (code-editor.tsx).
+ * The Source panel's editors use CodeMirror's own autocomplete (code-editor.tsx).
  */
 
 /** Key pressed with the list open: new index, "pick", "close" or null (the key proceeds normally). */

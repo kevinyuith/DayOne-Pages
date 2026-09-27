@@ -15,7 +15,7 @@ import { groupByDestination, type LinkEntry, type LinkKind } from "@/lib/pages/l
  *  - "Point all links to" sends every link on the page to a single destination.
  *
  * The panel does not touch the HTML: the editor applies the change, via `onReplace`/
- * `onReplaceAll` (on the live canvas or in the HTML in code mode).
+ * `onReplaceAll` (on the live canvas, or on the HTML when the canvas isn't showing).
  */
 export function LinksPanel({
   links,
