@@ -3,8 +3,8 @@ import { AlertBanner } from "@/components/dashboard/alert-banner";
 import { DashboardControls } from "@/components/dashboard/dashboard-controls";
 import { StatStrip, type Stat } from "@/components/dashboard/stat-card";
 import { TrafficChart } from "@/components/dashboard/traffic-chart";
-import { activeFilterCount, foldIntoLocalDays, parseDashboardFilters, resolveRange } from "@/lib/pages/dashboard-filters";
-import { hitCountries, hitStats, hitTimeseries, listDomains, recentHits, type HitFilter } from "@/lib/pages/queries";
+import { activeFilterCount, bucketEdges, parseDashboardFilters, resolveRange } from "@/lib/pages/dashboard-filters";
+import { hitCountries, hitSeries, hitStats, listDomains, recentHits, type HitFilter } from "@/lib/pages/queries";
 
 const num = new Intl.NumberFormat("en-US");
 
@@ -39,13 +39,12 @@ export default async function DashboardPage({
     countries: filters.countries,
     hideBots: filters.hideBots,
   };
-  const [stats, hourly, hits, countries] = await Promise.all([
+  const [stats, series, hits, countries] = await Promise.all([
     hitStats(range.since, hitFilter),
-    hitTimeseries(range.since, range.bucketMinutes, range.origin, hitFilter),
+    hitSeries(bucketEdges(range, nowMs), hitFilter),
     recentHits(20, range.since, hitFilter),
     hitCountries(range.since, filters.domain),
   ]);
-  const series = range.granularity === "day" ? foldIntoLocalDays(hourly) : hourly;
 
   const attentionCount = domains.filter((d) => d.status === "ACTIVE" && d.last_check_ok !== true).length;
   const domainOptions = domains.map((d) => ({ id: d.id, domain: d.domain }));
@@ -60,11 +59,11 @@ export default async function DashboardPage({
     { label: "Total requests", value: num.format(stats.total), detail: range.label },
     { label: "Unique visitors", value: num.format(stats.uniques), detail: "Distinct IPs · 200" },
     { label: "Bots (Unique)", value: num.format(stats.botsUnique), series: "bots", ...share(stats.botsUnique, stats.uniques, "of visitors") },
-    { label: "Suspicious (Unique)", value: num.format(stats.suspiciousUnique), series: "blocked", ...share(stats.suspiciousUnique, stats.uniques, "of visitors") },
+    { label: "Suspicious (Unique)", value: num.format(stats.suspiciousUnique), series: "suspicious", ...share(stats.suspiciousUnique, stats.uniques, "of visitors") },
     {
       label: "Loaded (Unique)",
       value: num.format(stats.loadedUnique),
-      series: "served",
+      series: "loaded",
       ...share(stats.loadedUnique, stats.gateUnique, `connect rate · ${num.format(stats.gateUnique)} passed`),
     },
   ];

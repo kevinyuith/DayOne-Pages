@@ -6,8 +6,7 @@
  * control bar (client) uses the same module to build the URL.
  */
 
-import type { HitBucket } from "@/lib/pages/queries";
-import { localDateKey, localMidnight } from "@/lib/time-zone";
+import { localMidnight } from "@/lib/time-zone";
 
 export const RANGES = [
   { key: "today", label: "Today", short: "today" },
@@ -80,15 +79,6 @@ export function activeFilterCount(f: DashboardFilters): number {
 
 export type RangeWindow = {
   since: Date;
-  /**
-   * Bucket size requested from the database. Always 1h: the database knows
-   * nothing about time zones, and a NY day doesn't always have 24h (daylight
-   * saving). The daily series is built by summing the hours per local day
-   * (`foldIntoLocalDays`).
-   */
-  bucketMinutes: number;
-  /** Bucket alignment: local midnight (on the hour, since NY's offset is in whole hours). */
-  origin: Date;
   granularity: "hour" | "day";
   label: string;
   short: string;
@@ -97,7 +87,7 @@ export type RangeWindow = {
 export function resolveRange(range: RangeKey, nowMs: number): RangeWindow {
   const midnight = localMidnight(nowMs);
   const r = RANGES.find((x) => x.key === range) ?? RANGES[1];
-  const base = { origin: new Date(midnight), bucketMinutes: 60, label: r.label, short: r.short };
+  const base = { label: r.label, short: r.short };
   switch (r.key) {
     case "today":
       return { ...base, since: new Date(midnight), granularity: "hour" };
@@ -105,26 +95,38 @@ export function resolveRange(range: RangeKey, nowMs: number): RangeWindow {
       // Today + the previous 6 days, whole days.
       return { ...base, since: new Date(localMidnight(nowMs, 6)), granularity: "day" };
     case "30d":
-      // Up to ~720 1h buckets: fits within PostgREST's 1000-row limit.
       return { ...base, since: new Date(localMidnight(nowMs, 29)), granularity: "day" };
     default:
       return { ...base, since: new Date(nowMs - 24 * 60 * 60 * 1000), granularity: "hour" };
   }
 }
 
-/** Sums 1h buckets per local day; each day keeps the instant of its first hour (local midnight). */
-export function foldIntoLocalDays(buckets: HitBucket[]): HitBucket[] {
-  const days = new Map<string, HitBucket>();
-  for (const b of buckets) {
-    const key = localDateKey(Date.parse(b.bucket));
-    const day = days.get(key);
-    if (day) {
-      day.served += b.served;
-      day.blocked += b.blocked;
-      day.bots += b.bots;
-    } else {
-      days.set(key, { ...b });
-    }
+const HOUR_MS = 3600_000;
+
+/**
+ * The Traffic chart's bucket edges, as instants: every hour from the hour of
+ * `since` to the one after now, or every New York midnight from `since` to the
+ * one after today. The database counts distinct visitors between two edges and
+ * knows no time zone; a NY day has 23, 24 or 25 hours, so the midnights come
+ * from localMidnight, never from adding 24h. NY hours are UTC hours (the
+ * offset is whole hours).
+ */
+export function bucketEdges(range: RangeWindow, nowMs: number): Date[] {
+  if (range.granularity === "hour") {
+    const first = Math.floor(range.since.getTime() / HOUR_MS) * HOUR_MS;
+    const last = Math.floor(nowMs / HOUR_MS) * HOUR_MS + HOUR_MS;
+    const edges: Date[] = [];
+    for (let t = first; t <= last; t += HOUR_MS) edges.push(new Date(t));
+    return edges;
   }
-  return [...days.values()];
+  // Today's midnight back to the one of `since`, then tomorrow's: 36h after today's
+  // midnight is tomorrow whatever DST does, and its midnight closes today.
+  const midnights: number[] = [];
+  for (let k = 0; ; k++) {
+    const m = localMidnight(nowMs, k);
+    if (m < range.since.getTime()) break;
+    midnights.unshift(m);
+  }
+  midnights.push(localMidnight(localMidnight(nowMs) + 36 * HOUR_MS));
+  return midnights.map((m) => new Date(m));
 }

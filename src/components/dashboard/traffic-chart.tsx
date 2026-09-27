@@ -6,14 +6,17 @@ import { APP_TZ } from "@/lib/time-zone";
 import type { HitBucket } from "@/lib/pages/queries";
 
 /**
- * Traffic: one line per series (Served/Blocked/Bots) over the period
- * (hourly buckets for Today/24h, daily for 7/30 days).
+ * Traffic: one line per series (Bots/Suspicious/Passed/Loaded — unique visitors,
+ * the same counts as the cards) over the period (hourly buckets for Today/24h,
+ * daily for 7/30 days).
  *
  * Drawn at the area's real width and height (ResizeObserver), not in a
  * stretched viewBox: axis text stays at 11px on any screen. Y axis
- * with round steps (0/20/40/60), grid in a thin solid line. Served, the
- * main series, gets an area veil; a series with no value in the period is not
- * drawn (it would sit on the axis) and shows up dimmed in the legend.
+ * with round steps (0/20/40/60), grid in a thin solid line. Loaded, the
+ * main series, gets an area veil and is drawn on top; a series with no value in
+ * the period is not drawn (it would sit on the axis) and shows up dimmed in the
+ * legend. Each legend item toggles its series: hiding Bots rescales the axis to
+ * the funnel's numbers.
  * Hover and keyboard (arrows, Home/End, Esc): vertical line + tooltip with all
  * the series at that point. An sr-only table repeats the numbers for screen readers.
  */
@@ -48,7 +51,8 @@ export function TrafficChart({
   const plotRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [hoverRaw, setHover] = useState<number | null>(null);
-  const gradId = `served-fill-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
+  const [hidden, setHidden] = useState<ReadonlySet<SeriesKey>>(new Set());
+  const gradId = `loaded-fill-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
 
   const n = buckets.length;
   const totals = Object.fromEntries(SERIES.map((s) => [s.key, buckets.reduce((sum, b) => sum + b[s.key], 0)])) as Record<SeriesKey, number>;
@@ -67,7 +71,9 @@ export function TrafficChart({
   const { w: W, h: H } = size;
   const plotW = Math.max(0, W - PAD.left - PAD.right);
   const plotH = Math.max(0, H - PAD.top - PAD.bottom);
-  const max = Math.max(1, ...buckets.map((b) => Math.max(b.served, b.blocked, b.bots)));
+  // The series drawn, back to front: Loaded (the main one, last in SERIES) on top.
+  const drawn = SERIES.filter((s) => totals[s.key] > 0 && !hidden.has(s.key));
+  const max = Math.max(1, ...buckets.flatMap((b) => drawn.map((s) => b[s.key])));
   const step = niceStep(max / 4);
   const top = Math.ceil(max / step) * step;
   const yTicks = Array.from({ length: top / step + 1 }, (_, i) => i * step);
@@ -94,9 +100,14 @@ export function TrafficChart({
     return `${dayFmt.format(d)} · ${hourFmt.format(d)}–${hourFmt.format(new Date(d.getTime() + 3600_000))}`;
   };
 
-  // Back to front: Served (the main one) on top of the others.
-  const drawn = SERIES.filter((s) => totals[s.key] > 0).reverse();
-  const served = SERIES[0];
+  const main = SERIES[SERIES.length - 1];
+  const toggle = (key: SeriesKey) =>
+    setHidden((cur) => {
+      const next = new Set(cur);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
 
   const pickAt = (clientX: number) => {
     const rect = plotRef.current?.getBoundingClientRect();
@@ -122,20 +133,26 @@ export function TrafficChart({
         <div>
           <h2 className="text-base font-semibold">Traffic</h2>
           <p className="mt-0.5 text-sm text-muted">
-            Requests per {granularity} · {periodLabel.toLowerCase()}
+            Unique visitors per {granularity} · {periodLabel.toLowerCase()}
           </p>
         </div>
         <ul className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-1" aria-label="Legend">
           {SERIES.map((s) => {
             const empty = totals[s.key] === 0;
+            const off = empty || hidden.has(s.key);
             return (
-              <li
-                key={s.key}
-                className={`inline-flex items-center gap-2 text-xs ${empty ? "text-muted/60" : "text-muted"}`}
-                title={empty ? `No ${s.label.toLowerCase()} requests in this period` : undefined}
-              >
-                <span aria-hidden className="h-0.5 w-3.5 rounded-full" style={{ background: s.color, opacity: empty ? 0.35 : 1 }} />
-                {s.label}
+              <li key={s.key}>
+                <button
+                  type="button"
+                  onClick={() => toggle(s.key)}
+                  disabled={empty}
+                  aria-pressed={!off}
+                  title={empty ? `No ${s.label.toLowerCase()} visitors in this period` : hidden.has(s.key) ? `Show ${s.label}` : `Hide ${s.label}`}
+                  className={`inline-flex items-center gap-2 rounded px-1 py-0.5 text-xs hover:text-foreground disabled:cursor-default disabled:hover:text-muted/60 ${off ? "text-muted/60" : "text-muted"}`}
+                >
+                  <span aria-hidden className="h-0.5 w-3.5 rounded-full" style={{ background: s.color, opacity: off ? 0.35 : 1 }} />
+                  <span className={hidden.has(s.key) ? "line-through" : undefined}>{s.label}</span>
+                </button>
               </li>
             );
           })}
@@ -145,7 +162,7 @@ export function TrafficChart({
       {!hasData ? (
         <div className="mt-5 flex h-[220px] flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed border-border text-center sm:h-[280px] xl:h-[320px]">
           <p className="text-sm font-medium">No traffic · {periodLabel.toLowerCase()}</p>
-          <p className="max-w-sm text-xs text-muted">Requests appear here as the delivery server logs them.</p>
+          <p className="max-w-sm text-xs text-muted">Visitors appear here as the delivery server logs them.</p>
         </div>
       ) : (
         <div
@@ -153,7 +170,7 @@ export function TrafficChart({
           data-chart-plot
           tabIndex={0}
           role="group"
-          aria-label={`Requests per ${granularity}, ${periodLabel.toLowerCase()}. Use the arrow keys to read each point.`}
+          aria-label={`Unique visitors per ${granularity}, ${periodLabel.toLowerCase()}. Use the arrow keys to read each point.`}
           onKeyDown={onKey}
           onFocus={() => setHover((h) => h ?? n - 1)}
           onBlur={() => setHover(null)}
@@ -167,8 +184,8 @@ export function TrafficChart({
             <svg width={W} height={H} className="block" aria-hidden>
               <defs>
                 <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={served.color} stopOpacity={0.16} />
-                  <stop offset="100%" stopColor={served.color} stopOpacity={0} />
+                  <stop offset="0%" stopColor={main.color} stopOpacity={0.16} />
+                  <stop offset="100%" stopColor={main.color} stopOpacity={0} />
                 </linearGradient>
               </defs>
 
@@ -194,7 +211,7 @@ export function TrafficChart({
                 </text>
               ))}
 
-              {totals.served > 0 && n > 1 ? <path d={areaPath("served")} fill={`url(#${gradId})`} /> : null}
+              {drawn.includes(main) && n > 1 ? <path d={areaPath(main.key)} fill={`url(#${gradId})`} /> : null}
               {drawn.map((s) => (
                 <path key={s.key} d={linePath(s.key)} fill="none" stroke={s.color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
               ))}
@@ -226,7 +243,7 @@ export function TrafficChart({
             >
               <p className="mb-1.5 font-medium text-foreground">{tipLabel(buckets[hover].bucket)}</p>
               {SERIES.map((s) => (
-                <p key={s.key} className="flex items-center gap-2 py-0.5">
+                <p key={s.key} className={`flex items-center gap-2 py-0.5 ${hidden.has(s.key) ? "opacity-50" : ""}`}>
                   <span aria-hidden className="h-0.5 w-3 rounded-full" style={{ background: s.color }} />
                   <span className="text-muted">{s.label}</span>
                   <span className="ml-auto pl-4 font-semibold tabular-nums text-foreground">{fmt.format(buckets[hover][s.key])}</span>
@@ -236,7 +253,7 @@ export function TrafficChart({
           ) : null}
 
           <table className="sr-only">
-            <caption>Requests per {granularity}</caption>
+            <caption>Unique visitors per {granularity}</caption>
             <thead>
               <tr>
                 <th scope="col">{granularity === "day" ? "Day" : "Hour"}</th>

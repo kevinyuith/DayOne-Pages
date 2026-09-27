@@ -597,7 +597,8 @@ export type HitStats = {
   /** Of those, the ones whose page loaded: loadedUnique / gateUnique is the connect rate. */
   loadedUnique: number;
 };
-export type HitBucket = { bucket: string; served: number; blocked: number; bots: number };
+/** One bucket of the Traffic chart: unique visitors (distinct IPs) per series, from `bucket` to the next edge. */
+export type HitBucket = { bucket: string; bots: number; suspicious: number; passed: number; loaded: number };
 export type HitRow = {
   created_at: string;
   host: string;
@@ -653,20 +654,24 @@ export async function hitStats(since: Date, filter: HitFilter = {}): Promise<Hit
   };
 }
 
-/** Series per bucket (for the chart), gaps already filled. `origin` aligns the buckets (e.g. local midnight). */
-export async function hitTimeseries(since: Date, bucketMinutes: number, origin: Date | null = null, filter: HitFilter = {}): Promise<HitBucket[]> {
-  const { data, error } = await supabaseService().rpc("hit_timeseries", {
-    p_since: since.toISOString(),
-    p_bucket: `${bucketMinutes} minutes`,
-    p_origin: origin?.toISOString() ?? null,
+/**
+ * The Traffic chart: unique visitors per series in each bucket, gaps filled.
+ * The buckets are given by their edges (instants: local hours or midnights,
+ * see bucketEdges) — distinct counts don't add up, so a day is counted as a
+ * day, not as the sum of its hours.
+ */
+export async function hitSeries(edges: Date[], filter: HitFilter = {}): Promise<HitBucket[]> {
+  const { data, error } = await supabaseService().rpc("hit_series", {
+    p_edges: edges.map((d) => d.toISOString()),
     ...filterArgs(filter),
   });
-  throwIf(error, "hitTimeseries");
+  throwIf(error, "hitSeries");
   return (data as Record<string, unknown>[] | null ?? []).map((r) => ({
     bucket: String(r.bucket),
-    served: n(r.served),
-    blocked: n(r.blocked),
     bots: n(r.bots),
+    suspicious: n(r.suspicious),
+    passed: n(r.passed),
+    loaded: n(r.loaded),
   }));
 }
 
@@ -797,6 +802,8 @@ export async function listHits(
   if (f.device) q = q.eq("device", f.device);
   if (f.country) q = q.eq("country", f.country);
   if (f.ip) q = q.eq("ip", f.ip);
+  // rule_tags is a jsonb array: containment, so ["Crawler","TikTok"] matches the flow "Crawler".
+  if (f.flow) q = q.contains("rule_tags", JSON.stringify([f.flow]));
   const { data, error } = await q;
   throwIf(error, "listHits");
 

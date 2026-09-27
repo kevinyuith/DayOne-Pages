@@ -14,6 +14,7 @@ import { connectionType } from "@/lib/connection";
 import { browserFromUA, osFromUA } from "@/lib/user-agent";
 import { normalizeHost } from "@/lib/pages/normalize";
 import { FUNNEL_DECISIONS, listDomains, listHits, unregisteredHosts, type HitLogRow } from "@/lib/pages/queries";
+import { listRules } from "@/lib/pages/rules";
 import { APP_TZ } from "@/lib/time-zone";
 import { registerSeenDomain } from "../domains/actions";
 
@@ -29,7 +30,7 @@ const loadFmt = new Intl.NumberFormat("en-US", { minimumFractionDigits: 1, maxim
 /**
  * Every request logged in pages.hits, with all columns, newest to oldest.
  * Filters in a GET form, no JS (?domain=<id> and hit-filters.ts: result, rule,
- * unique, funnel, interaction, device, country, ip) and cursor pagination
+ * flow, unique, funnel, interaction, device, country, ip) and cursor pagination
  * (?before=<id>) that keeps them. An unregistered host gets a button to
  * register it right there.
  */
@@ -45,10 +46,13 @@ export default async function LogsPage({
   const selected = typeof domain === "string" && domains.some((d) => d.id === domain) ? domain : null;
   const beforeId = typeof before === "string" && /^\d+$/.test(before) ? Number(before) : null;
   const filtered = selected !== null || hitFilterParams(filters).length > 0;
-  const [{ rows: hits, hasMore }, unregistered] = await Promise.all([
+  const [{ rows: hits, hasMore }, unregistered, rules] = await Promise.all([
     listHits({ domainId: selected, beforeId, limit: PAGE_SIZE, filters }),
     unregisteredHosts(),
+    listRules(),
   ]);
+  // The rules' flows (tags), plus the one in the URL if no rule has it any more (old hits still do).
+  const flows = [...new Set([...rules.flatMap((r) => r.tags), ...(filters.flow ? [filters.flow] : [])])].sort((a, b) => a.localeCompare(b));
   // Unregistered hosts that can be registered from here (the "looks like a domain" rules live in the SQL).
   const registrable = new Set(unregistered.map((u) => u.domain));
 
@@ -69,6 +73,7 @@ export default async function LogsPage({
         <FilterSelect name="domain" label="Domain" value={selected} options={domains.map((d) => [d.id, d.domain] as const)} all="All domains" />
         <FilterSelect name="result" label="Result" value={filters.result} options={HIT_FILTER_OPTIONS.result} all="All results" />
         <FilterSelect name="rule" label="Rule" value={filters.rule} options={HIT_FILTER_OPTIONS.rule} all="All rules" />
+        <FilterSelect name="flow" label="Flow" value={filters.flow} options={flows.map((t) => [t, t] as const)} all="All flows" />
         <FilterSelect name="unique" label="Unique" value={filters.unique} options={HIT_FILTER_OPTIONS.unique} all="Unique and repeat" />
         <FilterSelect name="funnel" label="Funnel" value={filters.funnel} options={HIT_FILTER_OPTIONS.funnel} all="Funnel: all" />
         <FilterSelect name="interaction" label="Interaction" value={filters.interaction} options={HIT_FILTER_OPTIONS.interaction} all="Interaction: all" />
@@ -140,11 +145,16 @@ export default async function LogsPage({
                     <span className="font-mono text-xs">{h.host}</span>
                     <span className="font-mono text-xs text-muted">{h.path}</span>
                   </Td>
-                  <Td className="min-w-[200px] max-w-[320px] font-mono text-[11px] leading-snug text-muted">
+                  <Td className="min-w-[260px] max-w-[420px] font-mono text-[11px] leading-snug text-muted">
                     {h.query ? (
-                      <span className="line-clamp-3 whitespace-pre-line break-all" title={h.query}>
-                        {Array.from(new URLSearchParams(h.query), ([k, v]) => `${k}=${v}`).join("\n")}
-                      </span>
+                      // Every parameter on its own line; a long value is cut on its line, whole on hover.
+                      <ul>
+                        {Array.from(new URLSearchParams(h.query), ([k, v], i) => (
+                          <li key={i} className="truncate" title={`${k}=${v}`}>
+                            <span className="text-foreground">{k}</span>={v}
+                          </li>
+                        ))}
+                      </ul>
                     ) : (
                       "—"
                     )}

@@ -47,6 +47,8 @@ export type HitFilters = { [K in keyof Options]?: Options[K][number][0] } & {
   country?: string;
   /** An exact IPv4/IPv6 address. */
   ip?: string;
+  /** A rule's flow (tag): hits a rule with it caught. Same shape the Rules screen accepts. */
+  flow?: string;
 };
 
 type Params = { [key: string]: string | string[] | undefined };
@@ -64,6 +66,8 @@ export function parseHitFilters(params: Params): HitFilters {
   if (/^[A-Z]{2}$/.test(country)) f.country = country;
   const ip = one(params.ip);
   if (/^[0-9A-Fa-f:.]{2,45}$/.test(ip) && (ip.includes(".") || ip.includes(":"))) f.ip = ip;
+  const flow = one(params.flow);
+  if (/^[^\s,;]{1,40}$/.test(flow)) f.flow = flow;
   return f;
 }
 
