@@ -68,17 +68,17 @@ cache_put_content('abc123', $server);
 $route = ['slug_id' => $tmpSlug, 'content_hash' => 'abc123', 'content_type' => 'text/html; charset=utf-8'];
 [$status, $headers, $body] = serve_slug($route, make_request([]));
 same('serve_slug 200 on the initial step', 200, $status);
-same('ETag with the step (no load notice: not a gate route)', '"abc123-p_pre-k1"', $headers['ETag']);
+same('ETag with the step (no load notice: not a gate route)', '"abc123-p_pre' . track_etag() . '"', $headers['ETag']);
 check('Vary includes Cookie', str_contains($headers['Vary'], 'Cookie'));
 check('body with the presell only', str_contains((string) $body, 'Presell') && !str_contains((string) $body, 'VSL'));
-[$status] = serve_slug($route, make_request(['HTTP_IF_NONE_MATCH' => '"abc123-p_pre-k1"']));
+[$status] = serve_slug($route, make_request(['HTTP_IF_NONE_MATCH' => '"abc123-p_pre' . track_etag() . '"']));
 same('304 on the same step', 304, $status);
-[$status, $headers] = serve_slug($route, make_request(['HTTP_IF_NONE_MATCH' => '"abc123-p_pre-k1"', 'HTTP_COOKIE' => 'dop_step=p_vsl']));
+[$status, $headers] = serve_slug($route, make_request(['HTTP_IF_NONE_MATCH' => '"abc123-p_pre' . track_etag() . '"', 'HTTP_COOKIE' => 'dop_step=p_vsl']));
 same('different step with old ETag → 200', 200, $status);
-same('ETag of the new step', '"abc123-p_vsl-k1"', $headers['ETag']);
+same('ETag of the new step', '"abc123-p_vsl' . track_etag() . '"', $headers['ETag']);
 cache_put_content('def456', $browser);
 [$status, $headers, $body] = serve_slug(['slug_id' => $tmpSlug, 'content_hash' => 'def456', 'content_type' => ''], make_request([]));
-same('no mode attribute: ETag with the step', '"def456-p_pre-k1"', $headers['ETag']);
+same('no mode attribute: ETag with the step', '"def456-p_pre' . track_etag() . '"', $headers['ETag']);
 check('no mode attribute: Vary with Cookie', str_contains($headers['Vary'], 'Cookie'));
 check('no mode attribute: body with the presell only', str_contains((string) $body, 'Presell') && !str_contains((string) $body, 'VSL'));
 cache_put_content('ghi789', $doc('', '<main><h1>Plain</h1></main>'));
@@ -95,7 +95,7 @@ same('funnel=false without a client ETag: needs the content (503 without it)', 5
 // "funnel=true" flag (or missing): reads the content and applies the step.
 [$status, $headers] = serve_slug($route + ['funnel' => true], make_request(['HTTP_IF_NONE_MATCH' => '"abc123"']));
 same('funnel=true: client ETag without a step does not match → 200', 200, $status);
-same('funnel=true: ETag with the step', '"abc123-p_pre-k1"', $headers['ETag']);
+same('funnel=true: ETag with the step', '"abc123-p_pre' . track_etag() . '"', $headers['ETag']);
 
 // ── HTML hostile to the tokenizer: comment, JS string, wrapper, hidden="hidden" ──
 $hostile = '<section class="wrap">'

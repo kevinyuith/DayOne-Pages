@@ -4,6 +4,7 @@
  *
  *   /_health, /_purge      → internal handlers
  *   /_dop/l                → browser load notice (beacon.php)
+ *   /_dop/pre_dot.js, /_dop/dot.js → the funnel's trackers (track.php)
  *   method ∉ {GET, HEAD}   → 405
  *   invalid host           → 404 (no cache, no Supabase)
  *   path too long          → 404 (same)
@@ -25,6 +26,13 @@ function dayone_handle(): void
 
     if ($req->rawPath === '/_health') {
         [$status, $headers, $body] = handle_health($req);
+        send_response($status, $headers, $body, $req->isHead());
+        return;
+    }
+    // The funnel's trackers, first party on every domain (track.php): no hit, no Supabase.
+    $tracker = handle_tracker($req);
+    if ($tracker !== null) {
+        [$status, $headers, $body] = $tracker;
         send_response($status, $headers, $body, $req->isHead());
         return;
     }

@@ -254,7 +254,7 @@ function serve_slug(array $route, Request $req): array
 
     // A funnel page (any mode) carries the per-step tracker loader (track.php); the version goes into the ETag.
     $track = track_applies($body);
-    $etag = '"' . $hash . $abTag . ($funnel ? '-' . $funnel['step'] : '') . $vslTag . $ptag . $tag . ($track ? TRACK_ETAG : '') . '"';
+    $etag = '"' . $hash . $abTag . ($funnel ? '-' . $funnel['step'] : '') . $vslTag . $ptag . $tag . ($track ? track_etag() : '') . '"';
     if ($funnel || $abTag !== '' || $vslTag !== '') {
         $headers['Vary'] .= ', Cookie';
     }
