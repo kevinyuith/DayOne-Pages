@@ -18,6 +18,7 @@ $dotReq = static fn (string $uri, array $more = []) => make_request(['REQUEST_UR
 same('no click id: nothing', null, dot_click_payload($dotReq('/?sub1=x'), [], []));
 same('an asset with a click id: nothing', null, dot_click_payload($dotReq('/app.js?fbclid=x'), [], []));
 same('the www entry redirect: nothing (the same click comes back on the bare domain)', null, dot_click_payload($dotReq('/?fbclid=x', ['HTTP_HOST' => 'www.shop.example']), ['route' => ['action' => 'REDIRECT', 'match_type' => 'WWW']], []));
+same('a prefetch: nothing (not a click; dot keeps the first event of a click id)', null, dot_click_payload($dotReq('/?ttclid=x', ['HTTP_X_MOZ' => 'prefetch']), ['route' => ['action' => 'SERVE', 'match_type' => 'GATE']], []));
 
 // A click that went to the funnel: every field the sites' click events have.
 $dotServer = [

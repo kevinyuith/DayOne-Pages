@@ -195,6 +195,23 @@ check('UA regex', rule_conditions_match(['user_agent' => 'chrome'], $req));
 check('UA + base', rule_conditions_match(['user_agent' => 'chrome', 'countries' => ['BR']], $req));
 check('empty conditions', rule_conditions_match([], $req));
 
+// A prefetch: TikTok's Android app (X-Moz) and browsers (Sec-Purpose, Purpose) loading the page ahead of a click.
+check('prefetch: a normal request is not one', !$req->prefetch && !rule_conditions_match(['prefetch' => true], $req));
+$tiktokPrefetch = make_request(['REQUEST_URI' => '/?sub11=TikTok&ttclid=E_C_P_x', 'HTTP_X_MOZ' => 'prefetch']);
+check('prefetch: X-Moz (TikTok Android)', $tiktokPrefetch->prefetch && rule_conditions_match(['prefetch' => true, 'sub11' => 'tiktok'], $tiktokPrefetch));
+check('prefetch: the other conditions still apply', !rule_conditions_match(['prefetch' => true, 'sub11' => 'Facebook'], $tiktokPrefetch));
+check('prefetch: Sec-Purpose prerender', make_request(['HTTP_SEC_PURPOSE' => 'prefetch;prerender'])->prefetch);
+check('prefetch: Purpose, any case', make_request(['HTTP_PURPOSE' => 'Prefetch'])->prefetch);
+check('prefetch: other X-Moz values are not', !make_request(['HTTP_X_MOZ' => 'microsummary'])->prefetch);
+// The gate: a rule with the condition sends the prefetch to the domain's page; the click that follows goes to the funnel.
+$gatePrefetch = $gate;
+array_unshift($gatePrefetch['rules'], ['name' => 'TikTok prefetch', 'label' => 'Bot', 'tags' => ['TikTok'], 'conditions' => ['prefetch' => true, 'sub11' => 'TikTok']]);
+$f23 = '/?' . http_build_query(['sub1' => '[F23]', 'sub11' => 'TikTok', 'ttclid' => 'E_C_P_x']);
+[, , , , $route] = decide($root, make_request(['REQUEST_URI' => $f23, 'HTTP_X_MOZ' => 'prefetch']), $gatePrefetch);
+same('prefetch rule: the prefetch gets the domain page', ['GATE-SAFE', 'Bot', 'TikTok prefetch', 'home01'], [$route['match_type'], $route['_rule_label'], $route['_rule'], $route['content_hash']]);
+[, , , , $route] = decide($root, make_request(['REQUEST_URI' => $f23]), $gatePrefetch);
+same('prefetch rule: the click itself goes to the funnel', ['GATE', 'F23'], [$route['match_type'], $route['_funnel']]);
+
 // ── helpers ──
 $refs = gate_content_refs($gate);
 sort($refs);

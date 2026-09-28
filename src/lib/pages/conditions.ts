@@ -103,6 +103,8 @@ export const ruleConditionsSchema = conditionsSchema
     param: paramRule.optional(),
     user_agent: z.string().min(1).max(500).optional(),
     user_agent_mode: z.literal("block").optional(),
+    // Only a prefetch: the page loaded ahead of a click (X-Moz / Sec-Purpose / Purpose: prefetch).
+    prefetch: z.literal(true).optional(),
     // The click's IP (IPs and CIDR ranges), its AS number and its hostname (reverse DNS, a regex).
     ips: z.array(z.string().refine(isIpOrRange, "invalid IP or range")).min(1).max(200).optional(),
     ips_mode: z.literal("block").optional(),
@@ -225,8 +227,9 @@ export function summarizeConditions(c: RouteConditions | null | undefined): stri
  * Reads a rule's conditions from the rule form. The same fields as the domain
  * filter (minus `bot`), plus `sub1`, `sub11` (exact), `user_agent` and
  * `hostname` (regexes), `ips` (IPs/CIDR ranges) and `asns` (AS numbers, "AS"
- * prefix optional) — each with its `_mode` "block" to invert. The regexes are
- * validated for real (they must compile — the server runs them per click).
+ * prefix optional) — each with its `_mode` "block" to invert — and `prefetch`
+ * (checkbox). The regexes are validated for real (they must compile — the
+ * server runs them per click).
  */
 export function parseRuleConditionsForm(fd: FormData): { ok: true; value: RuleConditions } | { ok: false; reason: string } {
   // The rule form adds URL parameters one by one: "contains" goes once, and a parameter only once.
@@ -313,6 +316,8 @@ export function parseRuleConditionsForm(fd: FormData): { ok: true; value: RuleCo
     if (String(fd.get("user_agent_mode") ?? "allow") === "block") raw.user_agent_mode = "block";
   }
 
+  if (fd.get("prefetch") === "on" || fd.get("prefetch") === "true") raw.prefetch = true;
+
   const parsed = ruleConditionsSchema.safeParse(raw);
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
@@ -330,6 +335,7 @@ export function ruleConditionsToForm(c: RuleConditions | null | undefined): Retu
   paramValue: string;
   userAgent: string;
   userAgentMode: ListMode;
+  prefetch: boolean;
   ips: string;
   ipsMode: ListMode;
   asns: string;
@@ -348,6 +354,7 @@ export function ruleConditionsToForm(c: RuleConditions | null | undefined): Retu
     paramValue: p?.equals ?? p?.not_equals ?? p?.absent_or_equals ?? p?.contains ?? "",
     userAgent: c?.user_agent ?? "",
     userAgentMode: c?.user_agent_mode === "block" ? "block" : "allow",
+    prefetch: c?.prefetch === true,
     ips: (c?.ips ?? []).join(", "),
     ipsMode: c?.ips_mode === "block" ? "block" : "allow",
     asns: (c?.asns ?? []).join(", "),
@@ -378,6 +385,7 @@ export function summarizeRuleConditions(c: RuleConditions | null | undefined): s
       }`,
     );
   if (c.user_agent) parts.push(`UA ${c.user_agent_mode === "block" ? "not " : ""}~ /${c.user_agent}/i`);
+  if (c.prefetch) parts.push("Prefetch");
   if (c.ips?.length) parts.push(`IP ${c.ips_mode === "block" ? "not " : ""}in ${c.ips.join(", ")}`);
   if (c.asns?.length) parts.push(`ASN ${c.asns_mode === "block" ? "not " : ""}in ${c.asns.join(", ")}`);
   if (c.hostname) parts.push(`Hostname ${c.hostname_mode === "block" ? "not " : ""}~ /${c.hostname}/i`);

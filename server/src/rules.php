@@ -29,7 +29,9 @@
  * The conditions are the hit log's fields (rule_conditions_match): the click's
  * sub ids (sub1, sub11), ANY URL parameter (param), country, device, language,
  * referrer, URL parameters (via conditions_match), a regex on the User-Agent,
- * the IP (IPs/CIDR ranges), and — network lookups, checked last and only when
+ * the request being a prefetch (request_is_prefetch: loaded ahead of a click,
+ * e.g. TikTok's Android app while the ad shows in the feed), the IP (IPs/CIDR
+ * ranges), and — network lookups, checked last and only when
  * everything else matched — the ASN and a regex on the hostname (netinfo.php:
  * a short timeout, cached per IP; a lookup that fails never flags a click).
  */
@@ -45,7 +47,7 @@ const GATE_SAFE_MATCH = 'GATE-SAFE';
 const GATE_REASONS = ['slug_not_allowed', 'no_funnel_token', 'funnel_not_live', 'domain_disabled', 'domain_locked', 'domain_unlocked'];
 
 /** The rule-only condition keys (the base ones are conditions_match's). */
-const RULE_OWN_CONDITIONS = ['sub1', 'sub11', 'param', 'user_agent', 'user_agent_mode', 'ips', 'ips_mode', 'asns', 'asns_mode', 'hostname', 'hostname_mode'];
+const RULE_OWN_CONDITIONS = ['sub1', 'sub11', 'param', 'user_agent', 'user_agent_mode', 'prefetch', 'ips', 'ips_mode', 'asns', 'asns_mode', 'hostname', 'hostname_mode'];
 
 /**
  * Builds the SERVE route the gate decides on, or null when the click falls
@@ -302,6 +304,11 @@ function rule_conditions_match(array $cond, Request $req): bool
         if ($block ? $matched : !$matched) {
             return false;
         }
+    }
+
+    // `prefetch: true` only matches a request loaded ahead of a click.
+    if (($cond['prefetch'] ?? false) === true && !$req->prefetch) {
+        return false;
     }
 
     // The click's IP against IPs and CIDR ranges. An invalid IP can't be told: no match.

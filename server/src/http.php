@@ -28,6 +28,8 @@ final class Request
         public readonly bool $viaCloudflare,
         /** Request cookies, name → value (already decoded). */
         public readonly array $cookies,
+        /** An app or browser loading the page ahead of a click (request_is_prefetch). */
+        public readonly bool $prefetch = false,
         /** Normalized host and path; filled in by app.php. */
         public string $host = '',
         public string $path = '/',
@@ -75,7 +77,26 @@ function parse_request(array $server): Request
         purgeToken: isset($server['HTTP_X_PURGE_TOKEN']) ? (string) $server['HTTP_X_PURGE_TOKEN'] : null,
         viaCloudflare: isset($server['HTTP_CF_RAY']),
         cookies: parse_cookie_header((string) ($server['HTTP_COOKIE'] ?? '')),
+        prefetch: request_is_prefetch($server),
     );
+}
+
+/**
+ * Is this request a prefetch — the page loaded ahead of a click, not a visit?
+ * TikTok's Android app does it while the ad shows in the feed (X-Moz:
+ * prefetch, from its ad SDK); browsers say it with Sec-Purpose (prefetch,
+ * prefetch;prerender) or the older Purpose. Most prefetches are never
+ * clicked; when one is, the app either asks for the page again or shows the
+ * copy it prefetched.
+ */
+function request_is_prefetch(array $server): bool
+{
+    foreach (['HTTP_X_MOZ', 'HTTP_PURPOSE', 'HTTP_SEC_PURPOSE'] as $h) {
+        if (stripos((string) ($server[$h] ?? ''), 'prefetch') !== false) {
+            return true;
+        }
+    }
+    return false;
 }
 
 /**

@@ -18,7 +18,8 @@
  * why it didn't go to the funnel, country, ASN…).
  *
  * The www entry redirect isn't sent: the same click comes right back on the
- * bare domain and is sent then. Nobody waits: it runs after the response,
+ * bare domain and is sent then. Nor is a prefetch (request_is_prefetch): the
+ * page loaded ahead of a click is not a click. Nobody waits: it runs after the response,
  * with a short timeout, and a failure only goes to the log. DOT_CLICKS=0
  * turns it off (tests and local runs must never feed the real tracker).
  */
@@ -72,12 +73,15 @@ function dot_click_ids(array $query): array
 
 /**
  * The dot payload for this request, or null when it isn't sent (no click id,
- * not a page, the www entry redirect). $ctx: what the server did — hit_id,
- * domain_id, outcome, status, route, visit_id, asn, as_name, hostname.
+ * not a page, the www entry redirect, a prefetch). $ctx: what the server did —
+ * hit_id, domain_id, outcome, status, route, visit_id, asn, as_name, hostname.
  */
 function dot_click_payload(Request $req, array $ctx, array $server): ?array
 {
-    if (!is_logged_path($req->path)) {
+    // A prefetch isn't a click (most are never clicked), and dot keeps the
+    // first event of a click id: sent, it would stand for the real click that
+    // may come after it.
+    if (!is_logged_path($req->path) || $req->prefetch) {
         return null;
     }
     $route = is_array($ctx['route'] ?? null) ? $ctx['route'] : null;

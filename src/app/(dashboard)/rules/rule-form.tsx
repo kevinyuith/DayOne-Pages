@@ -109,9 +109,10 @@ function FormBody({ rule, onDone }: { rule?: Rule; onDone: () => void }) {
 }
 
 /** The kinds of condition a rule can use. "URL parameter" can repeat; the others go once. */
-type CondType = "user_agent" | "ips" | "asns" | "hostname" | "param" | "countries" | "languages" | "devices" | "referrer";
+type CondType = "user_agent" | "prefetch" | "ips" | "asns" | "hostname" | "param" | "countries" | "languages" | "devices" | "referrer";
 const COND_TYPES: { type: CondType; label: string; repeat?: true }[] = [
   { type: "user_agent", label: "User-Agent" },
+  { type: "prefetch", label: "Prefetch" },
   { type: "ips", label: "IP" },
   { type: "asns", label: "ASN" },
   { type: "hostname", label: "Hostname" },
@@ -142,6 +143,7 @@ type Row = { id: number; type: CondType; key?: string; mode?: ParamRowMode; valu
 function initialRows(initial: ReturnType<typeof ruleConditionsToForm>): Row[] {
   const rows: Omit<Row, "id">[] = [];
   if (initial.userAgent) rows.push({ type: "user_agent" });
+  if (initial.prefetch) rows.push({ type: "prefetch" });
   if (initial.ips) rows.push({ type: "ips" });
   if (initial.asns) rows.push({ type: "asns" });
   if (initial.hostname) rows.push({ type: "hostname" });
@@ -199,6 +201,13 @@ function ConditionsBuilder({ initial, disabled }: { initial: ReturnType<typeof r
               <option value="block">doesn&apos;t match</option>
             </select>
             <input name="user_agent" defaultValue={initial.userAgent} required placeholder="headless|python-requests" className={`${input} font-mono`} disabled={disabled} aria-label="User-Agent regex" />
+          </>
+        );
+      case "prefetch":
+        return (
+          <>
+            <span className={op}>the request is a prefetch</span>
+            <input type="hidden" name="prefetch" value="on" />
           </>
         );
       case "ips":
