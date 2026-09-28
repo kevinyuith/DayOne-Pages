@@ -55,4 +55,7 @@ same('POST: 405', 405, handle_tracker(make_request(['REQUEST_URI' => '/_dop/dot.
 check('other paths: not a tracker', handle_tracker(make_request(['REQUEST_URI' => '/_dop/x.js'])) === null && handle_tracker(make_request(['REQUEST_URI' => '/dot.js'])) === null);
 check('dot.js sends to the dot edge function and takes video_id from the cookie, not the player', str_contains(TRACKER_DOT_JS, "var ENDPOINT = 'https://cdn.dayone.click/functions/v1/dot'") && str_contains(TRACKER_DOT_JS, 'video_id=([0-9a-f]{24})') && !str_contains(TRACKER_DOT_JS, "sendEvent('video_load'") && !str_contains(TRACKER_DOT_JS, 'MutationObserver'));
 check('pre_dot.js sends a pre_lander page_view to the dot edge function', str_contains(TRACKER_PRE_DOT_JS, "var ORIGIN = 'pre_lander'") && str_contains(TRACKER_PRE_DOT_JS, 'functions/v1/dot'));
+foreach (['dot.js' => TRACKER_DOT_JS, 'pre_dot.js' => TRACKER_PRE_DOT_JS] as $name => $js) {
+    check("$name sends page_id from the cookie (a uuid only)", str_contains($js, 'page_id=([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})') && str_contains($js, 'if (pageId) payload.page_id = pageId;'));
+}
 

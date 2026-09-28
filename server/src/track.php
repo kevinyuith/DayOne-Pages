@@ -107,6 +107,10 @@ const TRACKER_DOT_JS = <<<'JS'
  *   player:ready and carry the same id; a page with no video_id cookie has no
  *   video to report.
  *
+ * PAGE_ID: every event carries the funnel page the server served (the A/B
+ *   split's pick), from the `page_id` cookie set in the same response —
+ *   dot's page_id column. pre_dot.js does the same on the Pre Lander.
+ *
  * Also preserved: UTM/click-ID capture (sessionStorage dot_attr), dotid cookie
  * (1 day), ?dotid= propagation on external links, send retries, pagehide beacon.
  *
@@ -151,6 +155,13 @@ const TRACKER_DOT_JS = <<<'JS'
   // ---- visitor identifier (URL > cookie) ----
   var dotid = query.get('dotid') ||
     document.cookie.replace(/(?:(?:^|.*;\s*)dotid\s*=\s*([^;]*).*$)|^.*$/, '$1') || null;
+  // ---- page_id: the funnel page the server served (the A/B split's pick) ----
+  // Set by the server in the same response as this page (cookie `page_id`, a uuid).
+  // Read once, now: a later page of the same domain (another tab) sets its own.
+  var pageId = (function () {
+    var m = document.cookie.match(/(?:^|;\s*)page_id=([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:;|$)/);
+    return m ? m[1] : null;
+  })();
   function setCookie(name, value, days) {
     var d = new Date();
     d.setTime(d.getTime() + days * 86400000);
@@ -179,6 +190,7 @@ const TRACKER_DOT_JS = <<<'JS'
       _tz: Intl.DateTimeFormat().resolvedOptions().timeZone || null
     };
     if (dotid) payload.dotid = dotid;
+    if (pageId) payload.page_id = pageId;
     for (var k in attrs) payload[k] = attrs[k];
     if (extra) { for (var k2 in extra) payload[k2] = extra[k2]; }
     return payload;
@@ -400,6 +412,11 @@ const TRACKER_PRE_DOT_JS = <<<'JS'
   var cookieMatch = document.cookie.match(/(?:^|;\s*)dotid=([^;]+)/);
   var dotid = query.get('dotid') || (cookieMatch && cookieMatch[1]) || null;
 
+  // ---- the funnel page the server served (cookie `page_id`, set with this page) ----
+  // Read now, not at "load": by then another tab of the same domain may have set its own.
+  var pageMatch = document.cookie.match(/(?:^|;\s*)page_id=([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:;|$)/);
+  var pageId = pageMatch ? pageMatch[1] : null;
+
   function buildPayload() {
     var payload = {
       event: 'page_view',
@@ -410,6 +427,7 @@ const TRACKER_PRE_DOT_JS = <<<'JS'
       lander: location.pathname
     };
     if (dotid) payload.dotid = dotid;
+    if (pageId) payload.page_id = pageId;
     ATTRIBUTION_PARAMS.forEach(function (p) {
       var v = query.get(p);
       if (v) payload[p] = v;
