@@ -49,6 +49,14 @@ export type HitFilters = { [K in keyof Options]?: Options[K][number][0] } & {
   ip?: string;
   /** A rule's flow (tag): hits a rule with it caught. Same shape the Rules screen accepts. */
   flow?: string;
+  /** The click's platform: its sub11, lowercased (pages.hits.platform). */
+  platform?: string;
+  /**
+   * One rule (pages.rules.id): the hits it caught (pages.hits.rule_id). In the
+   * URL it's ?rule=<id>, the same parameter as the label choices above: the
+   * Logs' Rule select posts either, and the Rules screen's numbers link to it.
+   */
+  ruleId?: string;
 };
 
 type Params = { [key: string]: string | string[] | undefined };
@@ -68,10 +76,16 @@ export function parseHitFilters(params: Params): HitFilters {
   if (/^[0-9A-Fa-f:.]{2,45}$/.test(ip) && (ip.includes(".") || ip.includes(":"))) f.ip = ip;
   const flow = one(params.flow);
   if (/^[^\s,;]{1,40}$/.test(flow)) f.flow = flow;
+  const platform = one(params.platform).toLowerCase();
+  if (platform.length > 0 && platform.length <= 40) f.platform = platform;
+  const rule = one(params.rule).toLowerCase();
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(rule)) f.ruleId = rule;
   return f;
 }
 
 /** The filters as query params (for links that keep them). */
 export function hitFilterParams(f: HitFilters): [string, string][] {
-  return Object.entries(f).filter((e): e is [string, string] => typeof e[1] === "string" && e[1] !== "");
+  return Object.entries(f)
+    .filter((e): e is [string, string] => typeof e[1] === "string" && e[1] !== "")
+    .map(([k, v]) => [k === "ruleId" ? "rule" : k, v]);
 }

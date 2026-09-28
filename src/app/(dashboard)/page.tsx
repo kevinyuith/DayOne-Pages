@@ -3,8 +3,8 @@ import { AlertBanner } from "@/components/dashboard/alert-banner";
 import { DashboardControls } from "@/components/dashboard/dashboard-controls";
 import { StatStrip, type Stat } from "@/components/dashboard/stat-card";
 import { TrafficChart } from "@/components/dashboard/traffic-chart";
-import { activeFilterCount, bucketEdges, parseDashboardFilters, resolveRange } from "@/lib/pages/dashboard-filters";
-import { hitCountries, hitSeries, hitStats, listDomains, recentHits, type HitFilter } from "@/lib/pages/queries";
+import { activeFilterCount, bucketEdges, parseDashboardFilters, platformLabel, resolveRange } from "@/lib/pages/dashboard-filters";
+import { hitCountries, hitPlatforms, hitSeries, hitStats, listDomains, recentHits, type HitFilter } from "@/lib/pages/queries";
 
 const num = new Intl.NumberFormat("en-US");
 
@@ -17,8 +17,8 @@ function share(part: number, total: number, noun = "of requests"): { share: numb
 }
 
 /**
- * Filters in the URL (see dashboard-filters.ts): period, domain, outcome,
- * device, country and bots. The cards (total requests and the unique-visitor
+ * Filters in the URL (see dashboard-filters.ts): period, domain, platform
+ * (the sub11), outcome, device, country and bots. The cards (total requests and the unique-visitor
  * counts), the chart and the table all follow them.
  */
 export default async function DashboardPage({
@@ -38,12 +38,14 @@ export default async function DashboardPage({
     devices: filters.devices,
     countries: filters.countries,
     hideBots: filters.hideBots,
+    platform: filters.platform,
   };
-  const [stats, series, hits, countries] = await Promise.all([
+  const [stats, series, hits, countries, platforms] = await Promise.all([
     hitStats(range.since, hitFilter),
     hitSeries(bucketEdges(range, nowMs), hitFilter),
     recentHits(20, range.since, hitFilter),
     hitCountries(range.since, filters.domain),
+    hitPlatforms(range.since, filters.domain),
   ]);
 
   const attentionCount = domains.filter((d) => d.status === "ACTIVE" && d.last_check_ok !== true).length;
@@ -75,16 +77,18 @@ export default async function DashboardPage({
       <header className="mb-6">
         <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
         <p className="mt-1 text-sm text-muted">
-          Traffic {scope ? <>on <span className="font-medium text-foreground">{scope}</span></> : "across all domains"} · {range.label.toLowerCase()}
+          Traffic {scope ? <>on <span className="font-medium text-foreground">{scope}</span></> : "across all domains"}
+          {filters.platform ? <> from <span className="font-medium text-foreground">{platformLabel(filters.platform)}</span></> : null} ·{" "}
+          {range.label.toLowerCase()}
         </p>
       </header>
 
-      <DashboardControls filters={filters} domains={domainOptions} countries={countries} />
+      <DashboardControls filters={filters} domains={domainOptions} countries={countries} platforms={platforms} />
 
       <div data-dash-content className="space-y-6">
         <StatStrip stats={stats5} />
         <TrafficChart buckets={series} granularity={range.granularity} periodLabel={range.label} />
-        <AccessLogs hits={hits} filtered={filtered || filters.domain !== null} showDate={filters.range !== "today"} />
+        <AccessLogs hits={hits} filtered={filtered || filters.domain !== null || filters.platform !== null} showDate={filters.range !== "today"} />
       </div>
 
     </>

@@ -13,7 +13,7 @@ export function Th({ className = "", ...props }: ThHTMLAttributes<HTMLTableCellE
 }
 
 export function Td({ className = "", ...props }: TdHTMLAttributes<HTMLTableCellElement>) {
-  return <td className={`border-b border-border px-4 py-2.5 align-middle last:border-b-0 ${className}`} {...props} />;
+  return <td className={`border-b border-border px-4 py-2.5 align-middle ${className}`} {...props} />;
 }
 
 export function Tr({ className = "", ...props }: HTMLAttributes<HTMLTableRowElement>) {

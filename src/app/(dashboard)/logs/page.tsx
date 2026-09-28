@@ -9,11 +9,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, Td, Th, Tr } from "@/components/ui/table";
 import { languagesFromHeader } from "@/lib/accept-language";
+import { platformLabel } from "@/lib/pages/dashboard-filters";
 import { HIT_FILTER_OPTIONS, hitFilterParams, parseHitFilters } from "@/lib/pages/hit-filters";
 import { connectionType } from "@/lib/connection";
 import { browserFromUA, osFromUA } from "@/lib/user-agent";
 import { normalizeHost } from "@/lib/pages/normalize";
-import { FUNNEL_DECISIONS, listDomains, listHits, unregisteredHosts, type HitLogRow } from "@/lib/pages/queries";
+import { FUNNEL_DECISIONS, hitPlatforms, listDomains, listHits, unregisteredHosts, type HitLogRow } from "@/lib/pages/queries";
 import { listRules } from "@/lib/pages/rules";
 import { APP_TZ } from "@/lib/time-zone";
 import { registerSeenDomain } from "../domains/actions";
@@ -23,22 +24,27 @@ export const metadata: Metadata = {
 };
 
 const PAGE_SIZE = 100;
+/** The Platform filter lists the platforms (sub11) seen in this window. */
+const PLATFORM_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 
 const dateFmt = new Intl.DateTimeFormat("en-US", { dateStyle: "short", timeStyle: "medium", timeZone: APP_TZ });
 const loadFmt = new Intl.NumberFormat("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
 /**
  * Every request logged in pages.hits, with all columns, newest to oldest.
- * Filters in a GET form, no JS (?domain=<id> and hit-filters.ts: result, rule,
- * flow, unique, funnel, interaction, device, country, ip) and cursor pagination
- * (?before=<id>) that keeps them. An unregistered host gets a button to
- * register it right there.
+ * Filters in a GET form, no JS (?domain=<id> and hit-filters.ts: platform,
+ * result, rule — a label or one rule's id —, flow, unique, funnel, interaction,
+ * device, country, ip) and cursor pagination (?before=<id>) that keeps them. An
+ * unregistered host gets a button to register it right there.
  */
 export default async function LogsPage({
   searchParams,
 }: {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
+  // Dynamic Server Component: reading the clock per request is intentional.
+  // eslint-disable-next-line react-hooks/purity
+  const nowMs = Date.now();
   const params = await searchParams;
   const { domain, before } = params;
   const filters = parseHitFilters(params);
@@ -46,13 +52,21 @@ export default async function LogsPage({
   const selected = typeof domain === "string" && domains.some((d) => d.id === domain) ? domain : null;
   const beforeId = typeof before === "string" && /^\d+$/.test(before) ? Number(before) : null;
   const filtered = selected !== null || hitFilterParams(filters).length > 0;
-  const [{ rows: hits, hasMore }, unregistered, rules] = await Promise.all([
+  const [{ rows: hits, hasMore }, unregistered, rules, platforms] = await Promise.all([
     listHits({ domainId: selected, beforeId, limit: PAGE_SIZE, filters }),
     unregisteredHosts(),
     listRules(),
+    hitPlatforms(new Date(nowMs - PLATFORM_WINDOW_MS)),
   ]);
   // The rules' flows (tags), plus the one in the URL if no rule has it any more (old hits still do).
   const flows = [...new Set([...rules.flatMap((r) => r.tags), ...(filters.flow ? [filters.flow] : [])])].sort((a, b) => a.localeCompare(b));
+  // Every rule for the Rule select (a name that repeats gets its reason); a rule in the URL that no longer exists shows as deleted.
+  const names = new Map<string, number>();
+  for (const r of rules) names.set(r.name, (names.get(r.name) ?? 0) + 1);
+  const ruleOptions = rules.map((r) => [r.id, (names.get(r.name) ?? 0) > 1 && r.reason ? `${r.name} · ${r.reason}` : r.name] as const);
+  if (filters.ruleId && !rules.some((r) => r.id === filters.ruleId)) ruleOptions.push([filters.ruleId, "Deleted rule"] as const);
+  // The platforms seen lately, plus the one in the URL if it isn't among them.
+  const platformOptions = [...new Set([...platforms.map((p) => p.platform), ...(filters.platform ? [filters.platform] : [])])];
   // Unregistered hosts that can be registered from here (the "looks like a domain" rules live in the SQL).
   const registrable = new Set(unregistered.map((u) => u.domain));
 
@@ -71,8 +85,16 @@ export default async function LogsPage({
 
       <form method="get" className="mb-6 flex flex-wrap items-center gap-2">
         <FilterSelect name="domain" label="Domain" value={selected} options={domains.map((d) => [d.id, d.domain] as const)} all="All domains" />
+        <FilterSelect name="platform" label="Platform" value={filters.platform} options={platformOptions.map((p) => [p, platformLabel(p)] as const)} all="All platforms" />
         <FilterSelect name="result" label="Result" value={filters.result} options={HIT_FILTER_OPTIONS.result} all="All results" />
-        <FilterSelect name="rule" label="Rule" value={filters.rule} options={HIT_FILTER_OPTIONS.rule} all="All rules" />
+        <FilterSelect
+          name="rule"
+          label="Rule"
+          value={filters.ruleId ?? filters.rule}
+          options={HIT_FILTER_OPTIONS.rule}
+          groups={ruleOptions.length ? [{ label: "Rules", options: ruleOptions }] : undefined}
+          all="All rules"
+        />
         <FilterSelect name="flow" label="Flow" value={filters.flow} options={flows.map((t) => [t, t] as const)} all="All flows" />
         <FilterSelect name="unique" label="Unique" value={filters.unique} options={HIT_FILTER_OPTIONS.unique} all="Unique and repeat" />
         <FilterSelect name="funnel" label="Funnel" value={filters.funnel} options={HIT_FILTER_OPTIONS.funnel} all="Funnel: all" />
@@ -307,7 +329,23 @@ export default async function LogsPage({
 const FILTER_CLASS = "rounded-lg border border-border bg-surface py-2 text-sm font-medium transition-colors hover:text-foreground";
 
 /** A filter of the Logs' GET form; the first option (empty) is no filter. */
-function FilterSelect({ name, label, value, options, all }: { name: string; label: string; value: string | null | undefined; options: readonly (readonly [string, string])[]; all: string }) {
+type FilterOptions = readonly (readonly [string, string])[];
+
+function FilterSelect({
+  name,
+  label,
+  value,
+  options,
+  groups,
+  all,
+}: {
+  name: string;
+  label: string;
+  value: string | null | undefined;
+  options: FilterOptions;
+  groups?: { label: string; options: FilterOptions }[];
+  all: string;
+}) {
   return (
     <label className="relative">
       <span className="sr-only">{label}</span>
@@ -317,6 +355,15 @@ function FilterSelect({ name, label, value, options, all }: { name: string; labe
           <option key={v} value={v}>
             {text}
           </option>
+        ))}
+        {groups?.map((g) => (
+          <optgroup key={g.label} label={g.label}>
+            {g.options.map(([v, text]) => (
+              <option key={v} value={v}>
+                {text}
+              </option>
+            ))}
+          </optgroup>
         ))}
       </select>
       <ChevronDownIcon className="pointer-events-none absolute right-2.5 top-1/2 size-4 -translate-y-1/2 text-muted" />

@@ -1,22 +1,47 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { RowAction } from "@/components/row-action";
 import { Badge } from "@/components/ui/badge";
 import { Table, Td, Th, Tr } from "@/components/ui/table";
 import { summarizeRuleConditions } from "@/lib/pages/conditions";
-import { listRules } from "@/lib/pages/rules";
+import { parseRange, resolveRange } from "@/lib/pages/dashboard-filters";
+import { listRules, ruleStats, type RuleCount } from "@/lib/pages/rules";
 import { deleteRule, duplicateRule, moveRule, setRuleActive } from "./actions";
-import { FlowFilter } from "./flow-filter";
 import { RuleForm } from "./rule-form";
+import { RulesFilters } from "./rules-filters";
 
 export const metadata: Metadata = {
   title: "Rules",
 };
 
-export default async function RulesPage({ searchParams }: { searchParams: Promise<{ flow?: string }> }) {
-  const { flow } = await searchParams;
-  const all = await listRules();
+const num = new Intl.NumberFormat("en-US");
+
+/** A Blocked cell: the clicks, and the distinct IPs under them; a link to those hits in the Logs. */
+function Count({ count, href }: { count: RuleCount | undefined; href: string }) {
+  const { hits, uniques } = count ?? { hits: 0, uniques: 0 };
+  return (
+    <Link href={href} title="See them in the Logs" className="group sensitive inline-block tabular-nums">
+      <span className={`font-medium group-hover:underline ${hits ? "" : "text-muted"}`}>{num.format(hits)}</span>
+      <span className="block text-xs text-muted">{num.format(uniques)} unique</span>
+    </Link>
+  );
+}
+
+/**
+ * The rules, in the order the gate walks them, with how many clicks each one
+ * caught in the period (?range=, the Dashboard's periods) and, last, the clicks
+ * that passed the gate; each number opens those hits in the Logs. ?flow= shows
+ * only the rules with that flow (tag).
+ */
+export default async function RulesPage({ searchParams }: { searchParams: Promise<{ flow?: string; range?: string }> }) {
+  // Dynamic Server Component: reading the clock per request is intentional.
+  // eslint-disable-next-line react-hooks/purity
+  const nowMs = Date.now();
+  const { flow, range: rangeParam } = await searchParams;
+  const range = parseRange(rangeParam);
+  const [all, stats] = await Promise.all([listRules(), ruleStats(resolveRange(range, nowMs).since)]);
   // The flows in use (the rules' tags), for the filter.
   const flows = [...new Set(all.flatMap((r) => r.tags))].sort((a, b) => a.localeCompare(b));
   const selected = typeof flow === "string" && flows.includes(flow) ? flow : null;
@@ -35,11 +60,7 @@ export default async function RulesPage({ searchParams }: { searchParams: Promis
         <RuleForm />
       </section>
 
-      {all.length ? (
-        <div className="mb-3 flex items-center justify-end gap-2">
-          <FlowFilter flows={flows} value={selected} />
-        </div>
-      ) : null}
+      {all.length ? <RulesFilters range={range} flow={selected} flows={flows} /> : null}
 
       {rules.length === 0 ? (
         <EmptyState
@@ -47,7 +68,7 @@ export default async function RulesPage({ searchParams }: { searchParams: Promis
           description={selected ? "Clear the filter to see every rule." : "Create the first rule above. With no rules, every click is clean and goes to the funnel of its sub1."}
         />
       ) : (
-        <Table>
+        <Table data-dash-content>
           <thead>
             <tr>
               <Th className="w-px">Order</Th>
@@ -57,6 +78,7 @@ export default async function RulesPage({ searchParams }: { searchParams: Promis
               <Th>Conditions</Th>
               <Th>Status</Th>
               <Th className="text-right">Actions</Th>
+              <Th className="text-right">Blocked</Th>
             </tr>
           </thead>
           <tbody>
@@ -92,8 +114,20 @@ export default async function RulesPage({ searchParams }: { searchParams: Promis
                     <RowAction action={deleteRule.bind(null, r.id)} label="Delete" variant="danger" confirm={`Delete the rule "${r.name}"?`} />
                   </span>
                 </Td>
+                <Td className="whitespace-nowrap text-right">
+                  <Count count={stats.byRule.get(r.id)} href={`/logs?rule=${r.id}`} />
+                </Td>
               </Tr>
             ))}
+            <Tr>
+              <Td />
+              <Td colSpan={6}>
+                <span className="font-medium">Passed</span>
+              </Td>
+              <Td className="whitespace-nowrap text-right">
+                <Count count={stats.passed} href="/logs?funnel=sent" />
+              </Td>
+            </Tr>
           </tbody>
         </Table>
       )}

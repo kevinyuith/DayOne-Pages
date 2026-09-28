@@ -27,3 +27,25 @@ export async function listRules(): Promise<Rule[]> {
     conditions: (r.conditions ?? {}) as RuleConditions,
   }));
 }
+
+/** Clicks (hits) and distinct IPs. */
+export type RuleCount = { hits: number; uniques: number };
+
+/**
+ * The Rules screen's numbers since `since` (pages.rule_stats): per rule id,
+ * the clicks it caught; and `passed`, the clicks that passed the gate (a
+ * funnel page served with a 200, as the Dashboard counts them). The www entry
+ * redirect isn't counted: the same click comes back on the bare domain.
+ */
+export async function ruleStats(since: Date): Promise<{ byRule: Map<string, RuleCount>; passed: RuleCount }> {
+  const { data, error } = await supabaseService().rpc("rule_stats", { p_since: since.toISOString() });
+  throwIf(error, "rule_stats");
+  const byRule = new Map<string, RuleCount>();
+  let passed: RuleCount = { hits: 0, uniques: 0 };
+  for (const r of (data as { rule_id: string | null; hits: number | string; uniques: number | string }[] | null) ?? []) {
+    const count = { hits: Number(r.hits), uniques: Number(r.uniques) };
+    if (r.rule_id === null) passed = count;
+    else byRule.set(r.rule_id, count);
+  }
+  return { byRule, passed };
+}

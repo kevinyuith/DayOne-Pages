@@ -621,6 +621,8 @@ export type HitFilter = {
   devices?: string[];
   countries?: string[];
   hideBots?: boolean;
+  /** pages.hits.platform (the sub11, lowercased). */
+  platform?: string | null;
 };
 
 function filterArgs(f: HitFilter) {
@@ -630,6 +632,7 @@ function filterArgs(f: HitFilter) {
     p_devices: f.devices?.length ? f.devices : null,
     p_countries: f.countries?.length ? f.countries : null,
     p_hide_bots: f.hideBots ?? false,
+    p_platforms: f.platform ? [f.platform] : null,
   };
 }
 
@@ -691,6 +694,13 @@ export async function hitCountries(since: Date, domainId: string | null = null):
   const { data, error } = await supabaseService().rpc("hit_countries", { p_since: since.toISOString(), p_domain: domainId });
   throwIf(error, "hitCountries");
   return ((data as Record<string, unknown>[] | null) ?? []).map((r) => ({ country: String(r.country), hits: n(r.hits) }));
+}
+
+/** Platforms (sub11) with hits in the period (for the platform filter), most frequent first. */
+export async function hitPlatforms(since: Date, domainId: string | null = null): Promise<{ platform: string; hits: number }[]> {
+  const { data, error } = await supabaseService().rpc("hit_platforms", { p_since: since.toISOString(), p_domain: domainId });
+  throwIf(error, "hitPlatforms");
+  return ((data as Record<string, unknown>[] | null) ?? []).map((r) => ({ platform: String(r.platform), hits: n(r.hits) }));
 }
 
 export type UnregisteredHost = { domain: string; hits: number; bots: number; last_seen: string };
@@ -792,6 +802,7 @@ export async function listHits(
   else if (f.rule === "bot") q = q.eq("rule_label", "Bot");
   else if (f.rule === "suspicious") q = q.eq("rule_label", "Suspicious");
   else if (f.rule === "none") q = q.is("rule", null);
+  if (f.ruleId) q = q.eq("rule_id", f.ruleId);
   if (f.unique) q = q.eq("is_unique", f.unique === "unique");
   // Served by a funnel = the gate's funnel decision (the hits from before gate_reason have it too).
   if (f.funnel === "sent") q = q.in("decision", [...FUNNEL_DECISIONS]);
@@ -802,6 +813,7 @@ export async function listHits(
   if (f.device) q = q.eq("device", f.device);
   if (f.country) q = q.eq("country", f.country);
   if (f.ip) q = q.eq("ip", f.ip);
+  if (f.platform) q = q.eq("platform", f.platform);
   // rule_tags is a jsonb array: containment, so ["Crawler","TikTok"] matches the flow "Crawler".
   if (f.flow) q = q.contains("rule_tags", JSON.stringify([f.flow]));
   const { data, error } = await q;

@@ -3,17 +3,18 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useOptimistic, useRef, useState, useTransition } from "react";
 import { OUTCOME_BADGE } from "@/components/dashboard/access-logs";
-import { ChevronDownIcon, CloseIcon, EyeIcon, EyeOffIcon, FilterIcon, GlobeIcon, RefreshIcon } from "@/components/icons";
+import { CampaignIcon, ChevronDownIcon, CloseIcon, EyeIcon, EyeOffIcon, FilterIcon, GlobeIcon, RefreshIcon } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   DEVICE_KEYS,
   OUTCOME_KEYS,
   RANGES,
+  RANGE_SHORT,
   activeFilterCount,
   dashboardHref,
+  platformLabel,
   type DashboardFilters,
-  type RangeKey,
 } from "@/lib/pages/dashboard-filters";
 
 const btn =
@@ -22,9 +23,6 @@ const iconBtn =
   "inline-flex size-9 items-center justify-center rounded-lg border border-border bg-surface text-muted transition-colors hover:text-foreground hover:border-foreground/20";
 const selectCls =
   "h-9 appearance-none rounded-lg border border-border bg-surface pr-9 text-sm font-medium text-foreground transition-colors hover:border-foreground/20";
-
-/** Short label for each period, in the segmented selector (the long name goes in the title). */
-const RANGE_SHORT: Record<RangeKey, string> = { today: "Today", "24h": "24h", "7d": "7d", "30d": "30d" };
 
 const DEVICE_LABEL: Record<string, string> = { desktop: "Desktop", mobile: "Mobile", tablet: "Tablet" };
 
@@ -41,9 +39,10 @@ const toggle = (list: string[], v: string) => (list.includes(v) ? list.filter((x
 
 type DomainOption = { id: string; domain: string };
 type CountryOption = { country: string; hits: number };
+type PlatformOption = { platform: string; hits: number };
 
 /**
- * The dashboard control bar. Period, domain and the "Filters" popover
+ * The dashboard control bar. Period, domain, platform (the sub11) and the "Filters" popover
  * change the URL (dashboardHref) and the page redoes the reads on the server; the
  * chosen value shows up right away (useOptimistic) while the navigation runs.
  * "Hide values" blurs the numbers on screen (data-hide-values on <html>) and
@@ -53,10 +52,12 @@ export function DashboardControls({
   filters,
   domains,
   countries,
+  platforms,
 }: {
   filters: DashboardFilters;
   domains: DomainOption[];
   countries: CountryOption[];
+  platforms: PlatformOption[];
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -83,6 +84,10 @@ export function DashboardControls({
     });
 
   const cleared = { ...shown, outcomes: [], devices: [], countries: [], hideBots: false };
+
+  // A chosen platform with no hits in the period stays in the list, so it can be seen and changed.
+  const platformOptions = platforms.map((p) => p.platform);
+  if (shown.platform && !platformOptions.includes(shown.platform)) platformOptions.push(shown.platform);
 
   return (
     <div className="mb-6">
@@ -119,6 +124,23 @@ export function DashboardControls({
               {domains.map((d) => (
                 <option key={d.id} value={d.id}>
                   {d.domain}
+                </option>
+              ))}
+            </select>
+            <ChevronDownIcon className="pointer-events-none absolute right-2.5 top-1/2 size-4 -translate-y-1/2 text-muted" />
+          </label>
+          <label className="relative min-w-0">
+            <span className="sr-only">Filter by platform</span>
+            <CampaignIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted" />
+            <select
+              value={shown.platform ?? ""}
+              onChange={(e) => go({ ...shown, platform: e.target.value || null })}
+              className={`${selectCls} max-w-full pl-9`}
+            >
+              <option value="">All platforms</option>
+              {platformOptions.map((p) => (
+                <option key={p} value={p}>
+                  {platformLabel(p)}
                 </option>
               ))}
             </select>

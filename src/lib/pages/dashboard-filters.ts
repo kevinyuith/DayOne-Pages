@@ -1,7 +1,7 @@
 /**
- * Dashboard filters (`/`): period, domain, outcome, device, country and
- * "hide bots". They live in the URL (?range=7d&domain=<id>&outcome=served,blocked
- * &device=mobile&country=US,BR&bots=hide), which the page reads on the server; so
+ * Dashboard filters (`/`): period, domain, platform, outcome, device, country
+ * and "hide bots". They live in the URL (?range=7d&domain=<id>&platform=facebook
+ * &outcome=served,blocked&device=mobile&country=US,BR&bots=hide), which the page reads on the server; so
  * a filter survives a refresh and can be shared. No server dependency: the
  * control bar (client) uses the same module to build the URL.
  */
@@ -17,7 +17,15 @@ export const RANGES = [
 
 export type RangeKey = (typeof RANGES)[number]["key"];
 
-const DEFAULT_RANGE: RangeKey = "24h";
+export const DEFAULT_RANGE: RangeKey = "24h";
+
+/** Short label for each period, in the segmented selectors (the long name goes in the title). */
+export const RANGE_SHORT: Record<RangeKey, string> = { today: "Today", "24h": "24h", "7d": "7d", "30d": "30d" };
+
+/** The period in the URL (?range=); anything unknown is the default. */
+export function parseRange(v: string | string[] | undefined): RangeKey {
+  return RANGES.find((r) => r.key === v)?.key ?? DEFAULT_RANGE;
+}
 
 /** The outcomes you can filter by (those in pages.hits, minus the residual "other"). */
 export const OUTCOME_KEYS = ["served", "redirect", "blocked", "bot", "notfound", "error"] as const;
@@ -27,6 +35,8 @@ export type DashboardFilters = {
   range: RangeKey;
   /** id in pages.domains, or null for all. */
   domain: string | null;
+  /** The click's sub11, lowercased (pages.hits.platform), or null for all. */
+  platform: string | null;
   outcomes: string[];
   devices: string[];
   /** ISO-2, uppercase. */
@@ -43,11 +53,13 @@ function list(v: string | string[] | undefined): string[] {
 
 /** Reads and validates the filters from the URL; anything unrecognized is ignored. */
 export function parseDashboardFilters(sp: SearchParams, domainIds: string[]): DashboardFilters {
-  const range = RANGES.find((r) => r.key === sp.range)?.key ?? DEFAULT_RANGE;
+  const range = parseRange(sp.range);
   const domain = typeof sp.domain === "string" && domainIds.includes(sp.domain) ? sp.domain : null;
+  const platform = typeof sp.platform === "string" ? sp.platform.trim().toLowerCase() : "";
   return {
     range,
     domain,
+    platform: platform.length > 0 && platform.length <= 40 ? platform : null,
     outcomes: list(sp.outcome).filter((o) => (OUTCOME_KEYS as readonly string[]).includes(o)),
     devices: list(sp.device).filter((d) => (DEVICE_KEYS as readonly string[]).includes(d)),
     countries: list(sp.country)
@@ -62,6 +74,7 @@ export function dashboardHref(f: DashboardFilters): string {
   const qs = new URLSearchParams();
   if (f.range !== DEFAULT_RANGE) qs.set("range", f.range);
   if (f.domain) qs.set("domain", f.domain);
+  if (f.platform) qs.set("platform", f.platform);
   if (f.outcomes.length) qs.set("outcome", f.outcomes.join(","));
   if (f.devices.length) qs.set("device", f.devices.join(","));
   if (f.countries.length) qs.set("country", f.countries.join(","));
@@ -73,6 +86,13 @@ export function dashboardHref(f: DashboardFilters): string {
 /** How many groups of the "Filters" popover are active (for the button's badge). */
 export function activeFilterCount(f: DashboardFilters): number {
   return [f.outcomes.length > 0, f.devices.length > 0, f.countries.length > 0, f.hideBots].filter(Boolean).length;
+}
+
+/** Some platforms' names, spelled their way; any other sub11 gets its first letter capitalized. */
+const PLATFORM_NAMES: Record<string, string> = { tiktok: "TikTok", youtube: "YouTube", newsbreak: "NewsBreak" };
+
+export function platformLabel(platform: string): string {
+  return PLATFORM_NAMES[platform] ?? platform.charAt(0).toUpperCase() + platform.slice(1);
 }
 
 // ── Period → time window ────────────────────────────────────────────────────
