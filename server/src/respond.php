@@ -224,8 +224,8 @@ function serve_slug(array $route, Request $req): array
 
     // VSL split of the funnel: the page's A/B player and {{video_id}} get the
     // video drawn for this visitor (dop_vsl cookie) — only in the step being
-    // served; the video goes into the ETag, the video_id cookie and (through
-    // the 4th element) the dot click.
+    // served; the video goes into the ETag, the video_id cookie, the Lander
+    // tracker's URL (track_inject) and (through the 4th element) the dot click.
     $vsl = vsl_apply($body, $route['vsl'] ?? null, $req->cookies);
     $vslTag = '';
     $video = null;
@@ -274,7 +274,7 @@ function serve_slug(array $route, Request $req): array
         $body = beacon_inject($body);
     }
     if ($track) {
-        $body = track_inject($body, $pageId);
+        $body = track_inject($body, $pageId, $video);
     }
     return [200, $headers, $body, ['video' => $video]];
 }

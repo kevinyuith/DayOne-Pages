@@ -27,7 +27,9 @@
  * On a funnel page the gate served, the trackers' URLs also carry the page's
  * id (&page_id=, the same the page_id cookie has): the trackers take it from
  * their own URL first — as from `page_id={{page_id}}` in a tracker tag the
- * page has itself (beacon.php) — and from the cookie otherwise.
+ * page has itself (beacon.php) — and from the cookie otherwise. When the
+ * response drew a VSL video (vsl.php), the Lander's tracker (dot.js) also gets
+ * it (&video_id=, as `video_id={{video_id}}` would); the Pre Lander's never.
  */
 declare(strict_types=1);
 
@@ -53,11 +55,25 @@ function track_applies(string $html): bool
     return funnel_has_sections($html);
 }
 
-/** The trackers' URLs with their content version (?v=) and the served page's id (&page_id=): what the loader loads. */
-function track_urls(?string $pageId = null): array
+/**
+ * The trackers' URLs, what the loader loads: the content version (?v=), the
+ * served page's id (&page_id=) and, for the Lander's tracker only, the VSL
+ * video the response drew (&video_id=).
+ */
+function track_urls(?string $pageId = null, ?string $videoId = null): array
 {
-    $page = $pageId !== null ? '&page_id=' . rawurlencode($pageId) : '';
-    return array_map(static fn (string $path): string => $path . '?v=' . tracker_version(TRACKER_FILES[$path]) . $page, TRACK_SCRIPTS);
+    $urls = [];
+    foreach (TRACK_SCRIPTS as $kind => $path) {
+        $q = ['v' => tracker_version(TRACKER_FILES[$path])];
+        if ($pageId !== null) {
+            $q['page_id'] = $pageId;
+        }
+        if ($videoId !== null && $kind === 'main') {
+            $q['video_id'] = $videoId;
+        }
+        $urls[$kind] = $path . '?' . http_build_query($q, '', '&');
+    }
+    return $urls;
 }
 
 /** The ETag suffix of a page with the loader: the loader's version and the trackers' (their URLs are in the page). */
@@ -67,9 +83,9 @@ function track_etag(): string
 }
 
 /** The loader script (built from TRACK_SCRIPTS, so the URLs live in one place). */
-function track_script(?string $pageId = null): string
+function track_script(?string $pageId = null, ?string $videoId = null): string
 {
-    $map = json_encode(track_urls($pageId), JSON_UNESCAPED_SLASHES);
+    $map = json_encode(track_urls($pageId, $videoId), JSON_UNESCAPED_SLASHES);
     return '<script data-dop-track>(function(){'
         . 'var S=' . $map . ',done={};'
         . 'function K(p){var k=p&&p.getAttribute("data-dop-kind");return k==="presell"||k==="backredirect"?k:"main"}'
@@ -81,10 +97,10 @@ function track_script(?string $pageId = null): string
 }
 
 /** The loader before the last </body> (without </body>, at the end) — like beacon_inject. */
-function track_inject(string $html, ?string $pageId = null): string
+function track_inject(string $html, ?string $pageId = null, ?string $videoId = null): string
 {
     $pos = strripos($html, '</body>');
-    $script = track_script($pageId);
+    $script = track_script($pageId, $videoId);
     return $pos === false ? $html . $script : substr_replace($html, $script, $pos, 0);
 }
 
@@ -104,10 +120,11 @@ const TRACKER_DOT_JS = <<<'JS'
  *
  * VIDEO_ID: comes from the funnel's server, never from the player. DayOne Pages
  *   draws the VSL video for the visitor (the funnel's VSLs tab; the page writes
- *   {{video_id}} in the vTurb embed) and sets the `video_id` cookie in the SAME
- *   response that carries this page, so it is already there when this script
- *   runs (a funnel page that drew no video deletes it: it never speaks for
- *   another page). The page_view carries it — and so does the server's own
+ *   {{video_id}} in the vTurb embed) and writes it in this script's own URL
+ *   (?video_id=, filled when the page is served) and in the `video_id` cookie,
+ *   both in the SAME response that carries this page, so it is already there
+ *   when this script runs; the URL wins (a funnel page that drew no video
+ *   deletes the cookie: it never speaks for another page). The page_view carries it — and so does the server's own
  *   click event — so there is no video_load event and no waiting for the player.
  *   Video events (video_play, video_watch, video_pitch, video_click) are bound on
  *   player:ready and carry the same id; a page with no video_id cookie has no
@@ -265,8 +282,12 @@ const TRACKER_DOT_JS = <<<'JS'
     } catch (e) {}
   }
   // ---- video_id: the VSL video the funnel's server drew for this page ----
-  // Set by the server in the same response as this page (cookie `video_id`, 24 hex).
+  // 24 hex, from this script's own URL (?video_id=, filled by the server with the
+  // draw), otherwise from the `video_id` cookie set in the same response.
   var videoId = (function () {
+    var me = document.currentScript;
+    var u = me && me.src ? me.src.match(/[?&]video_id=([0-9a-f]{24})(?:[&#]|$)/) : null;
+    if (u) return u[1];
     var m = document.cookie.match(/(?:^|;\s*)video_id=([0-9a-f]{24})(?:;|$)/);
     return m ? m[1] : null;
   })();

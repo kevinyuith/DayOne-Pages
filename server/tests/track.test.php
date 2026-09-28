@@ -22,6 +22,12 @@ $tPid = '33333333-aaaa-4aaa-8aaa-0000000000c1';
 $sp = track_script($tPid);
 check('loader: the trackers\' URLs carry the served page\'s id', str_contains($sp, '"presell":"/_dop/pre_dot.js?v=' . tracker_version(TRACKER_PRE_DOT_JS) . "&page_id=$tPid\"") && str_contains($sp, '"main":"/_dop/dot.js?v=' . tracker_version(TRACKER_DOT_JS) . "&page_id=$tPid\""), $sp);
 check('loader: without an id, no page_id', !str_contains($s, 'page_id'));
+// The VSL video the response drew goes to the Lander's tracker (dot.js) only.
+$tVid = '6ab84a785f99ef73c2497740';
+$sv = track_script($tPid, $tVid);
+check('loader: dot.js gets the drawn video', str_contains($sv, '"main":"/_dop/dot.js?v=' . tracker_version(TRACKER_DOT_JS) . "&page_id=$tPid&video_id=$tVid\""), $sv);
+check('loader: pre_dot.js never gets a video', str_contains($sv, '"presell":"/_dop/pre_dot.js?v=' . tracker_version(TRACKER_PRE_DOT_JS) . "&page_id=$tPid\""), $sv);
+check('loader: no video drawn, no video_id', !str_contains($sp, 'video_id'));
 
 // Injected before the last </body>, or at the end without one.
 $html = '<html><body><section data-dop-page="p_a" data-dop-kind="main">x</section></body></html>';
@@ -50,6 +56,15 @@ check('gate funnel: beacon notice and tracker loader together', str_contains((st
 check('gate funnel: the loader carries the page id, and so does the ETag', str_contains((string) $both, "&page_id=$tPid") && str_contains((string) $bh['ETag'], '-i' . substr($tPid, 0, 8)), (string) $bh['ETag']);
 check('funnel page outside the gate: no id', !str_contains((string) $body, 'page_id'));
 
+// A funnel page whose Lander step drew a VSL video: dot.js's URL carries it (the same video the player got).
+$tv1 = 'aaaaaaaaaaaaaaaaaaaaaaa1';
+$tvPlayer = '<div id="p1" data-video-provider="vturb" data-vturb-id="bbbbbbbbbbbbbbbbbbbbbbb2" data-vturb-kind="ab-test"></div>';
+cache_put_content('facadea3', '<html><body><section data-dop-page="p_main" data-dop-kind="main">' . $tvPlayer . '</section></body></html>');
+[, $vh, $vbody] = serve_slug(['slug_id' => $fSlug, 'content_hash' => 'facadea3', 'content_type' => 'text/html', 'funnel' => true, 'match_type' => 'GATE', 'page_id' => $tPid, 'vsl' => [['id' => $tv1, 'weight' => 100]]], make_request());
+check('gate funnel with a drawn video: the player and dot.js get the same video', str_contains((string) $vbody, "data-vturb-id=\"$tv1\"") && str_contains((string) $vbody, "/_dop/dot.js?v=" . tracker_version(TRACKER_DOT_JS) . "&page_id=$tPid&video_id=$tv1"), (string) $vbody);
+check('… pre_dot.js without it', str_contains((string) $vbody, "/_dop/pre_dot.js?v=" . tracker_version(TRACKER_PRE_DOT_JS) . "&page_id=$tPid\""));
+check('… and the video is in the ETag', str_contains((string) $vh['ETag'], "-v$tv1"), (string) $vh['ETag']);
+
 // ── The trackers themselves, served on the funnel's domain ──
 $dotV = tracker_version(TRACKER_DOT_JS);
 [$st, $hd, $bd] = handle_tracker(make_request(['REQUEST_URI' => "/_dop/dot.js?v=$dotV"]));
@@ -62,6 +77,8 @@ same('GET /_dop/pre_dot.js: the pre-lander tracker', [200, TRACKER_PRE_DOT_JS], 
 same('POST: 405', 405, handle_tracker(make_request(['REQUEST_URI' => '/_dop/dot.js', 'REQUEST_METHOD' => 'POST']))[0]);
 check('other paths: not a tracker', handle_tracker(make_request(['REQUEST_URI' => '/_dop/x.js'])) === null && handle_tracker(make_request(['REQUEST_URI' => '/dot.js'])) === null);
 check('dot.js sends to the dot edge function and takes video_id from the cookie, not the player', str_contains(TRACKER_DOT_JS, "var ENDPOINT = 'https://cdn.dayone.click/functions/v1/dot'") && str_contains(TRACKER_DOT_JS, 'video_id=([0-9a-f]{24})') && !str_contains(TRACKER_DOT_JS, "sendEvent('video_load'") && !str_contains(TRACKER_DOT_JS, 'MutationObserver'));
+check('dot.js takes video_id from its own URL first (?video_id=, 24 hex), then the cookie', str_contains(TRACKER_DOT_JS, "me.src.match(/[?&]video_id=([0-9a-f]{24})(?:[&#]|$)/)"));
+check('pre_dot.js has no video_id', !str_contains(TRACKER_PRE_DOT_JS, 'video_id'));
 check('pre_dot.js sends a pre_lander page_view to the dot edge function', str_contains(TRACKER_PRE_DOT_JS, "var ORIGIN = 'pre_lander'") && str_contains(TRACKER_PRE_DOT_JS, 'functions/v1/dot'));
 foreach (['dot.js' => TRACKER_DOT_JS, 'pre_dot.js' => TRACKER_PRE_DOT_JS] as $name => $js) {
     check("$name sends page_id from the cookie (a uuid only)", str_contains($js, 'page_id=([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})') && str_contains($js, 'if (pageId) payload.page_id = pageId;'));
