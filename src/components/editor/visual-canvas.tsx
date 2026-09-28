@@ -22,6 +22,7 @@ import { insertPlaceholder, openPlaceholderAt, suggestPlaceholders, type Placeho
 import { syncRuntime } from "@/lib/pages/runtime";
 import { patchStyles } from "@/lib/pages/source-split";
 import { normalizePages, pageById, pageOf, setCurrent, startPage } from "@/lib/pages/subpages";
+import { vturbCanvasCss, type VturbStandIn } from "@/lib/pages/vturb";
 
 /**
  * Link markers on the canvas (like the reference builder's "markers"):
@@ -96,8 +97,13 @@ export const VisualCanvas = forwardRef<
     onPageChange?: (id: string | null) => void;
     /** Placeholder values (domain page), shown in the "{{" list. Template: null. */
     placeholderValues?: Record<string, string> | null;
+    /** The video a VTurb player with {{video_id}} is drawn with (funnel page: its largest share). */
+    vturbStandIn?: VturbStandIn | null;
   }
->(function VisualCanvas({ html, baseHref, onChange, onSelect, onHiddenCount, showMarkers = false, currentPageId = null, onPageChange, placeholderValues = null }, ref) {
+>(function VisualCanvas(
+  { html, baseHref, onChange, onSelect, onHiddenCount, showMarkers = false, currentPageId = null, onPageChange, placeholderValues = null, vturbStandIn = null },
+  ref,
+) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const selectedRef = useRef<HTMLElement | null>(null);
   const selectedUidRef = useRef<string | null>(null);
@@ -263,7 +269,7 @@ export const VisualCanvas = forwardRef<
   const hydrate = useCallback(() => {
     const d = doc();
     if (!d || !d.body) return;
-    injectCanvasChrome(d, baseHref);
+    injectCanvasChrome(d, baseHref, vturbCanvasCss(d, vturbStandIn));
     assignUids(d);
     ensureCurrent(d);
     onHiddenCount?.(countHidden(d));
@@ -329,7 +335,7 @@ export const VisualCanvas = forwardRef<
     // Finds the previous selection again (after an external reload).
     if (selectedUidRef.current) select(elementByUid(d, selectedUidRef.current));
     else refreshRect();
-  }, [baseHref, commit, emitSelect, ensureCurrent, onHiddenCount, pickSuggest, refreshRect, refreshSuggest, select, setSuggest]);
+  }, [baseHref, commit, emitSelect, ensureCurrent, onHiddenCount, pickSuggest, refreshRect, refreshSuggest, select, setSuggest, vturbStandIn]);
 
   // Writes the markup into the iframe and hydrates right away. document.open/write/close is
   // synchronous and does not depend on the load event (which is unreliable with srcDoc).

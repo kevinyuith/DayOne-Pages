@@ -62,6 +62,7 @@ import {
 } from "@/lib/pages/types";
 import type { ActionResult } from "@/lib/action-result";
 import { AUTO_PLACEHOLDERS, PLACEHOLDER_FIELDS, applyPlaceholders, placeholderToken } from "@/lib/pages/placeholders";
+import { withVturbPreview, type VturbStandIn } from "@/lib/pages/vturb";
 import { APP_TZ } from "@/lib/time-zone";
 import {
   editCodeWithAiAction,
@@ -126,6 +127,7 @@ export function PageEditor({
   scope,
   placeholders,
   templates = [],
+  vturbStandIn = null,
 }: {
   page: Page;
   slugs: PageSlugSummary[];
@@ -139,6 +141,8 @@ export function PageEditor({
   placeholders: Record<string, string> | null;
   /** Templates that can become a funnel sample ("From a template…"). */
   templates?: { id: string; name: string }[];
+  /** The video a VTurb player with {{video_id}} is drawn with on the canvas and in the Preview (vturb.ts). */
+  vturbStandIn?: VturbStandIn | null;
 }) {
   const router = useRouter();
   const slugHref = useCallback((id: string) => nav.slugHref.replace("{slug}", encodeURIComponent(id)), [nav.slugHref]);
@@ -617,7 +621,7 @@ export function PageEditor({
             >
               {previewing ? (
                 <HtmlPreview
-                  html={placeholders ? applyPlaceholders(previewDoc || content, placeholders) : previewDoc || content}
+                  html={withVturbPreview(placeholders ? applyPlaceholders(previewDoc || content, placeholders) : previewDoc || content, vturbStandIn)}
                   baseHref={baseHref}
                   className="h-full w-full"
                 />
@@ -633,6 +637,7 @@ export function PageEditor({
                   currentPageId={currentPageId}
                   onPageChange={setCurrentPageId}
                   placeholderValues={placeholders}
+                  vturbStandIn={vturbStandIn}
                 />
               ) : (
                 <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">

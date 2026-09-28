@@ -2,6 +2,7 @@ import { supabaseService } from "@/lib/supabase/service";
 import { scanFunnel, type ScannedVersion } from "./funnel-scan";
 import type { HitFilters } from "./hit-filters";
 import type { Domain, Page, PageKind, PageRef, PageSlug, PageSlugSummary, PageStatus } from "./types";
+import type { VturbStandIn } from "./vturb";
 
 /**
  * Reads from the `pages` schema, for Server Components.
@@ -430,7 +431,19 @@ export type FunnelPageEditorData = {
   /** The slugs; `id` = path. */
   slugs: PageSlugSummary[];
   slug: PageSlug;
+  /** The funnel's VSL with the largest share (pages.funnels.vsl): the editor draws a {{video_id}} player with it. */
+  vturbStandIn: VturbStandIn | null;
 };
+
+/** The VSL split's video with the largest share (0 = paused, left out); ties go by name. */
+function topVsl(vsl: unknown): VturbStandIn | null {
+  if (!vsl || typeof vsl !== "object") return null;
+  const videos = Object.entries(vsl as Record<string, { weight?: unknown; name?: unknown }>)
+    .map(([id, v]) => ({ id, name: typeof v?.name === "string" ? v.name : "", weight: Number(v?.weight) || 0 }))
+    .filter((v) => /^[0-9a-f]{24}$/.test(v.id) && v.weight > 0)
+    .sort((a, b) => b.weight - a.weight || a.name.localeCompare(b.name));
+  return videos[0] ? { id: videos[0].id, name: videos[0].name } : null;
+}
 
 /**
  * A funnel page (pages.funnels) opened in the editor, at the requested slug (or
@@ -459,14 +472,19 @@ export async function getFunnelPageForEditor(pageId: string, slugPath: string | 
   const current = slugPath ? slugs.find((s) => s.slug === slugPath) : slugs.find((s) => s.slug === rootSlug(slugs));
   if (!current) return null;
 
-  const got = await db.rpc("funnel_slug_get", { p_funnel: funnelId, p_page: pageId, p_slug: current.slug });
+  const [got, funnel] = await Promise.all([
+    db.rpc("funnel_slug_get", { p_funnel: funnelId, p_page: pageId, p_slug: current.slug }),
+    db.from("funnels").select("vsl").eq("id", funnelId).maybeSingle(),
+  ]);
   throwIf(got.error, "funnel_slug_get");
+  throwIf(funnel.error, "getFunnelPageForEditor (vsl)");
   const content = (got.data as { content: string }[] | null)?.[0]?.content;
   if (content === undefined) return null;
 
   return {
     funnelId,
     mainFunnelId: row.main_funnel_id,
+    vturbStandIn: topVsl((funnel.data as { vsl: unknown } | null)?.vsl),
     page: { id: row.page_id, name: row.name, kind: "FUNNEL", status: row.status, notes: row.notes, folder: null, created_at: row.created_at, updated_at: row.updated_at },
     slugs,
     slug: { ...current, content },

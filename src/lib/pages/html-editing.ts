@@ -133,7 +133,7 @@ export function parseHtml(html: string): Document {
 }
 
 /** Injects `<base>` (for relative paths) and the editor style into the <head>. */
-export function injectCanvasChrome(doc: Document, baseHref?: string): void {
+export function injectCanvasChrome(doc: Document, baseHref?: string, extraCss = ""): void {
   const head = doc.head ?? doc.documentElement.appendChild(doc.createElement("head"));
   if (baseHref && !head.querySelector(`base[${BASE_MARK}]`)) {
     const base = doc.createElement("base");
@@ -154,6 +154,8 @@ export function injectCanvasChrome(doc: Document, baseHref?: string): void {
       // Sub-pages: the canvas shows only the current one (the saved `hidden` is ignored here).
       `[${PAGE_ATTR}]:not([${PAGE_CURRENT_ATTR}]){display:none!important}`,
       `[${PAGE_ATTR}][${PAGE_CURRENT_ATTR}]{display:block!important}`,
+      // What else the canvas draws for the page (the VTurb players, vturb.ts).
+      extraCss,
     ].join("");
     head.appendChild(style);
   }

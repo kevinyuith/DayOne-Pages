@@ -34,6 +34,7 @@ export default async function FunnelPageEditorPage({ params, searchParams }: { p
       domains={[]}
       scope="funnel"
       placeholders={null}
+      vturbStandIn={data.vturbStandIn}
       templates={templates.map((t) => ({ id: t.id, name: t.name }))}
       actions={{
         save: saveFunnelPage.bind(null, data.funnelId),
