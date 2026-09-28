@@ -22,12 +22,18 @@ check('html served as .txt: no', !beacon_applies($html, make_request(['REQUEST_U
 // Cookie and id.
 check('id = 32 hex', preg_match('/^[0-9a-f]{32}$/', beacon_new_visit_id()) === 1);
 check('different ids', beacon_new_visit_id() !== beacon_new_visit_id());
-// ── The funnel page's id: a cookie (nothing in the page changes) ──
+// ── The funnel page's id: a cookie, and {{page_id}} where the page asks for it ──
 $pid = '11111111-aaaa-4aaa-8aaa-0000000000b1';
 same('page_id cookie (not HttpOnly: the page script reads it)', "page_id=$pid; Path=/; Max-Age=86400; Secure; SameSite=Lax", page_id_cookie($pid));
 same('page_id cookie: uppercase id is lowercased', "page_id=$pid; Path=/; Max-Age=86400; Secure; SameSite=Lax", page_id_cookie(strtoupper($pid)));
 same('page_id cookie: not a uuid → none', null, page_id_cookie('p_abc'));
 same('page_id cookie: empty → none', null, page_id_cookie(''));
+same('page_id_value: a uuid, lowercased', $pid, page_id_value(strtoupper($pid)));
+same('page_id_value: not a uuid, or not a string → null', [null, null, null], [page_id_value('p_abc'), page_id_value(null), page_id_value(42)]);
+same('{{page_id}} → the id (inner spaces too)', "<script src=\"https://cdn.test/js/dot.js?origin=lander&amp;page_id=$pid\"></script><i>$pid</i>",
+    page_id_placeholder_apply('<script src="https://cdn.test/js/dot.js?origin=lander&amp;page_id={{page_id}}"></script><i>{{ page_id }}</i>', $pid));
+same('{{page_id}} without an id → empty', '<script src="dot.js?page_id="></script>', page_id_placeholder_apply('<script src="dot.js?page_id={{page_id}}"></script>', null));
+same('no {{page_id}}: null (other placeholders are not its business)', null, page_id_placeholder_apply('<p>{{video_id}} {{domain}} {page_id}</p>', $pid));
 
 same('cookie (not HttpOnly: the script reads the id once, at load)', 'dop_v=' . str_repeat('a', 32) . '; Path=/; Max-Age=600; Secure; SameSite=Lax', beacon_cookie(str_repeat('a', 32)));
 
@@ -138,3 +144,20 @@ same('decide: the route carries the drawn page (app.php sets its cookie)', "page
 check('decide: the safe page (no [F…]) has no notice', str_contains((string) $body, 'SAFE PAGE') && !str_contains((string) $body, 'data-dop-beacon') && !beacon_applies($route, make_request()));
 [, $hd, $body, , $route] = decide($bRoutes, make_request(['REQUEST_URI' => '/?sub1=' . rawurlencode('[F5]'), 'HTTP_USER_AGENT' => 'x scraperxyz']), $bGate);
 check('decide: a click a rule caught gets the safe page, no notice', str_contains((string) $body, 'SAFE PAGE') && !str_contains((string) $body, 'data-dop-beacon') && !str_ends_with((string) $hd['ETag'], BEACON_ETAG . '"'));
+
+// {{page_id}} in the page's own tracker tag: the funnel page the gate served; the id goes into the ETag.
+cache_put_content('bfun02', '<html><head><script src="https://cdn.test/js/dot.js?origin=lander&amp;v=17&amp;page_id={{page_id}}"></script></head><body>FUNNEL {{page_id}}</body></html>');
+cache_put_content('bsafe2', '<html><head><script src="https://cdn.test/js/dot.js?page_id={{page_id}}"></script></head><body>SAFE</body></html>');
+$pGate = ['funnels' => ['F5' => ['split' => [['page_id' => $pid, 'content_type' => 'text/html; charset=utf-8', 'content_hash' => 'bfun02', 'weight' => 100]]]]] + $bGate;
+$pRoutes = [['content_hash' => 'bsafe2'] + $bRoutes[0]];
+[$st, $hd, $body] = decide($pRoutes, make_request(['REQUEST_URI' => '/?sub1=' . rawurlencode('[F5]')]), $pGate);
+check('decide: {{page_id}} → the funnel page served, in the tracker tag', str_contains((string) $body, "dot.js?origin=lander&amp;v=17&amp;page_id=$pid\"") && str_contains((string) $body, "FUNNEL $pid"), (string) $body);
+check('decide: the ETag has the page id', str_contains((string) $hd['ETag'], '-i' . substr($pid, 0, 8)), (string) $hd['ETag']);
+same('decide: 304 with that ETag', 304, decide($pRoutes, make_request(['REQUEST_URI' => '/?sub1=' . rawurlencode('[F5]'), 'HTTP_IF_NONE_MATCH' => $hd['ETag']]), $pGate)[0]);
+[, $hd, $body] = decide($pRoutes, make_request(['REQUEST_URI' => '/']), $pGate);
+check('decide: the safe page gets no id ({{page_id}} empty, ETag without it)', str_contains((string) $body, 'dot.js?page_id="') && !str_contains((string) $hd['ETag'], '-i'), (string) $hd['ETag']);
+// Two pages of a split with the same HTML: each response has its own id, so one's ETag never validates the other.
+$pid2 = '22222222-aaaa-4aaa-8aaa-0000000000b2';
+$pGate2 = ['funnels' => ['F5' => ['split' => [['page_id' => $pid2, 'content_type' => 'text/html; charset=utf-8', 'content_hash' => 'bfun02', 'weight' => 100]]]]] + $bGate;
+[$st2, , $body2] = decide($pRoutes, make_request(['REQUEST_URI' => '/?sub1=' . rawurlencode('[F5]'), 'HTTP_IF_NONE_MATCH' => '"bfun02-i' . substr($pid, 0, 8) . '"']), $pGate2);
+check('decide: same HTML, another page → 200 with its own id', $st2 === 200 && str_contains((string) $body2, "FUNNEL $pid2"));

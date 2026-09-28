@@ -23,13 +23,18 @@
  *
  * A version (TRACK_ETAG) goes into the ETag so a browser holding a copy from
  * before the loader revalidates and gets the new body.
+ *
+ * On a funnel page the gate served, the trackers' URLs also carry the page's
+ * id (&page_id=, the same the page_id cookie has): the trackers take it from
+ * their own URL first — as from `page_id={{page_id}}` in a tracker tag the
+ * page has itself (beacon.php) — and from the cookie otherwise.
  */
 declare(strict_types=1);
 
 defined('DAYONE_ENTRY') || (http_response_code(404) && exit);
 
 /** ETag prefix of a funnel page with the tracker loader. Changed the loader, bump it (the trackers' versions go in by themselves). */
-const TRACK_ETAG = '-k2';
+const TRACK_ETAG = '-k3';
 
 /**
  * The tracker of each step kind (the Backredirect has none): served by this
@@ -48,10 +53,11 @@ function track_applies(string $html): bool
     return funnel_has_sections($html);
 }
 
-/** The trackers' URLs with their content version (?v=): what the loader loads. */
-function track_urls(): array
+/** The trackers' URLs with their content version (?v=) and the served page's id (&page_id=): what the loader loads. */
+function track_urls(?string $pageId = null): array
 {
-    return array_map(static fn (string $path): string => $path . '?v=' . tracker_version(TRACKER_FILES[$path]), TRACK_SCRIPTS);
+    $page = $pageId !== null ? '&page_id=' . rawurlencode($pageId) : '';
+    return array_map(static fn (string $path): string => $path . '?v=' . tracker_version(TRACKER_FILES[$path]) . $page, TRACK_SCRIPTS);
 }
 
 /** The ETag suffix of a page with the loader: the loader's version and the trackers' (their URLs are in the page). */
@@ -61,9 +67,9 @@ function track_etag(): string
 }
 
 /** The loader script (built from TRACK_SCRIPTS, so the URLs live in one place). */
-function track_script(): string
+function track_script(?string $pageId = null): string
 {
-    $map = json_encode(track_urls(), JSON_UNESCAPED_SLASHES);
+    $map = json_encode(track_urls($pageId), JSON_UNESCAPED_SLASHES);
     return '<script data-dop-track>(function(){'
         . 'var S=' . $map . ',done={};'
         . 'function K(p){var k=p&&p.getAttribute("data-dop-kind");return k==="presell"||k==="backredirect"?k:"main"}'
@@ -75,10 +81,10 @@ function track_script(): string
 }
 
 /** The loader before the last </body> (without </body>, at the end) — like beacon_inject. */
-function track_inject(string $html): string
+function track_inject(string $html, ?string $pageId = null): string
 {
     $pos = strripos($html, '</body>');
-    $script = track_script();
+    $script = track_script($pageId);
     return $pos === false ? $html . $script : substr_replace($html, $script, $pos, 0);
 }
 
@@ -108,8 +114,10 @@ const TRACKER_DOT_JS = <<<'JS'
  *   video to report.
  *
  * PAGE_ID: every event carries the funnel page the server served (the A/B
- *   split's pick), from the `page_id` cookie set in the same response —
- *   dot's page_id column. pre_dot.js does the same on the Pre Lander.
+ *   split's pick) — dot's page_id column. The server writes it in this script's
+ *   own URL (?page_id=, filled when the page is served) and sets it in the
+ *   `page_id` cookie in the same response; the URL wins. pre_dot.js does the
+ *   same on the Pre Lander.
  *
  * Also preserved: UTM/click-ID capture (sessionStorage dot_attr), dotid cookie
  * (1 day), ?dotid= propagation on external links, send retries, pagehide beacon.
@@ -156,9 +164,13 @@ const TRACKER_DOT_JS = <<<'JS'
   var dotid = query.get('dotid') ||
     document.cookie.replace(/(?:(?:^|.*;\s*)dotid\s*=\s*([^;]*).*$)|^.*$/, '$1') || null;
   // ---- page_id: the funnel page the server served (the A/B split's pick) ----
-  // Set by the server in the same response as this page (cookie `page_id`, a uuid).
-  // Read once, now: a later page of the same domain (another tab) sets its own.
+  // A uuid, from this script's own URL (?page_id=, filled by the server when it
+  // served the page), otherwise from the `page_id` cookie set with the page.
+  // Read once, now: a later page of the same domain (another tab) sets its own cookie.
   var pageId = (function () {
+    var me = document.currentScript;
+    var u = me && me.src ? me.src.match(/[?&]page_id=([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:[&#]|$)/) : null;
+    if (u) return u[1];
     var m = document.cookie.match(/(?:^|;\s*)page_id=([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:;|$)/);
     return m ? m[1] : null;
   })();
@@ -412,9 +424,12 @@ const TRACKER_PRE_DOT_JS = <<<'JS'
   var cookieMatch = document.cookie.match(/(?:^|;\s*)dotid=([^;]+)/);
   var dotid = query.get('dotid') || (cookieMatch && cookieMatch[1]) || null;
 
-  // ---- the funnel page the server served (cookie `page_id`, set with this page) ----
+  // ---- the funnel page the server served: this script's own URL (?page_id=, filled
+  // by the server), otherwise the `page_id` cookie set with this page (a uuid) ----
   // Read now, not at "load": by then another tab of the same domain may have set its own.
-  var pageMatch = document.cookie.match(/(?:^|;\s*)page_id=([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:;|$)/);
+  var me = document.currentScript;
+  var pageMatch = (me && me.src ? me.src.match(/[?&]page_id=([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:[&#]|$)/) : null) ||
+    document.cookie.match(/(?:^|;\s*)page_id=([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:;|$)/);
   var pageId = pageMatch ? pageMatch[1] : null;
 
   function buildPayload() {

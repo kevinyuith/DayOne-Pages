@@ -17,6 +17,12 @@ check('loader: fires when a step becomes visible', str_contains($s, 'dop:pagesho
 check('loader: loads the initial visible step too', str_contains($s, ':not([hidden])'));
 check('loader: loads each tracker once', str_contains($s, 'done[u]'));
 
+// On a funnel page the gate served, the trackers' URLs carry the page's id.
+$tPid = '33333333-aaaa-4aaa-8aaa-0000000000c1';
+$sp = track_script($tPid);
+check('loader: the trackers\' URLs carry the served page\'s id', str_contains($sp, '"presell":"/_dop/pre_dot.js?v=' . tracker_version(TRACKER_PRE_DOT_JS) . "&page_id=$tPid\"") && str_contains($sp, '"main":"/_dop/dot.js?v=' . tracker_version(TRACKER_DOT_JS) . "&page_id=$tPid\""), $sp);
+check('loader: without an id, no page_id', !str_contains($s, 'page_id'));
+
 // Injected before the last </body>, or at the end without one.
 $html = '<html><body><section data-dop-page="p_a" data-dop-kind="main">x</section></body></html>';
 $out = track_inject($html);
@@ -39,8 +45,10 @@ check('serve plain page: no loader', !str_contains((string) $pbody, 'data-dop-tr
 check('serve plain page: ETag without the tracker version', !str_contains((string) $ph['ETag'], TRACK_ETAG), (string) $ph['ETag']);
 
 // A funnel served by the gate carries BOTH the load notice (beacon) and the tracker loader.
-[, , $both] = serve_slug(['slug_id' => $fSlug, 'content_hash' => 'facadea1', 'content_type' => 'text/html', 'funnel' => true, 'match_type' => 'GATE'], make_request());
+[, $bh, $both] = serve_slug(['slug_id' => $fSlug, 'content_hash' => 'facadea1', 'content_type' => 'text/html', 'funnel' => true, 'match_type' => 'GATE', 'page_id' => $tPid], make_request());
 check('gate funnel: beacon notice and tracker loader together', str_contains((string) $both, 'data-dop-beacon') && str_contains((string) $both, 'data-dop-track'));
+check('gate funnel: the loader carries the page id, and so does the ETag', str_contains((string) $both, "&page_id=$tPid") && str_contains((string) $bh['ETag'], '-i' . substr($tPid, 0, 8)), (string) $bh['ETag']);
+check('funnel page outside the gate: no id', !str_contains((string) $body, 'page_id'));
 
 // ── The trackers themselves, served on the funnel's domain ──
 $dotV = tracker_version(TRACKER_DOT_JS);
@@ -57,5 +65,6 @@ check('dot.js sends to the dot edge function and takes video_id from the cookie,
 check('pre_dot.js sends a pre_lander page_view to the dot edge function', str_contains(TRACKER_PRE_DOT_JS, "var ORIGIN = 'pre_lander'") && str_contains(TRACKER_PRE_DOT_JS, 'functions/v1/dot'));
 foreach (['dot.js' => TRACKER_DOT_JS, 'pre_dot.js' => TRACKER_PRE_DOT_JS] as $name => $js) {
     check("$name sends page_id from the cookie (a uuid only)", str_contains($js, 'page_id=([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})') && str_contains($js, 'if (pageId) payload.page_id = pageId;'));
+    check("$name takes page_id from its own URL first (?page_id=, a uuid)", str_contains($js, 'document.currentScript') && str_contains($js, "me.src.match(/[?&]page_id=([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:[&#]|$)/)"));
 }
 

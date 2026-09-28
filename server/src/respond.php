@@ -176,6 +176,10 @@ function serve_slug(array $route, Request $req): array
     // script version.
     $beacon = beacon_applies($route, $req);
     $tag = $beacon ? BEACON_ETAG : '';
+    // The funnel page the gate served (the page_id cookie's id, app.php): {{page_id}} and the
+    // trackers' URLs carry it, so it goes into the ETag (the pages of a split may share a hash).
+    $pageId = $beacon ? page_id_value($route['page_id'] ?? null) : null;
+    $pidTag = $pageId !== null ? '-i' . substr($pageId, 0, 8) : '';
 
     // {{key}} placeholders: the hash of the values goes into the ETag (placeholders.php).
     $values = placeholder_values($route, $req);
@@ -187,7 +191,7 @@ function serve_slug(array $route, Request $req): array
     // the step goes into the ETag.
     // A VSL split also reads the content: the drawn video goes into the ETag.
     if (($route['funnel'] ?? null) === false && empty($route['vsl'])) {
-        $headers['ETag'] = '"' . $hash . $ptag . $tag . '"';
+        $headers['ETag'] = '"' . $hash . $pidTag . $ptag . $tag . '"';
         if ($req->ifNoneMatch !== null && etag_matches($req->ifNoneMatch, $headers['ETag'])) {
             return [304, $headers, null];
         }
@@ -254,7 +258,7 @@ function serve_slug(array $route, Request $req): array
 
     // A funnel page (any mode) carries the per-step tracker loader (track.php); the version goes into the ETag.
     $track = track_applies($body);
-    $etag = '"' . $hash . $abTag . ($funnel ? '-' . $funnel['step'] : '') . $vslTag . $ptag . $tag . ($track ? track_etag() : '') . '"';
+    $etag = '"' . $hash . $abTag . ($funnel ? '-' . $funnel['step'] : '') . $vslTag . $pidTag . $ptag . $tag . ($track ? track_etag() : '') . '"';
     if ($funnel || $abTag !== '' || $vslTag !== '') {
         $headers['Vary'] .= ', Cookie';
     }
@@ -264,12 +268,13 @@ function serve_slug(array $route, Request $req): array
         return [304, $headers, null, ['video' => $video]];
     }
 
+    $body = page_id_placeholder_apply($body, $pageId) ?? $body;
     $body = placeholders_apply($body, $values, $headers['Content-Type']);
     if ($beacon) {
         $body = beacon_inject($body);
     }
     if ($track) {
-        $body = track_inject($body);
+        $body = track_inject($body, $pageId);
     }
     return [200, $headers, $body, ['video' => $video]];
 }

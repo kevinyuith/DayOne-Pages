@@ -43,8 +43,9 @@
  * THE PAGE THE VISITOR GOT (the A/B test between a funnel's pages picks it):
  * the same response sets the `page_id` cookie to the funnel page's id (1 day;
  * not HttpOnly, so the page's own trackers can read it). The server's click
- * event to dot (dot.php) carries it too. Nothing in the page or its URL
- * changes.
+ * event to dot (dot.php) carries it too. The page gets it only where it asks
+ * for it: `{{page_id}}` (page_id_placeholder_apply) and the URLs of the
+ * per-step trackers (track.php) — the id goes into the ETag (serve_slug).
  */
 declare(strict_types=1);
 
@@ -92,15 +93,35 @@ function beacon_applies(array $route, Request $req): bool
 
 /** The cookie that carries the funnel page's id. */
 const PAGE_ID_NAME = 'page_id';
+/** The placeholder that becomes the same id. */
+const PAGE_ID_PLACEHOLDER_RE = '/\{\{\s*page_id\s*\}\}/';
+
+/** The page id, lowercased, when it is a uuid; otherwise null. */
+function page_id_value(mixed $pageId): ?string
+{
+    $id = is_string($pageId) ? strtolower($pageId) : '';
+    return preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/', $id) === 1 ? $id : null;
+}
 
 /** The page_id cookie for the served funnel page; null when the id isn't a uuid. */
 function page_id_cookie(string $pageId): ?string
 {
-    $id = strtolower($pageId);
-    if (preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/', $id) !== 1) {
+    $id = page_id_value($pageId);
+    return $id === null ? null : PAGE_ID_NAME . "=$id; Path=/; Max-Age=86400; Secure; SameSite=Lax";
+}
+
+/**
+ * {{page_id}} → the funnel page the gate served (the id the page_id cookie
+ * carries), written in the page where a tracker takes it — e.g.
+ * `<script src="…/dot.js?origin=lander&page_id={{page_id}}">`; on any other
+ * route (no id), empty text. null = no placeholder in the HTML.
+ */
+function page_id_placeholder_apply(string $html, ?string $pageId): ?string
+{
+    if (!str_contains($html, '{{') || preg_match(PAGE_ID_PLACEHOLDER_RE, $html) !== 1) {
         return null;
     }
-    return PAGE_ID_NAME . "=$id; Path=/; Max-Age=86400; Secure; SameSite=Lax";
+    return (string) preg_replace(PAGE_ID_PLACEHOLDER_RE, $pageId ?? '', $html);
 }
 
 /** The script before the last </body>; without </body>, at the end. */

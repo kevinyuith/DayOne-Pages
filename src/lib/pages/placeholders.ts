@@ -44,6 +44,8 @@ export const AUTO_PLACEHOLDERS = [
   { key: "language", label: "Language name", note: "English, Português, Español…" },
   // Filled by the funnel's VSL split (server/src/vsl.php), not with the domain's data: funnel pages only.
   { key: "video_id", label: "VSL video (funnel)", note: "the VTurb video drawn for the visitor from the funnel's VSLs tab" },
+  // The funnel page the gate served (server/src/beacon.php, the page_id cookie's id): funnel pages only.
+  { key: "page_id", label: "Funnel page id", note: "the page the funnel's split served, e.g. dot.js?page_id={{page_id}}" },
 ] as const;
 
 /** Each language's name in that language. No entry: the code itself. */
