@@ -17,7 +17,9 @@
  *
  * The loader loads the initial step's tracker (the one that isn't `hidden`) and
  * listens for `dop:pageshow` for the following steps; the Backredirect has no
- * tracker. It's injected ONLY here, on the real delivery — never in the
+ * tracker. A funnel page WITHOUT steps is all Lander: when the gate serves it,
+ * it gets dot.js itself (no loader), unless the page already has a dot.js or
+ * pre_dot.js tag of its own. It's injected ONLY here, on the real delivery — never in the
  * dashboard preview (which serves the stored HTML without the server) — so it
  * can't fire tracking from a preview.
  *
@@ -99,8 +101,29 @@ function track_script(?string $pageId = null, ?string $videoId = null): string
 /** The loader before the last </body> (without </body>, at the end) — like beacon_inject. */
 function track_inject(string $html, ?string $pageId = null, ?string $videoId = null): string
 {
+    return track_before_body_end($html, track_script($pageId, $videoId));
+}
+
+/**
+ * A funnel page without steps is all Lander, so it gets the Lander's tracker
+ * (dot.js) — unless it already loads a tracker of its own (a dot.js or
+ * pre_dot.js tag, on any host), which would then run twice.
+ */
+function track_needs_lander(string $html): bool
+{
+    return !funnel_has_sections($html) && preg_match('~(?<![\w.-])(?:pre_)?dot\.js(?!\w)~i', $html) !== 1;
+}
+
+/** The Lander's tracker, the same URL the loader would load, before the last </body>. */
+function track_inject_lander(string $html, ?string $pageId = null, ?string $videoId = null): string
+{
+    $src = htmlspecialchars(track_urls($pageId, $videoId)['main'], ENT_QUOTES);
+    return track_before_body_end($html, '<script data-dop-track async src="' . $src . '"></script>');
+}
+
+function track_before_body_end(string $html, string $script): string
+{
     $pos = strripos($html, '</body>');
-    $script = track_script($pageId, $videoId);
     return $pos === false ? $html . $script : substr_replace($html, $script, $pos, 0);
 }
 

@@ -64,11 +64,11 @@ cache_put_content('vsl01', $plain);
 $vslRoute = ['slug_id' => $vslSlug, 'content_hash' => 'vsl01', 'content_type' => 'text/html', 'funnel' => false, 'match_type' => 'GATE', 'vsl' => $split];
 [$status, $headers, $body] = serve_slug($vslRoute, make_request(['HTTP_COOKIE' => "dop_vsl=$vB"]));
 same('serve: 200', 200, $status);
-same('serve: ETag with the video', "\"vsl01-v$vB" . BEACON_ETAG . '"', $headers['ETag']);
+same('serve: ETag with the video', "\"vsl01-v$vB" . BEACON_ETAG . track_etag() . '"', $headers['ETag']);
 check('serve: Vary with Cookie', str_contains($headers['Vary'], 'Cookie'));
 same('serve: dop_vsl already right → only the video_id cookie', [video_id_cookie($vB)], $headers['Set-Cookie'] ?? null);
 check('serve: body plays B', str_contains((string) $body, 'data-vturb-id="' . $vB . '"'));
-same('serve: 304 with the same video', 304, serve_slug($vslRoute, make_request(['HTTP_COOKIE' => "dop_vsl=$vB", 'HTTP_IF_NONE_MATCH' => "\"vsl01-v$vB" . BEACON_ETAG . '"']))[0]);
+same('serve: 304 with the same video', 304, serve_slug($vslRoute, make_request(['HTTP_COOKIE' => "dop_vsl=$vB", 'HTTP_IF_NONE_MATCH' => "\"vsl01-v$vB" . BEACON_ETAG . track_etag() . '"']))[0]);
 same('serve: the drawn video comes out as the 4th element (for the dot click)', ['video' => $vB], serve_slug($vslRoute, make_request(['HTTP_COOKIE' => "dop_vsl=$vB"]))[3] ?? null);
 same('serve: no 304 shortcut on the bare hash (the video may change)', 200, serve_slug($vslRoute, make_request(['HTTP_COOKIE' => "dop_vsl=$vB", 'HTTP_IF_NONE_MATCH' => '"vsl01' . BEACON_ETAG . '"']))[0]);
 [$status, $headers] = serve_slug($vslRoute, make_request());
@@ -76,7 +76,7 @@ check('serve: new visitor gets Set-Cookie dop_vsl', is_array($headers['Set-Cooki
 
 // Page of a funnel without a split: exactly as before.
 [$status, $headers, $body] = serve_slug(['slug_id' => $vslSlug, 'content_hash' => 'vsl01', 'content_type' => 'text/html', 'funnel' => false, 'match_type' => 'GATE'], make_request());
-same('no split: ETag is just the hash (and the notice version)', '"vsl01' . BEACON_ETAG . '"', $headers['ETag']);
+same('no split: ETag is just the hash (and the notice and trackers versions)', '"vsl01' . BEACON_ETAG . track_etag() . '"', $headers['ETag']);
 check('no split: Vary without Cookie, no cookie, player untouched', !str_contains($headers['Vary'], 'Cookie') && !isset($headers['Set-Cookie']) && str_contains((string) $body, 'data-vturb-id="' . $vOld . '"'));
 
 // ── {{video_id}}: any page takes the draw where a VTurb video id goes ──

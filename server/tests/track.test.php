@@ -65,6 +65,47 @@ check('gate funnel with a drawn video: the player and dot.js get the same video'
 check('… pre_dot.js without it', str_contains((string) $vbody, "/_dop/pre_dot.js?v=" . tracker_version(TRACKER_PRE_DOT_JS) . "&page_id=$tPid\""));
 check('… and the video is in the ETag', str_contains((string) $vh['ETag'], "-v$tv1"), (string) $vh['ETag']);
 
+// ── A funnel page without steps is all Lander: dot.js, unless it has a tracker of its own ──
+check('lander: a page without steps needs dot.js', track_needs_lander('<html><body><h1>Advertorial</h1></body></html>'));
+check('lander: not a page with steps (the loader does it)', !track_needs_lander('<section data-dop-page="p_a" data-dop-kind="main">x</section>'));
+check('lander: not with its own first-party dot.js tag', !track_needs_lander('<body><script src="/_dop/dot.js?origin=lander&page_id={{page_id}}"></script></body>'));
+check('lander: not with the old CDN dot.js tag', !track_needs_lander('<body><script src="https://cdn.directdayone.com/js/dot.js?origin=lander&amp;v=17"></script></body>'));
+check('lander: not with its own pre_dot.js tag', !track_needs_lander('<body><script src="https://cdn.directdayone.com/js/pre_dot.js"></script></body>'));
+check('lander: not with a relative dot.js tag', !track_needs_lander('<head><script src="dot.js"></script></head>'));
+check('lander: another script with dot.js in its name is not a tracker', track_needs_lander('<body><script src="/js/polka-dot.js"></script><script src="/js/mydot.jsx"></script></body>'));
+$lTag = '<script data-dop-track async src="/_dop/dot.js?v=' . tracker_version(TRACKER_DOT_JS) . "&amp;page_id=$tPid&amp;video_id=$tVid\"></script>";
+same('lander inject: dot.js with the page id and the video, before </body>', "<body><h1>x</h1>$lTag</body>", track_inject_lander('<body><h1>x</h1></body>', $tPid, $tVid));
+same('lander inject: no </body> → at the end', '<p>x</p><script data-dop-track async src="/_dop/dot.js?v=' . tracker_version(TRACKER_DOT_JS) . '"></script>', track_inject_lander('<p>x</p>'));
+
+// serve_slug: the gate's funnel page without steps gets dot.js (never pre_dot.js, no loader); the version is in the ETag.
+cache_put_content('facadea4', '<html><body><h1>Advertorial</h1></body></html>');
+$lRoute = ['slug_id' => $fSlug, 'content_hash' => 'facadea4', 'content_type' => 'text/html', 'funnel' => false, 'match_type' => 'GATE', 'page_id' => $tPid];
+[$ls, $lh, $lbody] = serve_slug($lRoute, make_request());
+same('gate page without steps: 200', 200, $ls);
+check('gate page without steps: dot.js with the page id', str_contains((string) $lbody, '<script data-dop-track async src="/_dop/dot.js?v=' . tracker_version(TRACKER_DOT_JS) . "&amp;page_id=$tPid\"></script></body>"), (string) $lbody);
+check('… no pre_dot.js and no loader', !str_contains((string) $lbody, 'pre_dot.js') && !str_contains((string) $lbody, 'dop:pageshow'));
+check('… the ETag has the trackers version', str_ends_with((string) $lh['ETag'], track_etag() . '"'), (string) $lh['ETag']);
+same('… 304 keeps it (the shortcut for pages without steps has the same ETag)', [304, $lh['ETag']], (function () use ($lRoute, $lh) {
+    [$st, $hd] = serve_slug($lRoute, make_request(['HTTP_IF_NONE_MATCH' => $lh['ETag']]));
+    return [$st, $hd['ETag']];
+})());
+same('… an ETag from before (no trackers version) → 200 with dot.js', 200, serve_slug($lRoute, make_request(['HTTP_IF_NONE_MATCH' => str_replace(track_etag(), '', (string) $lh['ETag'])]))[0]);
+
+// With a drawn VSL video ({{video_id}} in the page), dot.js gets it too.
+cache_put_content('facadea5', '<html><body><vturb-smartplayer id="vid-{{video_id}}"></vturb-smartplayer></body></html>');
+[, , $lvbody] = serve_slug(['content_hash' => 'facadea5', 'vsl' => [['id' => $tv1, 'weight' => 100]]] + $lRoute, make_request());
+check('gate page without steps, drawn video: the player and dot.js get it', str_contains((string) $lvbody, "id=\"vid-$tv1\"") && str_contains((string) $lvbody, "&amp;page_id=$tPid&amp;video_id=$tv1\"></script>"), (string) $lvbody);
+
+// A page that already has its own tracker tag keeps just that one.
+cache_put_content('facadea6', '<html><body><h1>VSL</h1><script src="/_dop/dot.js?origin=lander&page_id={{page_id}}"></script></body></html>');
+[, , $obody] = serve_slug(['content_hash' => 'facadea6'] + $lRoute, make_request());
+same('gate page with its own dot.js tag: no second one', 1, substr_count((string) $obody, '/_dop/dot.js'));
+check('… and its own tag gets the page id', str_contains((string) $obody, "/_dop/dot.js?origin=lander&page_id=$tPid"), (string) $obody);
+
+// The safe page (GATE-SAFE) and a page outside the gate: no tracker.
+[, $sh, $sbody] = serve_slug(['match_type' => 'GATE-SAFE'] + $lRoute, make_request());
+check('safe page: no dot.js, no trackers version in the ETag', !str_contains((string) $sbody, 'dot.js') && !str_contains((string) $sh['ETag'], TRACK_ETAG), (string) $sh['ETag']);
+
 // ── The trackers themselves, served on the funnel's domain ──
 $dotV = tracker_version(TRACKER_DOT_JS);
 [$st, $hd, $bd] = handle_tracker(make_request(['REQUEST_URI' => "/_dop/dot.js?v=$dotV"]));

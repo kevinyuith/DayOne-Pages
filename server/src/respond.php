@@ -190,8 +190,9 @@ function serve_slug(array $route, Request $req): array
     // disk. Old cache (without the flag) or funnel: reads the content, because
     // the step goes into the ETag.
     // A VSL split also reads the content: the drawn video goes into the ETag.
+    // A funnel page the gate served always has the tracker version in the ETag (below).
     if (($route['funnel'] ?? null) === false && empty($route['vsl'])) {
-        $headers['ETag'] = '"' . $hash . $pidTag . $ptag . $tag . '"';
+        $headers['ETag'] = '"' . $hash . $pidTag . $ptag . $tag . ($beacon ? track_etag() : '') . '"';
         if ($req->ifNoneMatch !== null && etag_matches($req->ifNoneMatch, $headers['ETag'])) {
             return [304, $headers, null];
         }
@@ -256,9 +257,12 @@ function serve_slug(array $route, Request $req): array
         $headers['Set-Cookie'] = [...(array) ($headers['Set-Cookie'] ?? []), vsl_cookie($vslCookie)];
     }
 
-    // A funnel page (any mode) carries the per-step tracker loader (track.php); the version goes into the ETag.
+    // A funnel page (any mode) carries the per-step tracker loader (track.php); one without steps
+    // the gate served is all Lander and gets dot.js, unless it has a tracker tag of its own.
+    // The version goes into the ETag.
     $track = track_applies($body);
-    $etag = '"' . $hash . $abTag . ($funnel ? '-' . $funnel['step'] : '') . $vslTag . $pidTag . $ptag . $tag . ($track ? track_etag() : '') . '"';
+    $lander = !$track && $beacon && track_needs_lander($body);
+    $etag = '"' . $hash . $abTag . ($funnel ? '-' . $funnel['step'] : '') . $vslTag . $pidTag . $ptag . $tag . ($track || $beacon ? track_etag() : '') . '"';
     if ($funnel || $abTag !== '' || $vslTag !== '') {
         $headers['Vary'] .= ', Cookie';
     }
@@ -275,6 +279,8 @@ function serve_slug(array $route, Request $req): array
     }
     if ($track) {
         $body = track_inject($body, $pageId, $video);
+    } elseif ($lander) {
+        $body = track_inject_lander($body, $pageId, $video);
     }
     return [200, $headers, $body, ['video' => $video]];
 }
