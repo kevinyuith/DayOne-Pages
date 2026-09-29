@@ -5,26 +5,23 @@
  *
  * A funnel page is ONE HTML document with the steps as sibling
  * <section data-dop-page data-dop-kind="presell|main|backredirect">; the
- * delivery server sends one step per response (funnel.php) and moving on
- * reloads the same URL with the next one; without the server (static HTML),
- * the runtime (runtime.ts) shows one step at a time and dispatches
- * `dop:pageshow` on the section it shows.
+ * delivery server sends one step per response (funnel.php), so it knows the
+ * step being served and puts that step's tracker straight in the <head> — the
+ * earliest spot, so the page_view goes out and the player's events are bound
+ * before the VSL is ready:
  *
- * When the delivery server serves a page that has steps, it injects a small
- * loader that loads the step's tracker when the step becomes visible, once:
+ *   Pre Lander (presell) → <script async src="/_dop/dot.js?origin=pre_lander…">
+ *   Lander (main)        → <script async src="/_dop/dot.js?origin=lander…">
+ *   Backredirect         → none
  *
- *   Pre Lander (presell) → /_dop/dot.js?origin=pre_lander
- *   Lander (main)        → /_dop/dot.js?origin=lander
+ * A page with steps gets it on any route; a funnel page WITHOUT steps is all
+ * Lander and gets it when the gate serves it. A page that already has a dot.js
+ * or pre_dot.js tag of its own (any host, relative included) gets nothing —
+ * the tracker would run twice. It's injected ONLY here, on the real delivery —
+ * never in the dashboard preview (which serves the stored HTML without the
+ * server) — so it can't fire tracking from a preview.
  *
- * The loader loads the initial step's tracker (the one that isn't `hidden`) and
- * listens for `dop:pageshow` for the following steps; the Backredirect has no
- * tracker. A funnel page WITHOUT steps is all Lander: when the gate serves it,
- * it gets dot.js as the Lander itself (no loader), unless the page already has
- * a dot.js or pre_dot.js tag of its own. It's injected ONLY here, on the real
- * delivery — never in the dashboard preview (which serves the stored HTML
- * without the server) — so it can't fire tracking from a preview.
- *
- * A version (TRACK_ETAG + the tracker URLs) goes into the ETag so a browser
+ * A version (TRACK_ETAG + the tracker's URLs) goes into the ETag so a browser
  * holding a copy from before revalidates and gets the new body.
  *
  * On a funnel page the gate served, the tracker's URL also carries the page's
@@ -39,8 +36,8 @@ declare(strict_types=1);
 
 defined('DAYONE_ENTRY') || (http_response_code(404) && exit);
 
-/** ETag prefix of a funnel page with the tracker loader. Changed the loader, bump it (the tracker's URLs go in by themselves). */
-const TRACK_ETAG = '-k3';
+/** ETag prefix of a page with the tracker. Changed how it goes in, bump it (the tracker's URLs go in by themselves). */
+const TRACK_ETAG = '-k4';
 
 /**
  * The tracker: served by this server on the funnel's own domain (first party —
@@ -49,84 +46,55 @@ const TRACK_ETAG = '-k3';
  */
 const TRACKER_PATH = '/_dop/dot.js';
 
-/** The origin the tracker reports for each step kind (the Backredirect has none). */
+/** The origin the tracker reports for each step kind (the Backredirect has none; a page without steps is the Lander). */
 const TRACK_ORIGINS = [
     'presell' => 'pre_lander',
     'main' => 'lander',
 ];
 
-/** Does the served page have funnel steps? Then it carries the per-step tracker loader. */
-function track_applies(string $html): bool
+/** The origin for the served step's kind (null = a page without steps: the Lander); null = no tracker. */
+function track_origin(?string $kind): ?string
 {
-    return funnel_has_sections($html);
+    return TRACK_ORIGINS[$kind ?? 'main'] ?? null;
 }
 
 /**
- * The tracker's URL for each step kind, what the loader loads: the content
- * version (?v=), the step (&origin=), the served page's id (&page_id=) and the
- * VSL video the response drew (&video_id=), if it drew one.
+ * The tracker's URL: the content version (?v=), the step (&origin=), the
+ * served page's id (&page_id=) and the VSL video the response drew
+ * (&video_id=), if it drew one.
  */
-function track_urls(?string $pageId = null, ?string $videoId = null): array
+function track_url(string $origin, ?string $pageId = null, ?string $videoId = null): string
 {
-    $urls = [];
-    foreach (TRACK_ORIGINS as $kind => $origin) {
-        $q = ['v' => tracker_version(TRACKER_FILES[TRACKER_PATH]), 'origin' => $origin];
-        if ($pageId !== null) {
-            $q['page_id'] = $pageId;
-        }
-        if ($videoId !== null) {
-            $q['video_id'] = $videoId;
-        }
-        $urls[$kind] = TRACKER_PATH . '?' . http_build_query($q, '', '&');
+    $q = ['v' => tracker_version(TRACKER_FILES[TRACKER_PATH]), 'origin' => $origin];
+    if ($pageId !== null) {
+        $q['page_id'] = $pageId;
     }
-    return $urls;
+    if ($videoId !== null) {
+        $q['video_id'] = $videoId;
+    }
+    return TRACKER_PATH . '?' . http_build_query($q, '', '&');
 }
 
-/** The ETag suffix of a page with the tracker: the loader's version and the tracker's URLs (they are in the page). */
+/** The ETag suffix of a page with the tracker: how it goes in and the tracker's URLs. */
 function track_etag(): string
 {
-    return TRACK_ETAG . substr(md5(implode('|', track_urls())), 0, 6);
+    return TRACK_ETAG . substr(md5(implode('|', array_map('track_url', TRACK_ORIGINS))), 0, 6);
 }
 
-/** The loader script (built from track_urls, so the URLs live in one place). */
-function track_script(?string $pageId = null, ?string $videoId = null): string
+/** Does the page load a tracker of its own (a dot.js or pre_dot.js tag, on any host)? Then it gets none: it would run twice. */
+function track_has_own_tag(string $html): bool
 {
-    $map = json_encode(track_urls($pageId, $videoId), JSON_UNESCAPED_SLASHES);
-    return '<script data-dop-track>(function(){'
-        . 'var S=' . $map . ',done={};'
-        . 'function K(p){var k=p&&p.getAttribute("data-dop-kind");return k==="presell"||k==="backredirect"?k:"main"}'
-        . 'function L(p){if(!p)return;var u=S[K(p)];if(!u||done[u])return;done[u]=1;var s=document.createElement("script");s.src=u;s.async=true;(document.body||document.documentElement).appendChild(s)}'
-        . 'document.addEventListener("dop:pageshow",function(e){var t=e.target;L(t&&t.closest?t.closest("[data-dop-page]"):t)},true);'
-        . 'function I(){L(document.querySelector("[data-dop-page]:not([hidden])"))}'
-        . 'if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",I);else I();'
-        . '})();</script>';
+    return preg_match('~(?<![\w.-])(?:pre_)?dot\.js(?!\w)~i', $html) === 1;
 }
 
-/** The loader before the last </body> (without </body>, at the end) — like beacon_inject. */
-function track_inject(string $html, ?string $pageId = null, ?string $videoId = null): string
+/** The step's tracker, right after <head> (the earliest spot); without a <head>, before </body> or at the end. */
+function track_inject(string $html, string $origin, ?string $pageId = null, ?string $videoId = null): string
 {
-    return track_before_body_end($html, track_script($pageId, $videoId));
-}
-
-/**
- * A funnel page without steps is all Lander, so it gets the tracker as the
- * Lander — unless it already loads a tracker of its own (a dot.js or
- * pre_dot.js tag, on any host), which would then run twice.
- */
-function track_needs_lander(string $html): bool
-{
-    return !funnel_has_sections($html) && preg_match('~(?<![\w.-])(?:pre_)?dot\.js(?!\w)~i', $html) !== 1;
-}
-
-/** The tracker as the Lander, the same URL the loader would load, before the last </body>. */
-function track_inject_lander(string $html, ?string $pageId = null, ?string $videoId = null): string
-{
-    $src = htmlspecialchars(track_urls($pageId, $videoId)['main'], ENT_QUOTES);
-    return track_before_body_end($html, '<script data-dop-track async src="' . $src . '"></script>');
-}
-
-function track_before_body_end(string $html, string $script): string
-{
+    $script = '<script data-dop-track async src="' . htmlspecialchars(track_url($origin, $pageId, $videoId), ENT_QUOTES) . '"></script>';
+    if (preg_match('/<head\b[^>]*>/i', $html, $m, PREG_OFFSET_CAPTURE) === 1) {
+        $at = (int) $m[0][1] + strlen($m[0][0]);
+        return substr_replace($html, $script, $at, 0);
+    }
     $pos = strripos($html, '</body>');
     return $pos === false ? $html . $script : substr_replace($html, $script, $pos, 0);
 }
@@ -163,9 +131,26 @@ const TRACKER_DOT_JS = <<<'JS'
  *   when this script runs; the URL wins (a funnel page that drew no video
  *   deletes the cookie: it never speaks for another page). The page_view carries it — and so does the server's own
  *   click event — so there is no video_load event and no waiting for the player.
- *   Video events (video_play, video_watch, video_pitch, video_click) are bound on
- *   player:ready and carry the same id, on whichever step drew the video; a page
+ *   Video events carry the same id, on whichever step drew the video; a page
  *   with no video_id has no video to report.
+ *
+ * VIDEO EVENTS — the same marks VTurb counts for the player, one per number:
+ *   video_play   the video started (VTurb "started"; the muted smart autoplay
+ *                counts, as in VTurb's play rate)
+ *   video_watch  every 5s watched, and the last second on the way out (dot
+ *                keeps the max per session)
+ *   video_pitch  reached the pitch: VTurb's own `pitch:time` (only after a real
+ *                play); without it, the config's pitchTime outside the muted
+ *                smart autoplay
+ *   video_click  a click on the player's call to action (VTurb's
+ *                `analytics:exited-click`, VTurb "clicked"), or on a checkout link
+ *   video_end    the video ended (VTurb's `video:ended`, VTurb "finished")
+ *   They are bound to the player on player:ready — or at once, if the player
+ *   was already ready when this script arrived.
+ *
+ * EXT_CLICK_ID: the platform's click id, picked from the URL in the same order
+ *   the server's click event picks it (dot.php CLICK_ID_PARAMS), goes in every
+ *   event, so dot ties the browser's events to that click (Taboola's tblci too).
  *
  * PAGE_ID: every event carries the funnel page the server served (the A/B
  *   split's pick) — dot's page_id column. The server writes it in this script's
@@ -175,14 +160,24 @@ const TRACKER_DOT_JS = <<<'JS'
  * Also preserved: UTM/click-ID capture (sessionStorage dot_attr), dotid cookie
  * (1 day), ?dotid= propagation on external links, send retries, pagehide beacon.
  *
- * RELIABILITY FIXES (see REQUEST_TIMEOUT / sendSync / checkout click below):
+ * NOTHING IS LOST — the outbox: every event is kept in localStorage until dot
+ *   confirms it. dot answers 503 when its database write fails (PostgREST
+ *   reloading its schema cache, the database out of connections: outages of up
+ *   to 20 minutes were seen). An event dot didn't take goes again while the page
+ *   is open (2s, 4s, 8s… then every minute, for 15 minutes) and from the next
+ *   page of this domain (for a day), with `_delay_ms` (how long ago it happened,
+ *   so dot dates it right without trusting this device's clock). dot keeps the
+ *   first event of a kind per click and video_watch as the max, so an event
+ *   sent twice is harmless. Only the latest pending video_watch is kept.
+ *
+ * RELIABILITY FIXES (see REQUEST_TIMEOUT / sendSync / video_click below):
  *   1. fetch now aborts at REQUEST_TIMEOUT. Without it, a stuck edge isolate left
  *      the promise pending until the gateway gave up (measured: 150s), and the
  *      retry ladder never started because it only runs from .catch().
  *   2. pagehide uses navigator.sendBeacon. Synchronous XHR is ignored during
  *      unload by current Chrome/Safari, so the exit video_watch/video_pitch was
  *      being dropped silently.
- *   3. the checkout click handler no longer hijacks ctrl/cmd/middle click.
+ *   3. video_click goes as a beacon and never holds the navigation back.
  */
 (function () {
   'use strict';
@@ -215,6 +210,23 @@ const TRACKER_DOT_JS = <<<'JS'
     var v = query.get(p);
     if (v) attrs[p] = v;
   });
+  // The platform's click id, in the server's order (dot.php CLICK_ID_PARAMS), names case-insensitive.
+  var CLICK_ID_PARAMS = [
+    'ext_click_id', 'gclid', 'wbraid', 'gbraid', 'dclid', 'fbclid', 'ttclid', 'tclid',
+    'tbclid', 'tblci', 'snclid', 'sccid', 'msclkid', 'twclid', 'li_fat_id', 'epik', 'rdt_cid',
+    'qclid', 'obclid', 'dicbo', 'yclid', 'nbclid', 'kwai_click_id', 'click_id', 'clickid', 'ref_id'
+  ];
+  (function () {
+    var lower = {};
+    query.forEach(function (v, k) {
+      k = k.toLowerCase();
+      v = (v || '').trim();
+      if (v && !(k in lower)) lower[k] = v.slice(0, 1000);
+    });
+    for (var i = 0; i < CLICK_ID_PARAMS.length; i++) {
+      if (lower[CLICK_ID_PARAMS[i]]) { attrs.ext_click_id = lower[CLICK_ID_PARAMS[i]]; break; }
+    }
+  })();
   sessionStorage.setItem('dot_attr', JSON.stringify(attrs));
   // ---- visitor identifier (URL > cookie) ----
   var dotid = query.get('dotid') ||
@@ -273,39 +285,103 @@ const TRACKER_DOT_JS = <<<'JS'
     } catch (e) {}
     return undefined;
   }
-  function sendEvent(eventName, extra, attempt) {
-    attempt = attempt || 1;
-    var payload = buildPayload(eventName, extra);
+  // ---- the outbox: an event is kept until dot confirms it (see the header) ----
+  var OUTBOX_KEY = 'dot_outbox';
+  var OUTBOX_MAX = 300;
+  var OUTBOX_MAX_AGE = 86400000;   // a day: past it, dot can no longer tie the event to its click
+  var RETRY_WINDOW = 900000;       // on this page, retry for 15 minutes; after that, the next page does
+  var seq = 0;
+  function outboxRead() {
+    try {
+      var a = JSON.parse(localStorage.getItem(OUTBOX_KEY) || '[]');
+      return Array.isArray(a) ? a : [];
+    } catch (e) { return []; }
+  }
+  function outboxWrite(a) {
+    try {
+      if (a.length) localStorage.setItem(OUTBOX_KEY, JSON.stringify(a.slice(-OUTBOX_MAX)));
+      else localStorage.removeItem(OUTBOX_KEY);
+    } catch (e) {}
+  }
+  function outboxAdd(item) {
+    var p = item.p;
+    // only the max of video_watch matters: a newer one replaces the pending ones of the same video
+    var a = outboxRead().filter(function (x) {
+      return !(p.event === 'video_watch' && x.p && x.p.event === 'video_watch' && x.p.video_id === p.video_id && x.p.dotid === p.dotid);
+    });
+    a.push(item);
+    outboxWrite(a);
+  }
+  function outboxRemove(id) {
+    outboxWrite(outboxRead().filter(function (x) { return x.id !== id; }));
+  }
+  function newItem(payload) {
+    return { id: Date.now().toString(36) + '-' + (seq++) + '-' + Math.random().toString(36).slice(2, 8), t: Date.now(), p: payload };
+  }
+  // The body as sent: an event sent late says how long ago it happened.
+  function bodyOf(item) {
+    var p = item.p;
+    var late = Date.now() - item.t;
+    if (late > 3000) {
+      p = JSON.parse(JSON.stringify(p));
+      p._delay_ms = late;
+    }
+    return JSON.stringify(p);
+  }
+  function post(item, attempt) {
     return fetch(ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: bodyOf(item),
       keepalive: true,
       signal: timeoutSignal(REQUEST_TIMEOUT)
     }).then(function (res) {
-      if (!res.ok) throw new Error(res.status);
+      if (!res.ok) {
+        // 5xx / 429: dot couldn't write it — worth another try; any other 4xx won't get better
+        if (res.status >= 500 || res.status === 429) throw new Error(res.status);
+        outboxRemove(item.id);
+        return null;
+      }
+      outboxRemove(item.id);
       return res.json();
     }).then(function (data) {
       // first event of the session: the server returns the dotid
-      if (data.dotid && !dotid) {
+      if (data && data.dotid && !dotid) {
         dotid = data.dotid;
         setCookie('dotid', dotid, 1);
         decorateLinks();
       }
     }).catch(function () {
-      if (attempt < 3) {
-        setTimeout(function () {
-          sendEvent(eventName, extra, attempt + 1);
-        }, attempt * 2000);
+      if (Date.now() - item.t < RETRY_WINDOW) {
+        setTimeout(function () { post(item, attempt + 1); }, Math.min(60000, 2000 * Math.pow(2, attempt - 1)));
       }
+      // past the window it stays in the outbox: the next page of this domain sends it
     });
   }
-  // Send for pagehide. sendBeacon is the only transport browsers are required to
-  // keep alive past unload — synchronous XHR is ignored there by current Chrome
-  // and Safari, which was silently dropping the exit video_watch/video_pitch.
-  // The XHR path stays as a fallback for browsers without sendBeacon.
+  function sendEvent(eventName, extra) {
+    var item = newItem(buildPayload(eventName, extra));
+    outboxAdd(item);
+    return post(item, 1);
+  }
+  // The events a previous page (or tab) of this domain left in the outbox: sent now, spaced out.
+  function flushOutbox() {
+    var now = Date.now();
+    var a = outboxRead().filter(function (x) { return x && x.p && x.id && now - x.t < OUTBOX_MAX_AGE; });
+    outboxWrite(a);
+    a.forEach(function (item, i) {
+      setTimeout(function () { post(item, 1); }, 1500 + i * 150);
+    });
+  }
+  // Send for pagehide and for a click that leaves the page. sendBeacon is the
+  // transport browsers are required to keep alive past unload — synchronous XHR
+  // is ignored there by current Chrome and Safari, which was silently dropping
+  // the exit video_watch/video_pitch. The event also goes to the outbox: the
+  // beacon's answer can't be read, so the next page of this domain sends it
+  // again (harmless: dot keeps one). The XHR path stays for browsers without sendBeacon.
   function sendSync(payload) {
-    var body = JSON.stringify(payload);
+    var item = newItem(payload);
+    outboxAdd(item);
+    var body = bodyOf(item);
     try {
       if (navigator.sendBeacon) {
         var blob = new Blob([body], { type: 'application/json' });
@@ -317,6 +393,7 @@ const TRACKER_DOT_JS = <<<'JS'
       xhr.open('POST', ENDPOINT, false);
       xhr.setRequestHeader('Content-Type', 'application/json');
       xhr.send(body);
+      if (xhr.status >= 200 && xhr.status < 300) outboxRemove(item.id);
     } catch (e) {}
   }
   // ---- video_id: the VSL video the funnel's server drew for this page ----
@@ -328,13 +405,26 @@ const TRACKER_DOT_JS = <<<'JS'
     var m = document.cookie.match(/(?:^|;\s*)video_id=([0-9a-f]{24})(?:;|$)/);
     return m ? m[1] : null;
   })();
-  // ---- video events (vTurb smartplayer) ----
-  function bindVideoEvents(player, videoId) {
-    var pitchTime = (player.__config && player.__config.pitchTime) || 0;
+  // ---- video events (vTurb smartplayer): the marks VTurb counts (see the header) ----
+  var player = null;           // the bound vturb-smartplayer
+  var lastTime = 0;
+  function currentTime() {
+    try {
+      if (player && player.playback && player.playback.currentTime >= 0) return Math.floor(player.playback.currentTime);
+      if (player && player.smartplayer && player.smartplayer.currentTime >= 0) return Math.floor(player.smartplayer.currentTime);
+    } catch (e) {}
+    return lastTime;
+  }
+  function bindVideoEvents(el) {
+    player = el;
     var pitchSent = false;
     var playSent = false;
+    var endSent = false;
     var lastWatch = -1;
-    var lastTime = 0;
+    function pitchTime() {
+      var c = el.config || el.__config;
+      return (c && c.pitchTime) || 0;
+    }
     function firePlay() {
       if (playSent) return;
       playSent = true;
@@ -342,56 +432,66 @@ const TRACKER_DOT_JS = <<<'JS'
       sendEvent('video_watch', { video_time: 0, video_id: videoId });
       lastWatch = 0;
     }
-    // video was already playing when the tracker attached (e.g. resume)
-    if (player.smartplayer && player.smartplayer.currentTime > 0) firePlay();
-    player.addEventListener('video:play', function () {
-      firePlay();
-    });
-    player.addEventListener('video:timeupdate', function (ev) {
+    function firePitch(t, sync) {
+      if (pitchSent) return;
+      pitchSent = true;
+      var extra = { video_time: t, video_id: videoId };
+      if (sync) sendSync(buildPayload('video_pitch', extra)); else sendEvent('video_pitch', extra);
+    }
+    // video was already playing when the tracker attached (e.g. resume, or a late tracker)
+    if (currentTime() > 0) firePlay();
+    el.addEventListener('video:play', firePlay);
+    el.addEventListener('video:timeupdate', function (ev) {
       var t = Math.floor((ev.detail && ev.detail.time) || 0);
       lastTime = t;
       if (!playSent && t > 0) firePlay();
-      if (!pitchTime && player.__config && player.__config.pitchTime) {
-        pitchTime = player.__config.pitchTime;
-      }
       // one video_watch for every 5s watched
       if (t >= lastWatch + 5) {
         lastWatch = t;
         sendEvent('video_watch', { video_time: t, video_id: videoId });
       }
-      // reached the pitch moment
-      if (!pitchSent && pitchTime > 0 && t >= pitchTime) {
-        pitchSent = true;
-        sendEvent('video_pitch', { video_time: t, video_id: videoId });
-      }
+      // no pitch:time from the player: the config's pitch, but never in the muted smart autoplay (VTurb's rule)
+      var p = pitchTime();
+      if (p > 0 && t >= p && !el.inSmartAutoPlay) firePitch(t);
     });
-    // click on a checkout link: track it, then navigate
-    document.addEventListener('click', function (ev) {
-      // Only hijack a plain left click. Without this guard cmd/ctrl/middle click —
-      // "open the checkout in a new tab" — was cancelled and forced into the same
-      // tab 150ms later, against what the visitor asked for.
-      if (ev.button !== 0 || ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey) return;
-      var link = ev.target.closest("a[href*='checkout']");
-      if (!link) return;
-      ev.preventDefault();
-      var t = Math.floor((player.smartplayer && player.smartplayer.currentTime) || 0);
-      sendEvent('video_click', { video_time: t, video_id: videoId });
-      setTimeout(function () {
-        window.location.href = link.href;
-      }, 150);
+    // VTurb's own pitch mark: only after a real play
+    el.addEventListener('pitch:time', function () { firePitch(currentTime()); });
+    // the video ended: VTurb's "finished" — with the last second watched
+    el.addEventListener('video:ended', function () {
+      if (endSent) return;
+      endSent = true;
+      var t = currentTime();
+      if (t > lastWatch) { lastWatch = t; sendEvent('video_watch', { video_time: t, video_id: videoId }); }
+      sendEvent('video_end', { video_time: t, video_id: videoId });
     });
     // page exit: guarantees the final video_watch / video_pitch
     window.addEventListener('pagehide', function () {
       if (!playSent) return;
-      var t = Math.floor((player.smartplayer && player.smartplayer.currentTime) || lastTime);
+      var t = currentTime();
       if (t > lastWatch) {
+        lastWatch = t;
         sendSync(buildPayload('video_watch', { video_time: t, video_id: videoId }));
       }
-      if (!pitchSent && pitchTime > 0 && t >= pitchTime) {
-        pitchSent = true;
-        sendSync(buildPayload('video_pitch', { video_time: t, video_id: videoId }));
-      }
+      var p = pitchTime();
+      if (p > 0 && t >= p && !el.inSmartAutoPlay) firePitch(t, true);
     });
+  }
+  // The player, if it is already ready: VTurb's compat API lists the ready players; else the element itself.
+  function readyPlayer() {
+    try {
+      var sp = window.smartplayer;
+      if (sp && sp.instances && sp.instances.length && sp.instances[0].instance) return sp.instances[0].instance;
+    } catch (e) {}
+    var el = document.querySelector('vturb-smartplayer');
+    return el && (el.playback || el.smartplayer) ? el : null;
+  }
+  // video_click: the player's call to action (VTurb "clicked") or a checkout link. Sent as a beacon —
+  // it survives the navigation, so the click is never held back. Once per page.
+  var clickSent = false;
+  function fireClick() {
+    if (clickSent) return;
+    clickSent = true;
+    sendSync(buildPayload('video_click', { video_time: currentTime(), video_id: videoId }));
   }
   if (dotid) setCookie('dotid', dotid, 1); // renew the cookie
   // If the page_view response arrives before the DOM finishes loading,
@@ -419,6 +519,7 @@ const TRACKER_DOT_JS = <<<'JS'
     if (loadTimer) { clearTimeout(loadTimer); loadTimer = null; }
     sendEvent('page_view', pageView);
   }
+  flushOutbox();
   if (origin !== 'pre_lander' || document.readyState === 'complete') {
     sendPageView();
   } else {
@@ -426,19 +527,34 @@ const TRACKER_DOT_JS = <<<'JS'
     loadTimer = setTimeout(sendPageView, LOAD_TIMEOUT); // stuck-asset safety cap
     window.addEventListener('pagehide', sendPageView, { once: true }); // left before "load"
   }
-  // ---- player: binds the video events on player:ready ----
-  // Registered RIGHT AWAY at script execution (the original only registered it
-  // on DOMContentLoaded and lost the event if the player got ready earlier).
+  // ---- player: binds the video events ----
+  // On player:ready, registered RIGHT AWAY at script execution — and at once if the
+  // player was already ready when this script arrived (a late tracker must not lose
+  // the video), checked again on DOMContentLoaded and load.
   // The video is the server's (videoId above), on whichever step drew it: a page with no video_id has no video to report.
   if (videoId) {
     var videoBound = false;
-    document.addEventListener('player:ready', function (ev) {
-      var d = (ev && ev.detail) || {};
-      var el = d.player || document.querySelector('vturb-smartplayer');
+    var bindOnce = function (el) {
       if (videoBound || !el) return;
       videoBound = true;
-      bindVideoEvents(el, videoId);
+      bindVideoEvents(el);
+    };
+    document.addEventListener('player:ready', function (ev) {
+      var d = (ev && ev.detail) || {};
+      bindOnce(d.player || document.querySelector('vturb-smartplayer'));
     });
+    bindOnce(readyPlayer());
+    var lateCheck = function () { if (!videoBound) bindOnce(readyPlayer()); };
+    document.addEventListener('DOMContentLoaded', lateCheck);
+    window.addEventListener('load', lateCheck);
+    // the player's call to action: VTurb dispatches it from inside the player (bubbles, composed)
+    document.addEventListener('analytics:exited-click', fireClick);
+    // a checkout link on the page (any button: a new tab still counts)
+    document.addEventListener('click', function (ev) {
+      var t = ev.target;
+      var link = t && t.closest ? t.closest("a[href*='checkout']") : null;
+      if (link) fireClick();
+    }, true);
   }
 })();
 JS;

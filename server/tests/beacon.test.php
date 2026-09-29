@@ -102,7 +102,7 @@ same('beacon_parse_signals: keeps the new keys (aut, gl, glsw, lng, tp, dc, str)
 $bSlug = '22222222-2222-2222-2222-222222222222';
 cache_put_content('bb01', '<html><body>hi</body></html>');
 [$status, $headers, $body] = serve_slug(['slug_id' => $bSlug, 'content_hash' => 'bb01', 'content_type' => 'text/html', 'match_type' => 'GATE'], make_request());
-same('serve funnel html: body with the script (and dot.js: without steps it is all Lander)', track_inject_lander('<html><body>hi' . BEACON_SCRIPT . '</body></html>'), $body);
+same('serve funnel html: body with the script (and dot.js: without steps it is all Lander)', track_inject('<html><body>hi' . BEACON_SCRIPT . '</body></html>', 'lander'), $body);
 same('serve funnel html: ETag with version', '"bb01' . BEACON_ETAG . track_etag() . '"', $headers['ETag']);
 same('serve funnel html: old ETag (no version) → 200', 200, serve_slug(['slug_id' => $bSlug, 'content_hash' => 'bb01', 'content_type' => 'text/html', 'match_type' => 'GATE'], make_request(['HTTP_IF_NONE_MATCH' => '"bb01"']))[0]);
 [$status, $headers, $body] = serve_slug(['slug_id' => $bSlug, 'content_hash' => 'bb01', 'content_type' => 'text/html', 'match_type' => 'GATE-SAFE'], make_request());

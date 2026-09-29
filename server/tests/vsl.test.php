@@ -124,14 +124,14 @@ cache_put_content('vsl03', $preloadHead);
 $headRoute = ['content_hash' => 'vsl03', 'page_id' => '11111111-aaaa-4aaa-8aaa-0000000000d1'] + $stepRoute;
 [, $headers, $body, $extra] = serve_slug($headRoute, make_request(['HTTP_COOKIE' => "video_id=$vB"]));
 check('Pre Lander with the preload in the <head>: no draw — no video anywhere, the older video_id cookie deleted', str_contains((string) $body, 'PRE') && str_contains((string) $body, '/players//v4/player.js') && !str_contains((string) $body, 'video_id=') && !str_contains((string) $headers['ETag'], '-v') && ($extra['video'] ?? null) === null && (array) ($headers['Set-Cookie'] ?? []) === [video_id_cookie_clear()], json_encode([$headers, $extra]));
-check('… and its tracker is dot.js as pre_lander, without a video', str_contains((string) $body, '"presell":"/_dop/dot.js?v=' . tracker_version(TRACKER_DOT_JS) . '&origin=pre_lander&page_id=11111111-aaaa-4aaa-8aaa-0000000000d1"'), (string) $body);
+check('… and its tracker is dot.js as pre_lander, without a video', str_contains((string) $body, 'src="/_dop/dot.js?v=' . tracker_version(TRACKER_DOT_JS) . '&amp;origin=pre_lander&amp;page_id=11111111-aaaa-4aaa-8aaa-0000000000d1"'), (string) $body);
 [, $headers, $body, $extra] = serve_slug($headRoute, make_request(['HTTP_COOKIE' => 'dop_step=p_vsl']));
-check('the VSL step draws: the player, the <head> preload, dot.js as lander and the dot click get the same video', preg_match('/vid-([ab]{24})"/', (string) $body, $vm) === 1 && str_contains((string) $body, "/players/{$vm[1]}/v4/player.js\" as=\"script\"") && str_contains((string) $body, "&origin=lander&page_id=11111111-aaaa-4aaa-8aaa-0000000000d1&video_id={$vm[1]}") && ($extra['video'] ?? null) === $vm[1], (string) $body);
+check('the VSL step draws: the player, the <head> preload, dot.js as lander and the dot click get the same video', preg_match('/vid-([ab]{24})"/', (string) $body, $vm) === 1 && str_contains((string) $body, "/players/{$vm[1]}/v4/player.js\" as=\"script\"") && str_contains((string) $body, "&amp;origin=lander&amp;page_id=11111111-aaaa-4aaa-8aaa-0000000000d1&amp;video_id={$vm[1]}") && ($extra['video'] ?? null) === $vm[1], (string) $body);
 
 // A Pre Lander whose own code has {{video_id}} draws, and its tracker (pre_lander) carries the video.
 cache_put_content('vsl04', '<!doctype html><html><head></head><body><section data-dop-page="p_pre" data-dop-kind="presell" data-dop-start>' . $embed . '</section><section data-dop-page="p_vsl" data-dop-kind="main" hidden><h1>OFFER</h1></section></body></html>');
 [, , $body] = serve_slug(['content_hash' => 'vsl04'] + $headRoute, make_request());
-check('a Pre Lander with its own {{video_id}}: drawn, dot.js as pre_lander carries it', preg_match('/vid-([ab]{24})"/', (string) $body, $vm) === 1 && str_contains((string) $body, "&origin=pre_lander&page_id=11111111-aaaa-4aaa-8aaa-0000000000d1&video_id={$vm[1]}"), (string) $body);
+check('a Pre Lander with its own {{video_id}}: drawn, dot.js as pre_lander carries it', preg_match('/vid-([ab]{24})"/', (string) $body, $vm) === 1 && str_contains((string) $body, "&amp;origin=pre_lander&amp;page_id=11111111-aaaa-4aaa-8aaa-0000000000d1&amp;video_id={$vm[1]}"), (string) $body);
 
 // A page without steps with {{video_id}} only in its own tracker tag in the <head> (no player): no draw, no video.
 cache_put_content('vsl05', '<html><head><script src="/_dop/dot.js?origin=lander&video_id={{video_id}}"></script></head><body><h1>No player</h1></body></html>');

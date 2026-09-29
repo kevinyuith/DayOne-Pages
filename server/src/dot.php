@@ -23,7 +23,12 @@
  * with a timeout above dot's own (DOT_TIMEOUT, 8 s: dot gives its database
  * write up to 4 s, and a slow answer is still a queued click); a click dot
  * didn't queue (no answer, or a 5xx) is sent again 1 s and 4 s later
- * (DOT_TRY_WAITS), and only one that still failed goes to the log. DOT_CLICKS=0
+ * (DOT_TRY_WAITS). One that still failed is not lost: it waits in the spool
+ * (cache/dot-spool.jsonl, with its own timestamp, so dot records it at the
+ * click's time) and goes again after a later response, at most once a minute
+ * (dot_spool_replay) — dot's outages (PGRST002 while PostgREST reloads its
+ * schema cache, connections exhausted) have lasted up to 20 minutes. Only a
+ * click given up (over a day old, or refused for good) goes to the log. DOT_CLICKS=0
  * turns it off (tests and local runs must never feed the real tracker).
  */
 declare(strict_types=1);
@@ -210,8 +215,8 @@ function dot_outcome(int $status, string|false $raw, string $curlError = ''): ar
  * Sends the click with $try() (one POST → dot_outcome()), trying again after
  * DOT_TRY_WAITS while it's worth it. A try that timed out may still have been
  * queued, so a click can reach dot twice — harmless: dot keeps only the first
- * click event of a click id. Null once dot queued it, else ['tries', 'why'] of
- * the last failure.
+ * click event of a click id. Null once dot queued it, else ['tries', 'why',
+ * 'retry'] of the last failure (retry: worth sending again later).
  */
 function dot_deliver(callable $try, ?callable $sleep = null): ?array
 {
@@ -230,7 +235,7 @@ function dot_deliver(callable $try, ?callable $sleep = null): ?array
             break;
         }
     }
-    return ['tries' => $tries, 'why' => $r['why']];
+    return ['tries' => $tries, 'why' => $r['why'], 'retry' => $r['retry']];
 }
 
 /** Sends this request's click to dot (after the response). Only a click that still failed after the tries goes to the log. */
@@ -249,6 +254,20 @@ function dot_click(Request $req, array $ctx, ?array $server = null): void
         return;
     }
     // One handle for every try: a retry reuses the open connection.
+    $ch = dot_curl($body);
+    $failed = dot_deliver(static fn (): array => dot_curl_try($ch));
+    if ($failed !== null) {
+        if ($failed['retry'] && dot_spool($body)) {
+            return; // not lost: it goes again from the spool
+        }
+        error_log('[dayone-pages] dot click failed after ' . $failed['tries'] . ' tries (' . $failed['why'] . ')');
+    }
+}
+
+/** A POST of $body to dot, ready to send (and send again). */
+function dot_curl(string $body): \CurlHandle
+{
+    $cfg = config();
     $ch = curl_init($cfg['dot_url']);
     curl_setopt_array($ch, [
         CURLOPT_POST => true,
@@ -258,11 +277,107 @@ function dot_click(Request $req, array $ctx, ?array $server = null): void
         CURLOPT_TIMEOUT => max(2, (int) $cfg['dot_timeout']),
         CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'User-Agent: dayone-pages/dot'],
     ]);
-    $failed = dot_deliver(static function () use ($ch): array {
-        $raw = curl_exec($ch);
-        return dot_outcome((int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE), is_string($raw) ? $raw : false, curl_error($ch));
-    });
-    if ($failed !== null) {
-        error_log('[dayone-pages] dot click failed after ' . $failed['tries'] . ' tries (' . $failed['why'] . ')');
+    return $ch;
+}
+
+/** One try of a prepared POST → dot_outcome(). */
+function dot_curl_try(\CurlHandle $ch): array
+{
+    $raw = curl_exec($ch);
+    return dot_outcome((int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE), is_string($raw) ? $raw : false, curl_error($ch));
+}
+
+// ── The spool: clicks dot didn't take, sent again later ──────────────────────
+
+/** One JSON per line: {"at": when it was spooled, "body": the click as sent}. */
+const DOT_SPOOL_FILE = 'dot-spool.jsonl';
+/** A click older than this is given up (dot ties a click's page events within a day). */
+const DOT_SPOOL_MAX_AGE = 86400;
+/** Send the spool again at most this often (seconds), and at most this many clicks at a time. */
+const DOT_SPOOL_EVERY = 60;
+const DOT_SPOOL_BATCH = 300;
+
+function dot_spool_path(): string
+{
+    return cache_dir() . '/' . DOT_SPOOL_FILE;
+}
+
+/** Keeps a click dot didn't take for dot_spool_replay. False when it can't be kept (no writable cache). */
+function dot_spool(string $body, ?int $now = null): bool
+{
+    if (!cache_writable()) {
+        return false;
     }
+    $line = json_encode(['at' => $now ?? time(), 'body' => $body], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+    return $line !== false && @file_put_contents(dot_spool_path(), $line . "\n", FILE_APPEND | LOCK_EX) !== false;
+}
+
+/**
+ * Sends the spooled clicks again (after a response; one process at a time, at
+ * most every DOT_SPOOL_EVERY seconds). Stops at the first one dot still can't
+ * take — it's still down, the rest wait for the next round — and gives up a
+ * click over DOT_SPOOL_MAX_AGE, or one dot refuses for good (a 4xx). $send
+ * (body → dot_outcome) is the tests' stand-in for the POST.
+ *
+ * @return array{sent: int, kept: int, dropped: int}|null  null = nothing to do now
+ */
+function dot_spool_replay(?callable $send = null, ?int $now = null): ?array
+{
+    $now ??= time();
+    $path = dot_spool_path();
+    $mark = cache_dir() . '/dot-spool.replay';
+    clearstatcache(true, $path);
+    if (!is_file($path) || (int) @filesize($path) === 0 || $now - (int) @filemtime($mark) < DOT_SPOOL_EVERY) {
+        return null;
+    }
+    $fh = @fopen($path, 'c+');
+    if ($fh === false) {
+        return null;
+    }
+    if (!flock($fh, LOCK_EX | LOCK_NB)) {
+        fclose($fh);
+        return null;
+    }
+    @touch($mark, $now);
+    $send ??= static fn (string $body): array => dot_curl_try(dot_curl($body));
+    $keep = [];
+    $sent = 0;
+    $dropped = 0;
+    $down = false;
+    while (($line = fgets($fh)) !== false) {
+        $item = json_decode($line, true);
+        if (!is_array($item) || !is_string($item['body'] ?? null) || !is_int($item['at'] ?? null)) {
+            continue;
+        }
+        if ($now - $item['at'] > DOT_SPOOL_MAX_AGE) {
+            $dropped++;
+            continue;
+        }
+        if ($down || $sent >= DOT_SPOOL_BATCH) {
+            $keep[] = rtrim($line, "\n");
+            continue;
+        }
+        $r = $send($item['body']);
+        if ($r['ok']) {
+            $sent++;
+        } elseif ($r['retry']) {
+            $down = true;
+            $keep[] = rtrim($line, "\n");
+        } else {
+            $dropped++;
+            error_log('[dayone-pages] dot refused a spooled click (' . $r['why'] . ')');
+        }
+    }
+    ftruncate($fh, 0);
+    rewind($fh);
+    if ($keep !== []) {
+        fwrite($fh, implode("\n", $keep) . "\n");
+    }
+    fflush($fh);
+    flock($fh, LOCK_UN);
+    fclose($fh);
+    if ($dropped > 0) {
+        error_log("[dayone-pages] dot spool: $dropped click(s) given up (over a day old, or refused)");
+    }
+    return ['sent' => $sent, 'kept' => count($keep), 'dropped' => $dropped];
 }

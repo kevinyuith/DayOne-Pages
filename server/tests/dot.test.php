@@ -88,8 +88,30 @@ $queued = ['ok' => true, 'retry' => false, 'why' => ''];
 same('queued at once: nothing to report, no wait', [null, []], [dot_deliver($dotAnswers([$queued]), $dotSleep), $dotWaits]);
 same('queued on the 2nd try: nothing to report, waited 1 s', [null, [1]], [dot_deliver($dotAnswers([$busy, $queued]), $dotSleep), $dotWaits]);
 $dotWaits = [];
-same('never queued: gives up after 3 tries (1 s, 4 s) and reports the last', [['tries' => 3, 'why' => 'HTTP 0: timeout'], [1, 4]],
+same('never queued: gives up after 3 tries (1 s, 4 s) and reports the last (worth sending later)', [['tries' => 3, 'why' => 'HTTP 0: timeout', 'retry' => true], [1, 4]],
     [dot_deliver($dotAnswers([$busy, $busy, ['ok' => false, 'retry' => true, 'why' => 'HTTP 0: timeout']]), $dotSleep), $dotWaits]);
 $dotWaits = [];
-same('a failure that won\'t get better: reported at once, no retry', [['tries' => 1, 'why' => 'HTTP 400: bad'], []],
+same('a failure that won\'t get better: reported at once, no retry (not spooled)', [['tries' => 1, 'why' => 'HTTP 400: bad', 'retry' => false], []],
     [dot_deliver($dotAnswers([['ok' => false, 'retry' => false, 'why' => 'HTTP 400: bad'], $queued]), $dotSleep), $dotWaits]);
+
+// ── The spool: a click dot didn't take goes again later ──
+@unlink(dot_spool_path());
+@unlink(cache_dir() . '/dot-spool.replay');
+$t0 = 1_900_000_000;
+check('spool: keeps a click', dot_spool('{"event":"click","ext_click_id":"a"}', $t0) && dot_spool('{"event":"click","ext_click_id":"b"}', $t0) && dot_spool('{"event":"click","ext_click_id":"c"}', $t0));
+$seen = [];
+$r = dot_spool_replay(function (string $body) use (&$seen): array {
+    $seen[] = json_decode($body, true)['ext_click_id'];
+    return $body === '{"event":"click","ext_click_id":"b"}' ? ['ok' => false, 'retry' => true, 'why' => 'HTTP 503'] : ['ok' => true, 'retry' => false, 'why' => ''];
+}, $t0 + 120);
+same('replay: sends in order, stops at the first one dot still can\'t take (it\'s down), keeps the rest', [['a', 'b'], ['sent' => 1, 'kept' => 2, 'dropped' => 0]], [$seen, $r]);
+same('replay: not again within a minute', null, dot_spool_replay(fn () => ['ok' => true, 'retry' => false, 'why' => ''], $t0 + 150));
+$r = dot_spool_replay(fn (string $body) => str_contains($body, '"c"') ? ['ok' => false, 'retry' => false, 'why' => 'HTTP 400'] : ['ok' => true, 'retry' => false, 'why' => ''], $t0 + 200);
+same('replay: a click refused for good (4xx) is given up; the rest go', ['sent' => 1, 'kept' => 0, 'dropped' => 1], $r);
+same('replay: an empty spool has nothing to do', null, dot_spool_replay(fn () => ['ok' => true, 'retry' => false, 'why' => ''], $t0 + 400));
+dot_spool('{"event":"click","ext_click_id":"old"}', $t0);
+$r = dot_spool_replay(fn () => ['ok' => true, 'retry' => false, 'why' => ''], $t0 + DOT_SPOOL_MAX_AGE + 500);
+same('replay: a click over a day old is given up, not sent', ['sent' => 0, 'kept' => 0, 'dropped' => 1], $r);
+same('deliver: the last failure says whether it is worth sending later', ['tries' => 3, 'why' => 'HTTP 503: x', 'retry' => true], dot_deliver(fn () => dot_outcome(503, 'x'), fn () => null));
+@unlink(dot_spool_path());
+@unlink(cache_dir() . '/dot-spool.replay');

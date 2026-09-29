@@ -84,7 +84,9 @@ function funnel_step_cookie_clear(string $rawPath): ?string
 }
 
 /**
- * @return array{html: string, step: string}|null
+ * `kind` is the served step's (presell|main|backredirect): the tracker it gets (track.php).
+ *
+ * @return array{html: string, step: string, kind: string}|null
  */
 function funnel_apply(string $html, array $cookies): ?array
 {
@@ -152,7 +154,7 @@ function funnel_apply(string $html, array $cookies): ?array
     // Callback, not a replacement string: a "$1" or "\" in an attribute value doesn't become a backreference.
     $out = preg_replace_callback('/<body\b([^>]*)>/i', fn ($m) => '<body' . $m[1] . $attrs . '>', $out, 1) ?? $out;
 
-    return ['html' => $out, 'step' => $cur['id']];
+    return ['html' => $out, 'step' => $cur['id'], 'kind' => $cur['kind']];
 }
 
 /**

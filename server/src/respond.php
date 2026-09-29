@@ -257,12 +257,12 @@ function serve_slug(array $route, Request $req): array
         $headers['Set-Cookie'] = [...(array) ($headers['Set-Cookie'] ?? []), vsl_cookie($vslCookie)];
     }
 
-    // A funnel page (any mode) carries the per-step tracker loader (track.php); one without steps
-    // the gate served is all Lander and gets dot.js, unless it has a tracker tag of its own.
-    // The version goes into the ETag.
-    $track = track_applies($body);
-    $lander = !$track && $beacon && track_needs_lander($body);
-    $etag = '"' . $hash . $abTag . ($funnel ? '-' . $funnel['step'] : '') . $vslTag . $pidTag . $ptag . $tag . ($track || $beacon ? track_etag() : '') . '"';
+    // The funnel's tracker (track.php): the served step's dot.js in the <head> — a page with steps
+    // on any route, one without steps (all Lander) when the gate served it —, unless the page has a
+    // tracker tag of its own. The version goes into the ETag.
+    $track = $funnel !== null || $beacon;
+    $trackOrigin = $track && !track_has_own_tag($body) ? track_origin($funnel['kind'] ?? null) : null;
+    $etag = '"' . $hash . $abTag . ($funnel ? '-' . $funnel['step'] : '') . $vslTag . $pidTag . $ptag . $tag . ($track ? track_etag() : '') . '"';
     if ($funnel || $abTag !== '' || $vslTag !== '') {
         $headers['Vary'] .= ', Cookie';
     }
@@ -277,10 +277,8 @@ function serve_slug(array $route, Request $req): array
     if ($beacon) {
         $body = beacon_inject($body);
     }
-    if ($track) {
-        $body = track_inject($body, $pageId, $video);
-    } elseif ($lander) {
-        $body = track_inject_lander($body, $pageId, $video);
+    if ($trackOrigin !== null) {
+        $body = track_inject($body, $trackOrigin, $pageId, $video);
     }
     return [200, $headers, $body, ['video' => $video]];
 }

@@ -1,110 +1,98 @@
 <?php
 declare(strict_types=1);
 
-// ── track.php: the per-step tracker loader on a funnel page ──
+// ── track.php: the funnel's tracker (one dot.js, sent as the step), in the <head> ──
 
-// It applies only when the page has funnel steps.
-check('applies: HTML with a step section', track_applies('<section data-dop-page="p_a" data-dop-kind="main">x</section>'));
-check('does not apply: a plain page', !track_applies('<html><body><h1>hi</h1></body></html>'));
-
-// The loader script: one tracker (dot.js) for both steps, sent as the step; the dop:pageshow listener, the initial step.
 $dotV = tracker_version(TRACKER_DOT_JS);
 $dotUrl = fn (string $origin, string $more = ''): string => "/_dop/dot.js?v=$dotV&origin=$origin$more";
-$s = track_script();
-check('loader: the Pre Lander gets dot.js as pre_lander, on the domain itself, versioned', str_contains($s, '"presell":"' . $dotUrl('pre_lander') . '"'), $s);
-check('loader: the Lander gets dot.js as lander', str_contains($s, '"main":"' . $dotUrl('lander') . '"'), $s);
-check('loader: no pre_dot.js and no third-party CDN', !str_contains($s, 'pre_dot') && !str_contains($s, 'cdn.directdayone.com'));
-check('loader: keyed by the step kind (presell/main/backredirect)', str_contains($s, '"presell"') && str_contains($s, '"main"'));
-check('loader: fires when a step becomes visible', str_contains($s, 'dop:pageshow'));
-check('loader: loads the initial visible step too', str_contains($s, ':not([hidden])'));
-check('loader: loads each tracker once', str_contains($s, 'done[u]'));
-
-// On a funnel page the gate served, the tracker's URL carries the page's id.
+$dotTag = fn (string $origin, string $more = ''): string => '<script data-dop-track async src="' . htmlspecialchars($dotUrl($origin, $more)) . '"></script>';
 $tPid = '33333333-aaaa-4aaa-8aaa-0000000000c1';
-$sp = track_script($tPid);
-check('loader: the tracker\'s URL carries the served page\'s id, on both steps', str_contains($sp, '"presell":"' . $dotUrl('pre_lander', "&page_id=$tPid") . '"') && str_contains($sp, '"main":"' . $dotUrl('lander', "&page_id=$tPid") . '"'), $sp);
-check('loader: without an id, no page_id', !str_contains($s, 'page_id'));
-// The VSL video the response drew goes with the step that drew it (only one step is served per response).
 $tVid = '6ab84a785f99ef73c2497740';
-$sv = track_script($tPid, $tVid);
-check('loader: the drawn video goes in the tracker\'s URL', str_contains($sv, '"main":"' . $dotUrl('lander', "&page_id=$tPid&video_id=$tVid") . '"') && str_contains($sv, '"presell":"' . $dotUrl('pre_lander', "&page_id=$tPid&video_id=$tVid") . '"'), $sv);
-check('loader: no video drawn, no video_id', !str_contains($sp, 'video_id'));
 
-// Injected before the last </body>, or at the end without one.
-$html = '<html><body><section data-dop-page="p_a" data-dop-kind="main">x</section></body></html>';
-$out = track_inject($html);
-check('inject: the loader is in the page', str_contains($out, '<script data-dop-track>'));
-check('inject: before </body>', strpos($out, '<script data-dop-track>') < strpos($out, '</body>'));
-same('inject: no </body> → at the end', '<p>x</p>' . track_script(), track_inject('<p>x</p>'));
+// Which tracker each step gets.
+same('origin: Pre Lander → pre_lander, Lander → lander, a page without steps → lander, Backredirect → none', ['pre_lander', 'lander', 'lander', null], [track_origin('presell'), track_origin('main'), track_origin(null), track_origin('backredirect')]);
+same('url: the version and the step', $dotUrl('lander'), track_url('lander'));
+same('url: the served page\'s id and the drawn video', $dotUrl('pre_lander', "&page_id=$tPid&video_id=$tVid"), track_url('pre_lander', $tPid, $tVid));
+check('url: no pre_dot.js and no third-party CDN', !str_contains(track_url('pre_lander'), 'pre_dot') && !str_contains(track_url('lander'), 'cdn.'));
 
-// serve_slug end to end: a funnel page gets the loader and the ETag version; a plain page gets neither.
+// A page with a tracker of its own gets none.
+check('own tag: none on a plain page', !track_has_own_tag('<html><body><h1>Advertorial</h1></body></html>'));
+check('own tag: its own first-party dot.js tag', track_has_own_tag('<body><script src="/_dop/dot.js?origin=lander&page_id={{page_id}}"></script></body>'));
+check('own tag: the old CDN dot.js tag', track_has_own_tag('<body><script src="https://cdn.directdayone.com/js/dot.js?origin=lander&amp;v=17"></script></body>'));
+check('own tag: a pre_dot.js tag', track_has_own_tag('<body><script src="https://cdn.directdayone.com/js/pre_dot.js"></script></body>'));
+check('own tag: a relative dot.js tag', track_has_own_tag('<head><script src="dot.js"></script></head>'));
+check('own tag: another script with dot.js in its name is not a tracker', !track_has_own_tag('<body><script src="/js/polka-dot.js"></script><script src="/js/mydot.jsx"></script></body>'));
+
+// Injected right after <head> (the earliest spot); without a <head>, before </body> or at the end.
+same('inject: right after <head>', '<html><head lang="x">' . $dotTag('lander', "&page_id=$tPid&video_id=$tVid") . '<title>t</title></head><body>x</body></html>', track_inject('<html><head lang="x"><title>t</title></head><body>x</body></html>', 'lander', $tPid, $tVid));
+same('inject: no <head> → before </body>', '<body>x' . $dotTag('pre_lander') . '</body>', track_inject('<body>x</body>', 'pre_lander'));
+same('inject: neither → at the end', '<p>x</p>' . $dotTag('lander'), track_inject('<p>x</p>', 'lander'));
+
+// serve_slug: a page with steps gets the served step's tracker in the <head>, on any route; the version is in the ETag.
 $fSlug = '77777777-7777-4777-8777-777777777777';
-cache_put_content('facadea1', '<html><body><section data-dop-page="p_pre" data-dop-kind="presell">Pre</section><section data-dop-page="p_main" data-dop-kind="main" hidden>Lander</section></body></html>');
-[$status, $headers, $body] = serve_slug(['slug_id' => $fSlug, 'content_hash' => 'facadea1', 'content_type' => 'text/html', 'funnel' => true], make_request());
-same('serve funnel: 200', 200, $status);
-check('serve funnel: body carries the loader', str_contains((string) $body, '<script data-dop-track>'));
-check('serve funnel: ETag has the loader and trackers version', str_ends_with((string) $headers['ETag'], track_etag() . '"'), (string) $headers['ETag']);
-same('serve funnel: 304 keeps the version', 304, serve_slug(['slug_id' => $fSlug, 'content_hash' => 'facadea1', 'content_type' => 'text/html', 'funnel' => true], make_request(['HTTP_IF_NONE_MATCH' => $headers['ETag']]))[0]);
+cache_put_content('facadea1', '<html><head><title>F</title></head><body><section data-dop-page="p_pre" data-dop-kind="presell">Pre</section><section data-dop-page="p_main" data-dop-kind="main" hidden>Lander</section><section data-dop-page="p_br" data-dop-kind="backredirect" data-dop-trigger="back" hidden>Back</section></body></html>');
+$stepRoute = ['slug_id' => $fSlug, 'content_hash' => 'facadea1', 'content_type' => 'text/html', 'funnel' => true];
+[$status, $headers, $body] = serve_slug($stepRoute, make_request());
+same('serve steps: 200', 200, $status);
+check('serve steps, Pre Lander: dot.js as pre_lander right after <head>', str_contains((string) $body, '<head>' . $dotTag('pre_lander') . '<title>'), (string) $body);
+check('… one tracker, no loader', substr_count((string) $body, 'data-dop-track') === 1 && !str_contains((string) $body, 'dop:pageshow'));
+check('… the ETag has the tracker version', str_ends_with((string) $headers['ETag'], track_etag() . '"'), (string) $headers['ETag']);
+same('… 304 keeps it', 304, serve_slug($stepRoute, make_request(['HTTP_IF_NONE_MATCH' => $headers['ETag']]))[0]);
+[, , $body] = serve_slug($stepRoute, make_request(['HTTP_COOKIE' => 'dop_step=p_main']));
+check('serve steps, Lander: dot.js as lander', str_contains((string) $body, $dotTag('lander')) && str_contains((string) $body, 'Lander') && !str_contains((string) $body, 'pre_lander'), (string) $body);
+[, , $body] = serve_slug($stepRoute, make_request(['HTTP_COOKIE' => 'dop_step=p_br']));
+check('serve steps, Backredirect: no tracker', str_contains((string) $body, 'Back') && !str_contains((string) $body, 'data-dop-track'), (string) $body);
 
 cache_put_content('facadea2', '<html><body><h1>Plain domain page</h1></body></html>');
 [, $ph, $pbody] = serve_slug(['slug_id' => $fSlug, 'content_hash' => 'facadea2', 'content_type' => 'text/html', 'funnel' => false], make_request());
-check('serve plain page: no loader', !str_contains((string) $pbody, 'data-dop-track'));
+check('serve plain page: no tracker', !str_contains((string) $pbody, 'data-dop-track'));
 check('serve plain page: ETag without the tracker version', !str_contains((string) $ph['ETag'], TRACK_ETAG), (string) $ph['ETag']);
 
-// A funnel served by the gate carries BOTH the load notice (beacon) and the tracker loader.
-[, $bh, $both] = serve_slug(['slug_id' => $fSlug, 'content_hash' => 'facadea1', 'content_type' => 'text/html', 'funnel' => true, 'match_type' => 'GATE', 'page_id' => $tPid], make_request());
-check('gate funnel: beacon notice and tracker loader together', str_contains((string) $both, 'data-dop-beacon') && str_contains((string) $both, 'data-dop-track'));
-check('gate funnel: the loader carries the page id, and so does the ETag', str_contains((string) $both, "&page_id=$tPid") && str_contains((string) $bh['ETag'], '-i' . substr($tPid, 0, 8)), (string) $bh['ETag']);
+// A funnel served by the gate carries BOTH the load notice (beacon) and the tracker, with the page id.
+[, $bh, $both] = serve_slug(['match_type' => 'GATE', 'page_id' => $tPid] + $stepRoute, make_request());
+check('gate funnel: beacon notice and tracker together', str_contains((string) $both, 'data-dop-beacon') && str_contains((string) $both, $dotTag('pre_lander', "&page_id=$tPid")), (string) $both);
+check('gate funnel: the ETag has the page id', str_contains((string) $bh['ETag'], '-i' . substr($tPid, 0, 8)), (string) $bh['ETag']);
 check('funnel page outside the gate: no id', !str_contains((string) $body, 'page_id'));
 
-// A funnel page whose Lander step drew a VSL video: dot.js's URL carries it (the same video the player got).
+// A funnel page whose Lander drew a VSL video: dot.js's URL carries it (the same video the player got).
 $tv1 = 'aaaaaaaaaaaaaaaaaaaaaaa1';
 $tvPlayer = '<div id="p1" data-video-provider="vturb" data-vturb-id="bbbbbbbbbbbbbbbbbbbbbbb2" data-vturb-kind="ab-test"></div>';
-cache_put_content('facadea3', '<html><body><section data-dop-page="p_main" data-dop-kind="main">' . $tvPlayer . '</section></body></html>');
-[, $vh, $vbody] = serve_slug(['slug_id' => $fSlug, 'content_hash' => 'facadea3', 'content_type' => 'text/html', 'funnel' => true, 'match_type' => 'GATE', 'page_id' => $tPid, 'vsl' => [['id' => $tv1, 'weight' => 100]]], make_request());
-check('gate funnel with a drawn video: the player and dot.js get the same video', str_contains((string) $vbody, "data-vturb-id=\"$tv1\"") && str_contains((string) $vbody, $dotUrl('lander', "&page_id=$tPid&video_id=$tv1")), (string) $vbody);
+cache_put_content('facadea3', '<html><head></head><body><section data-dop-page="p_main" data-dop-kind="main">' . $tvPlayer . '</section></body></html>');
+[, $vh, $vbody] = serve_slug(['content_hash' => 'facadea3', 'match_type' => 'GATE', 'page_id' => $tPid, 'vsl' => [['id' => $tv1, 'weight' => 100]]] + $stepRoute, make_request());
+check('gate funnel with a drawn video: the player and dot.js get the same video', str_contains((string) $vbody, "data-vturb-id=\"$tv1\"") && str_contains((string) $vbody, $dotTag('lander', "&page_id=$tPid&video_id=$tv1")), (string) $vbody);
 check('… and the video is in the ETag', str_contains((string) $vh['ETag'], "-v$tv1"), (string) $vh['ETag']);
 
-// ── A funnel page without steps is all Lander: dot.js, unless it has a tracker of its own ──
-check('lander: a page without steps needs dot.js', track_needs_lander('<html><body><h1>Advertorial</h1></body></html>'));
-check('lander: not a page with steps (the loader does it)', !track_needs_lander('<section data-dop-page="p_a" data-dop-kind="main">x</section>'));
-check('lander: not with its own first-party dot.js tag', !track_needs_lander('<body><script src="/_dop/dot.js?origin=lander&page_id={{page_id}}"></script></body>'));
-check('lander: not with the old CDN dot.js tag', !track_needs_lander('<body><script src="https://cdn.directdayone.com/js/dot.js?origin=lander&amp;v=17"></script></body>'));
-check('lander: not with its own pre_dot.js tag', !track_needs_lander('<body><script src="https://cdn.directdayone.com/js/pre_dot.js"></script></body>'));
-check('lander: not with a relative dot.js tag', !track_needs_lander('<head><script src="dot.js"></script></head>'));
-check('lander: another script with dot.js in its name is not a tracker', track_needs_lander('<body><script src="/js/polka-dot.js"></script><script src="/js/mydot.jsx"></script></body>'));
-$lTag = '<script data-dop-track async src="' . htmlspecialchars($dotUrl('lander', "&page_id=$tPid&video_id=$tVid")) . '"></script>';
-same('lander inject: dot.js as lander, with the page id and the video, before </body>', "<body><h1>x</h1>$lTag</body>", track_inject_lander('<body><h1>x</h1></body>', $tPid, $tVid));
-same('lander inject: no </body> → at the end', '<p>x</p><script data-dop-track async src="' . htmlspecialchars($dotUrl('lander')) . '"></script>', track_inject_lander('<p>x</p>'));
-
-// serve_slug: the gate's funnel page without steps gets dot.js (never pre_dot.js, no loader); the version is in the ETag.
-cache_put_content('facadea4', '<html><body><h1>Advertorial</h1></body></html>');
+// ── A funnel page without steps is all Lander: dot.js when the gate serves it, unless it has a tracker of its own ──
+cache_put_content('facadea4', '<html><head><title>A</title></head><body><h1>Advertorial</h1></body></html>');
 $lRoute = ['slug_id' => $fSlug, 'content_hash' => 'facadea4', 'content_type' => 'text/html', 'funnel' => false, 'match_type' => 'GATE', 'page_id' => $tPid];
 [$ls, $lh, $lbody] = serve_slug($lRoute, make_request());
 same('gate page without steps: 200', 200, $ls);
-check('gate page without steps: dot.js as lander, with the page id', str_contains((string) $lbody, '<script data-dop-track async src="' . htmlspecialchars($dotUrl('lander', "&page_id=$tPid")) . '"></script></body>'), (string) $lbody);
-check('… no pre_lander and no loader', !str_contains((string) $lbody, 'pre_lander') && !str_contains((string) $lbody, 'dop:pageshow'));
-check('… the ETag has the trackers version', str_ends_with((string) $lh['ETag'], track_etag() . '"'), (string) $lh['ETag']);
+check('gate page without steps: dot.js as lander in the <head>, with the page id', str_contains((string) $lbody, '<head>' . $dotTag('lander', "&page_id=$tPid") . '<title>'), (string) $lbody);
+check('… no pre_lander', !str_contains((string) $lbody, 'pre_lander'));
+check('… the ETag has the tracker version', str_ends_with((string) $lh['ETag'], track_etag() . '"'), (string) $lh['ETag']);
 same('… 304 keeps it (the shortcut for pages without steps has the same ETag)', [304, $lh['ETag']], (function () use ($lRoute, $lh) {
     [$st, $hd] = serve_slug($lRoute, make_request(['HTTP_IF_NONE_MATCH' => $lh['ETag']]));
     return [$st, $hd['ETag']];
 })());
-same('… an ETag from before (no trackers version) → 200 with dot.js', 200, serve_slug($lRoute, make_request(['HTTP_IF_NONE_MATCH' => str_replace(track_etag(), '', (string) $lh['ETag'])]))[0]);
+same('… an ETag from before (no tracker version) → 200 with dot.js', 200, serve_slug($lRoute, make_request(['HTTP_IF_NONE_MATCH' => str_replace(track_etag(), '', (string) $lh['ETag'])]))[0]);
 
 // With a drawn VSL video ({{video_id}} in the page), dot.js gets it too.
-cache_put_content('facadea5', '<html><body><vturb-smartplayer id="vid-{{video_id}}"></vturb-smartplayer></body></html>');
+cache_put_content('facadea5', '<html><head></head><body><vturb-smartplayer id="vid-{{video_id}}"></vturb-smartplayer></body></html>');
 [, , $lvbody] = serve_slug(['content_hash' => 'facadea5', 'vsl' => [['id' => $tv1, 'weight' => 100]]] + $lRoute, make_request());
-check('gate page without steps, drawn video: the player and dot.js get it', str_contains((string) $lvbody, "id=\"vid-$tv1\"") && str_contains((string) $lvbody, "&amp;page_id=$tPid&amp;video_id=$tv1\"></script>"), (string) $lvbody);
+check('gate page without steps, drawn video: the player and dot.js get it', str_contains((string) $lvbody, "id=\"vid-$tv1\"") && str_contains((string) $lvbody, $dotTag('lander', "&page_id=$tPid&video_id=$tv1")), (string) $lvbody);
 
-// A page that already has its own tracker tag keeps just that one.
+// A page that already has its own tracker tag keeps just that one (with steps too).
 cache_put_content('facadea6', '<html><body><h1>VSL</h1><script src="/_dop/dot.js?origin=lander&page_id={{page_id}}"></script></body></html>');
 [, , $obody] = serve_slug(['content_hash' => 'facadea6'] + $lRoute, make_request());
 same('gate page with its own dot.js tag: no second one', 1, substr_count((string) $obody, '/_dop/dot.js'));
 check('… and its own tag gets the page id', str_contains((string) $obody, "/_dop/dot.js?origin=lander&page_id=$tPid"), (string) $obody);
+cache_put_content('facadea7', '<html><head><script src="https://cdn.directdayone.com/js/dot.js?origin=lander"></script></head><body><section data-dop-page="p_pre" data-dop-kind="presell">Pre</section><section data-dop-page="p_main" data-dop-kind="main" hidden>L</section></body></html>');
+[, , $obody] = serve_slug(['content_hash' => 'facadea7', 'funnel' => true] + $lRoute, make_request());
+check('page with steps and its own tag: no second tracker', !str_contains((string) $obody, 'data-dop-track'), (string) $obody);
 
-// The safe page (GATE-SAFE) and a page outside the gate: no tracker.
+// The safe page (GATE-SAFE): no tracker.
 [, $sh, $sbody] = serve_slug(['match_type' => 'GATE-SAFE'] + $lRoute, make_request());
-check('safe page: no dot.js, no trackers version in the ETag', !str_contains((string) $sbody, 'dot.js') && !str_contains((string) $sh['ETag'], TRACK_ETAG), (string) $sh['ETag']);
+check('safe page: no dot.js, no tracker version in the ETag', !str_contains((string) $sbody, 'dot.js') && !str_contains((string) $sh['ETag'], TRACK_ETAG), (string) $sh['ETag']);
 
 // ── The tracker itself, served on the funnel's domain ──
 [$st, $hd, $bd] = handle_tracker(make_request(['REQUEST_URI' => "/_dop/dot.js?v=$dotV"]));
@@ -120,3 +108,17 @@ check('dot.js takes video_id from its own URL first (?video_id=, 24 hex), then t
 check('dot.js takes page_id from its own URL first (?page_id=, a uuid), then the cookie', str_contains(TRACKER_DOT_JS, "mySrc.match(/[?&]page_id=([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:[&#]|$)/)") && str_contains(TRACKER_DOT_JS, 'if (pageId) payload.page_id = pageId;'));
 check('dot.js: lander page_view at once; pre_lander page_view on load (10 s cap, pagehide net), one send', str_contains(TRACKER_DOT_JS, "if (origin !== 'pre_lander' || document.readyState === 'complete')") && str_contains(TRACKER_DOT_JS, "window.addEventListener('load', sendPageView, { once: true });") && str_contains(TRACKER_DOT_JS, 'setTimeout(sendPageView, LOAD_TIMEOUT)') && str_contains(TRACKER_DOT_JS, "window.addEventListener('pagehide', sendPageView, { once: true });") && str_contains(TRACKER_DOT_JS, 'if (pageViewSent) return;'));
 check('dot.js: video events on whichever step drew the video', str_contains(TRACKER_DOT_JS, "  if (videoId) {\n    var videoBound = false;") && !str_contains(TRACKER_DOT_JS, "origin === 'lander' && videoId"));
+// The VSL marks VTurb counts, one per number.
+check('dot.js: video_click from the player\'s call to action (VTurb analytics:exited-click) and checkout links, as a beacon, never holding the navigation', str_contains(TRACKER_DOT_JS, "document.addEventListener('analytics:exited-click', fireClick);") && str_contains(TRACKER_DOT_JS, "sendSync(buildPayload('video_click'") && !str_contains(TRACKER_DOT_JS, 'preventDefault'));
+check('dot.js: video_end on VTurb\'s video:ended, with the last second watched', str_contains(TRACKER_DOT_JS, "el.addEventListener('video:ended'") && str_contains(TRACKER_DOT_JS, "sendEvent('video_end'"));
+check('dot.js: video_pitch from VTurb\'s pitch:time; the config fallback never in the muted smart autoplay', str_contains(TRACKER_DOT_JS, "el.addEventListener('pitch:time'") && str_contains(TRACKER_DOT_JS, '!el.inSmartAutoPlay'));
+check('dot.js: binds a player that was already ready (VTurb\'s window.smartplayer.instances, or the element)', str_contains(TRACKER_DOT_JS, 'bindOnce(readyPlayer());') && str_contains(TRACKER_DOT_JS, 'sp.instances[0].instance'));
+// ext_click_id: the same list and order as the server's click event.
+preg_match("/var CLICK_ID_PARAMS = \\[(.*?)\\];/s", TRACKER_DOT_JS, $cm);
+same('dot.js: CLICK_ID_PARAMS is the server\'s list, in the same order (dot.php)', CLICK_ID_PARAMS, array_map(fn ($x) => trim($x, " '\n"), explode(',', $cm[1] ?? '')));
+check('dot.js: the click id goes in every event as ext_click_id', str_contains(TRACKER_DOT_JS, 'attrs.ext_click_id = lower[CLICK_ID_PARAMS[i]];'));
+// Nothing is lost: the outbox keeps every event until dot confirms it.
+check('dot.js outbox: every event is kept in localStorage until dot confirms it', str_contains(TRACKER_DOT_JS, "var OUTBOX_KEY = 'dot_outbox';") && str_contains(TRACKER_DOT_JS, 'outboxAdd(item);') && str_contains(TRACKER_DOT_JS, 'outboxRemove(item.id);'));
+check('dot.js outbox: 5xx/429 and no answer retry (2s, 4s… every minute, 15 minutes); another 4xx is dropped', str_contains(TRACKER_DOT_JS, 'if (res.status >= 500 || res.status === 429) throw new Error(res.status);') && str_contains(TRACKER_DOT_JS, 'Math.min(60000, 2000 * Math.pow(2, attempt - 1))') && str_contains(TRACKER_DOT_JS, 'var RETRY_WINDOW = 900000;'));
+check('dot.js outbox: the next page sends what is left (for a day), late events with _delay_ms', str_contains(TRACKER_DOT_JS, 'flushOutbox();') && str_contains(TRACKER_DOT_JS, 'var OUTBOX_MAX_AGE = 86400000;') && str_contains(TRACKER_DOT_JS, 'p._delay_ms = late;'));
+check('dot.js outbox: only the latest pending video_watch of a video is kept', str_contains(TRACKER_DOT_JS, "p.event === 'video_watch' && x.p && x.p.event === 'video_watch'"));

@@ -130,6 +130,10 @@ function dayone_handle(): void
 
     // A click with a platform click id (fbclid, gclid, ttclid…) goes to dayone-main's tracker (dot.php).
     dot_click($req, $learned + ['domain_id' => $domainId, 'outcome' => $outcome, 'status' => $status, 'route' => $route, 'visit_id' => $visitId]);
+    // Clicks dot didn't take earlier go again (at most once a minute, one process).
+    if (config()['dot_clicks']) {
+        dot_spool_replay();
+    }
 
     if ($resolved['refresh']) {
         // SWR: refresh the cache with nobody waiting.
