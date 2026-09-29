@@ -20,7 +20,10 @@
  * The www entry redirect isn't sent: the same click comes right back on the
  * bare domain and is sent then. Nor is a prefetch (request_is_prefetch): the
  * page loaded ahead of a click is not a click. Nobody waits: it runs after the response,
- * with a short timeout, and a failure only goes to the log. DOT_CLICKS=0
+ * with a timeout above dot's own (DOT_TIMEOUT, 8 s: dot gives its database
+ * write up to 3.5 s, and a slow answer is still a queued click); a click dot
+ * didn't queue (no answer, or a 5xx) is sent again 1 s and 4 s later
+ * (DOT_TRY_WAITS), and only one that still failed goes to the log. DOT_CLICKS=0
  * turns it off (tests and local runs must never feed the real tracker).
  */
 declare(strict_types=1);
@@ -178,7 +181,59 @@ function dot_click_payload(Request $req, array $ctx, array $server): ?array
     return array_filter($payload, static fn ($v) => $v !== null);
 }
 
-/** Sends this request's click to dot (after the response). Only the log hears about a failure. */
+/**
+ * Seconds to wait before each try. A click dot didn't queue gets two more tries,
+ * 1 s and then 4 s later: the database blips seen so far (PGRST002 while the
+ * schema cache reloads) lasted up to 5 s.
+ */
+const DOT_TRY_WAITS = [0, 1, 4];
+
+/**
+ * What one try's answer means: ['ok' => dot queued the click, 'retry' => worth
+ * another try, 'why' => for the log]. Worth another try: no answer (curl gave
+ * up — the timeout, a connection error) or a 5xx (dot's 503: its own write to
+ * the database failed, "Retry-After: 1"). A 4xx, or a 200 with success false
+ * (dot couldn't read the body), won't get better by sending it again.
+ */
+function dot_outcome(int $status, string|false $raw, string $curlError = ''): array
+{
+    if ($raw !== false && $status === 200 && (json_decode($raw, true)['success'] ?? false) === true) {
+        return ['ok' => true, 'retry' => false, 'why' => ''];
+    }
+    if ($raw === false || $status === 0) {
+        return ['ok' => false, 'retry' => true, 'why' => 'HTTP 0: ' . ($curlError !== '' ? $curlError : 'no answer')];
+    }
+    return ['ok' => false, 'retry' => $status >= 500, 'why' => "HTTP $status: " . mb_substr(preg_replace('/\s+/', ' ', $raw) ?? '', 0, 200)];
+}
+
+/**
+ * Sends the click with $try() (one POST → dot_outcome()), trying again after
+ * DOT_TRY_WAITS while it's worth it. A try that timed out may still have been
+ * queued, so a click can reach dot twice — harmless: dot keeps only the first
+ * click event of a click id. Null once dot queued it, else ['tries', 'why'] of
+ * the last failure.
+ */
+function dot_deliver(callable $try, ?callable $sleep = null): ?array
+{
+    $sleep ??= static fn (int $seconds) => sleep($seconds);
+    $tries = 0;
+    foreach (DOT_TRY_WAITS as $wait) {
+        if ($wait > 0) {
+            $sleep($wait);
+        }
+        $tries++;
+        $r = $try();
+        if ($r['ok']) {
+            return null;
+        }
+        if (!$r['retry']) {
+            break;
+        }
+    }
+    return ['tries' => $tries, 'why' => $r['why']];
+}
+
+/** Sends this request's click to dot (after the response). Only a click that still failed after the tries goes to the log. */
 function dot_click(Request $req, array $ctx, ?array $server = null): void
 {
     $cfg = config();
@@ -193,6 +248,7 @@ function dot_click(Request $req, array $ctx, ?array $server = null): void
     if ($body === false) {
         return;
     }
+    // One handle for every try: a retry reuses the open connection.
     $ch = curl_init($cfg['dot_url']);
     curl_setopt_array($ch, [
         CURLOPT_POST => true,
@@ -202,10 +258,11 @@ function dot_click(Request $req, array $ctx, ?array $server = null): void
         CURLOPT_TIMEOUT => max(2, (int) $cfg['dot_timeout']),
         CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'User-Agent: dayone-pages/dot'],
     ]);
-    $raw = curl_exec($ch);
-    $status = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
-    $ok = $raw !== false && $status === 200 && (json_decode((string) $raw, true)['success'] ?? false) === true;
-    if (!$ok) {
-        error_log('[dayone-pages] dot click failed (HTTP ' . $status . '): ' . mb_substr(preg_replace('/\s+/', ' ', (string) $raw) ?? '', 0, 200));
+    $failed = dot_deliver(static function () use ($ch): array {
+        $raw = curl_exec($ch);
+        return dot_outcome((int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE), is_string($raw) ? $raw : false, curl_error($ch));
+    });
+    if ($failed !== null) {
+        error_log('[dayone-pages] dot click failed after ' . $failed['tries'] . ' tries (' . $failed['why'] . ')');
     }
 }

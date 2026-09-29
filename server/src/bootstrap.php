@@ -102,7 +102,7 @@ function config(): array
         // Click events for dayone-main's tracker (dot.php): every page request with a platform click id.
         'dot_clicks'        => $int('DOT_CLICKS', 1) === 1,
         'dot_url'           => (string) $get('DOT_URL', 'https://cdn.dayone.click/functions/v1/dot'),
-        'dot_timeout'       => $int('DOT_TIMEOUT', 4),
+        'dot_timeout'       => $int('DOT_TIMEOUT', 8),
         'sub0_key'          => (string) $get('SUB0_KEY', 'DAYONE'),
     ];
     return $config;

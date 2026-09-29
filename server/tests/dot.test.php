@@ -65,3 +65,31 @@ check('a malformed dotid is dropped (dot makes one)', !array_key_exists('dotid',
 same('http when Cloudflare says the visitor came by http', 'http://shop.example/?fbclid=x', dot_click_payload($dotReq('/?fbclid=x'), [], ['HTTP_CF_VISITOR' => '{"scheme":"http"}'])['url']);
 check('config: on by default, the real endpoint', config()['dot_url'] === 'https://cdn.dayone.click/functions/v1/dot');
 check('the tests run with DOT_CLICKS=0 (never the real tracker)', config()['dot_clicks'] === false);
+check('config: the timeout is above dot\'s own 3.5 s for its database write', config()['dot_timeout'] === 8);
+
+// What dot's answer means: queued, worth another try (no answer, a 5xx), or a failure that won't get better.
+same('200 + success: queued', ['ok' => true, 'retry' => false, 'why' => ''], dot_outcome(200, '{"success":true,"queued":true,"msg_id":1}'));
+same('no answer (curl gave up): try again, with curl\'s reason', ['ok' => false, 'retry' => true, 'why' => 'HTTP 0: Operation timed out after 8001 milliseconds'], dot_outcome(0, false, 'Operation timed out after 8001 milliseconds'));
+same('dot\'s 503 (its database write failed): try again', [false, true], array_values(array_slice(dot_outcome(503, "{\"success\":false,\n\"stage\":\"dot_checkpoint\"}"), 0, 2)));
+same('the answer goes to the log on one line, cut at 200 characters', 'HTTP 503: {"success":false, "stage":"dot_checkpoint"}', dot_outcome(503, "{\"success\":false,\n\"stage\":\"dot_checkpoint\"}")['why']);
+check('a gateway 502/504: try again', dot_outcome(502, '<html>Bad Gateway</html>')['retry'] && dot_outcome(504, '')['retry']);
+check('a 4xx: not again', dot_outcome(400, 'bad')['retry'] === false);
+check('200 with success false (dot couldn\'t read it): not again', dot_outcome(200, '{"success":false,"stage":"parse"}') === ['ok' => false, 'retry' => false, 'why' => 'HTTP 200: {"success":false,"stage":"parse"}']);
+check('200 that isn\'t JSON: not queued', dot_outcome(200, '<html>')['ok'] === false);
+
+// dot_deliver: a click dot didn't queue is sent again 1 s and 4 s later; only the last failure is reported.
+$dotWaits = [];
+$dotSleep = static function (int $s) use (&$dotWaits) { $dotWaits[] = $s; };
+$dotAnswers = static function (array $answers) {
+    return static function () use (&$answers) { return array_shift($answers); };
+};
+$busy = ['ok' => false, 'retry' => true, 'why' => 'HTTP 503: busy'];
+$queued = ['ok' => true, 'retry' => false, 'why' => ''];
+same('queued at once: nothing to report, no wait', [null, []], [dot_deliver($dotAnswers([$queued]), $dotSleep), $dotWaits]);
+same('queued on the 2nd try: nothing to report, waited 1 s', [null, [1]], [dot_deliver($dotAnswers([$busy, $queued]), $dotSleep), $dotWaits]);
+$dotWaits = [];
+same('never queued: gives up after 3 tries (1 s, 4 s) and reports the last', [['tries' => 3, 'why' => 'HTTP 0: timeout'], [1, 4]],
+    [dot_deliver($dotAnswers([$busy, $busy, ['ok' => false, 'retry' => true, 'why' => 'HTTP 0: timeout']]), $dotSleep), $dotWaits]);
+$dotWaits = [];
+same('a failure that won\'t get better: reported at once, no retry', [['tries' => 1, 'why' => 'HTTP 400: bad'], []],
+    [dot_deliver($dotAnswers([['ok' => false, 'retry' => false, 'why' => 'HTTP 400: bad'], $queued]), $dotSleep), $dotWaits]);
