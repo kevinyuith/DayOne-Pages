@@ -12,6 +12,7 @@ import { languagesFromHeader } from "@/lib/accept-language";
 import { platformLabel } from "@/lib/pages/dashboard-filters";
 import { HIT_FILTER_OPTIONS, hitFilterParams, parseHitFilters } from "@/lib/pages/hit-filters";
 import { connectionType } from "@/lib/connection";
+import { deviceModel } from "@/lib/device-model";
 import { browserFromUA, osFromUA } from "@/lib/user-agent";
 import { normalizeHost } from "@/lib/pages/normalize";
 import { FUNNEL_DECISIONS, hitPlatforms, listDomains, listHits, unregisteredHosts, type HitLogRow } from "@/lib/pages/queries";
@@ -118,7 +119,7 @@ export default async function LogsPage({
           description="Requests show up here as the delivery server logs them."
         />
       ) : (
-        <Table className="min-w-[3800px] [&_td]:px-6 [&_td]:py-3 [&_th]:whitespace-nowrap [&_th]:px-6 [&_th]:py-3">
+        <Table className="min-w-[3960px] [&_td]:px-6 [&_td]:py-3 [&_th]:whitespace-nowrap [&_th]:px-6 [&_th]:py-3">
           <thead>
             <tr>
               <Th>Date</Th>
@@ -144,6 +145,9 @@ export default async function LogsPage({
               <Th>State</Th>
               <Th>Language</Th>
               <Th>Device</Th>
+              <Th title="From the User-Agent (Facebook's and Instagram's apps name the iPhone, Android names the model; Chrome hides it, so the funnel page asks the browser). ~ = an iPhone estimated from its screen size.">
+                Model
+              </Th>
               <Th>Browser</Th>
               <Th title="From the User-Agent. macOS, Windows 11 and Chrome on Android hide the real version, so only the name shows.">OS</Th>
               <Th>Referrer</Th>
@@ -269,6 +273,9 @@ export default async function LogsPage({
                     <Languages header={h.accept_language} />
                   </Td>
                   <Td className="text-muted">{h.device || "—"}</Td>
+                  <Td className="min-w-[140px] max-w-[240px]">
+                    <Model hit={h} />
+                  </Td>
                   <Td className="whitespace-nowrap text-muted">{browserFromUA(h.user_agent) ?? "—"}</Td>
                   <Td className="whitespace-nowrap text-muted">{osFromUA(h.user_agent) ?? "—"}</Td>
                   <Td className="max-w-[180px] break-all text-muted">{h.referrer_host || "—"}</Td>
@@ -480,6 +487,18 @@ function Signals({ hit }: { hit: HitLogRow }) {
           {traj.map((k) => `${k} ${sigNum(s, k)}`).join(" · ")}
         </span>
       ) : null}
+    </span>
+  );
+}
+
+/** The phone's model (device-model.ts): the name, with the code the device sent under it; an estimate is muted, with a ~. */
+function Model({ hit }: { hit: HitLogRow }) {
+  const m = deviceModel(hit.user_agent, hit.signals);
+  if (!m) return <span className="text-muted">—</span>;
+  return (
+    <span className="flex flex-col items-start" title={m.estimated ? `Estimated from the screen size (${m.code}). Display Zoom makes a bigger iPhone read as a smaller one.` : undefined}>
+      <span className={m.estimated ? "text-xs text-muted" : "text-xs font-medium"}>{m.estimated ? `~${m.name}` : m.name}</span>
+      {m.code && !m.estimated ? <span className="font-mono text-[11px] text-muted">{m.code}</span> : null}
     </span>
   );
 }

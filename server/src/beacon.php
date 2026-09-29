@@ -11,9 +11,11 @@
  *      with the time since navigation start, plus "sg=<json>": the device's
  *      capability signals (webdriver, platform, touch points, cores, memory,
  *      languages/plugins, screen/viewport, pointer/hover media, chrome,
- *      userAgentData, cookies). On the first real interaction (the mouse moved
- *      or pressed, a wheel scroll, a touch or a key; events the browser made,
- *      not a script) it sends "i=<kind>&t=<ms>". On the first click that
+ *      userAgentData and the phone's model — a client hint, since Chrome on
+ *      Android hides it from the User-Agent —, cookies). On the first real
+ *      interaction (the mouse moved or pressed, a wheel scroll, a touch or a
+ *      key; events the browser made, not a script) it sends
+ *      "i=<kind>&t=<ms>". On the first click that
  *      leaves the page (a link or data-href that navigates; "#…" doesn't
  *      count), it sends "c=1". Every time the page is hidden or left
  *      (visibilitychange → hidden, pagehide) it sends "d=<ms>" (how long it
@@ -54,7 +56,7 @@ defined('DAYONE_ENTRY') || (http_response_code(404) && exit);
 const BEACON_PATH = '/_dop/l';
 const BEACON_COOKIE = 'dop_v';
 /** ETag suffix of pages with the script. Changed the script, bump the version. */
-const BEACON_ETAG = '-b6';
+const BEACON_ETAG = '-b7';
 /** The longest time on a page that is taken (4 hours). */
 const BEACON_MAX_DURATION_MS = 14400000;
 /** The kinds of the first interaction ("i=<kind>"), as pages.hits.interaction takes them. */
@@ -68,6 +70,10 @@ const BEACON_SCRIPT = '<script data-dop-beacon>(function(){var v=(document.cooki
     . 'vw:innerWidth|0,vh:innerHeight|0,ptr:M("(pointer:fine)")?"fine":M("(pointer:coarse)")?"coarse":"none",hvr:M("(hover:hover)")?1:0,'
     . 'chr:window.chrome?1:0,cke:N.cookieEnabled?1:0};'
     . 'if(U.mobile!==undefined)S.mob=U.mobile?1:0;if(U.platform)S.upf=(""+U.platform).slice(0,32);'
+    // The phone's model (mdl): Chrome on Android freezes it to "K" in the
+    // User-Agent, but gives it to the page as a client hint (async). Asked now,
+    // it's in S by the load event; if it comes later, it goes on its own.
+    . 'var _sd=false;try{U.getHighEntropyValues&&U.getHighEntropyValues(["model"]).then(function(h){var m=(""+(h&&h.model||"")).slice(0,40);if(!m)return;S.mdl=m;if(_sd)b(enc({mdl:m}))},function(){})}catch(e){}'
     // The heavier tells run INSIDE s() — on the load event, after the page is
     // painted — so nothing here delays what the visitor sees: the primary language
     // (empty is a hint, with nl/np), automation artifacts (chromedriver cdc_,
@@ -76,7 +82,7 @@ const BEACON_SCRIPT = '<script data-dop-beacon>(function(){var v=(document.cooki
     . 'function s(){S.lng=(""+(N.language||"")).slice(0,12);'
     . 'try{var _w=window,_a=0;if(_w.__playwright||_w.__puppeteer||_w.__pw_manual||_w._phantom||_w.callPhantom||_w.__nightmare||_w.domAutomation||_w.domAutomationController||_w.Cypress)_a++;if(document.$cdc_asdjflasutopfhvcZLmcfl_||document.__webdriver_evaluate||document.__selenium_unwrapped||document.__fxdriver_evaluate||document.__driver_evaluate)_a++;for(var _k in _w){if(_k.indexOf("cdc_")===0||_k.indexOf("$cdc_")===0){_a++;break}}S.aut=_a}catch(e){}'
     . 'try{var _cv=document.createElement("canvas"),_g=_cv.getContext("webgl")||_cv.getContext("experimental-webgl");if(_g){var _di=_g.getExtension("WEBGL_debug_renderer_info"),_r=""+(_di?_g.getParameter(_di.UNMASKED_RENDERER_WEBGL):_g.getParameter(_g.RENDERER));S.gl=_r.slice(0,60);S.glsw=/swiftshader|llvmpipe|softpipe|software|basic render|mesa|angle \\(google/i.test(_r)?1:0}else S.glsw=1}catch(e){}'
-    . 'b("t="+Math.round(performance.now()));b(enc(S))}if(document.readyState==="complete")s();else addEventListener("load",s,{once:true});'
+    . 'b("t="+Math.round(performance.now()));b(enc(S));_sd=true}if(document.readyState==="complete")s();else addEventListener("load",s,{once:true});'
     . 'var K={mm:0,md:0,wh:0,sc:0,ts:0,ky:0,ck:0},c=false;addEventListener("click",function(e){if(e.isTrusted&&K.ck<999)K.ck++;if(c)return;var t=e.target,a=t&&t.closest&&t.closest("a[href],[data-href]");if(!a)return;'
     . 'var h=a.getAttribute("data-href")||a.getAttribute("href")||"";if(!h||h.charAt(0)==="#"||h.indexOf("javascript:")===0)return;c=true;b("c=1")},true);'
     // Mouse trajectory, not just the move count: str = how straight the path is

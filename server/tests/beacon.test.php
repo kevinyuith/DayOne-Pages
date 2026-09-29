@@ -93,6 +93,7 @@ check('script: counts the session events', str_contains(BEACON_SCRIPT, 'K={mm:0,
 check('script: sends the signals json url-encoded', str_contains(BEACON_SCRIPT, '"sg="+encodeURIComponent(JSON.stringify('));
 // Headless/automation tells and mouse trajectory (bot-vs-human).
 check('script: collects automation and WebGL tells', str_contains(BEACON_SCRIPT, 'S.aut=') && str_contains(BEACON_SCRIPT, 'cdc_') && str_contains(BEACON_SCRIPT, 'WEBGL_debug_renderer_info') && str_contains(BEACON_SCRIPT, 'S.glsw='));
+check('script: asks for the phone\'s model (client hint) and sends it even when it comes after the load', str_contains(BEACON_SCRIPT, 'getHighEntropyValues(["model"])') && str_contains(BEACON_SCRIPT, 'S.mdl=m') && str_contains(BEACON_SCRIPT, 'if(_sd)b(enc({mdl:m}))') && str_contains(BEACON_SCRIPT, 'b(enc(S));_sd=true'));
 check('script: measures the mouse trajectory (straightness, turns, teleports)', str_contains(BEACON_SCRIPT, 'K.str=') && str_contains(BEACON_SCRIPT, 'K.dc=') && str_contains(BEACON_SCRIPT, 'K.tp='));
 same('beacon_parse_signals: keeps the new keys (aut, gl, glsw, lng, tp, dc, str)',
     ['aut' => 2, 'gl' => 'Google SwiftShader', 'glsw' => 1, 'lng' => 'en-US', 'tp' => 0, 'dc' => 1, 'str' => 98],

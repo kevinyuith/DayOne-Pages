@@ -775,7 +775,7 @@ export type HitLogRow = HitRow & {
   interaction_ms: number | null;
   /**
    * Device/behavior signals the beacon collected on the funnel page (informational only):
-   * capabilities at load (wd, pl, mtp, hc, dm, nl, np, sw/sh/dpr, vw/vh, ptr, hvr, chr, mob, upf, cke)
+   * capabilities at load (wd, pl, mtp, hc, dm, nl, np, sw/sh/dpr, vw/vh, ptr, hvr, chr, mob, upf, mdl, cke)
    * and session counts when hidden/left (mm, md, wh, sc, ts, ky, ck).
    */
   signals: Record<string, number | string | boolean> | null;
