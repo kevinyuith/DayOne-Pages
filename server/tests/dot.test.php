@@ -65,7 +65,7 @@ check('a malformed dotid is dropped (dot makes one)', !array_key_exists('dotid',
 same('http when Cloudflare says the visitor came by http', 'http://shop.example/?fbclid=x', dot_click_payload($dotReq('/?fbclid=x'), [], ['HTTP_CF_VISITOR' => '{"scheme":"http"}'])['url']);
 check('config: on by default, the real endpoint', config()['dot_url'] === 'https://cdn.dayone.click/functions/v1/dot');
 check('the tests run with DOT_CLICKS=0 (never the real tracker)', config()['dot_clicks'] === false);
-check('config: the timeout is above dot\'s own 3.5 s for its database write', config()['dot_timeout'] === 8);
+check('config: the timeout is above dot\'s own 4 s for its database write', config()['dot_timeout'] === 8);
 
 // What dot's answer means: queued, worth another try (no answer, a 5xx), or a failure that won't get better.
 same('200 + success: queued', ['ok' => true, 'retry' => false, 'why' => ''], dot_outcome(200, '{"success":true,"queued":true,"msg_id":1}'));

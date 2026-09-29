@@ -21,7 +21,7 @@
  * bare domain and is sent then. Nor is a prefetch (request_is_prefetch): the
  * page loaded ahead of a click is not a click. Nobody waits: it runs after the response,
  * with a timeout above dot's own (DOT_TIMEOUT, 8 s: dot gives its database
- * write up to 3.5 s, and a slow answer is still a queued click); a click dot
+ * write up to 4 s, and a slow answer is still a queued click); a click dot
  * didn't queue (no answer, or a 5xx) is sent again 1 s and 4 s later
  * (DOT_TRY_WAITS), and only one that still failed goes to the log. DOT_CLICKS=0
  * turns it off (tests and local runs must never feed the real tracker).
