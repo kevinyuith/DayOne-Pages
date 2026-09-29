@@ -54,7 +54,7 @@ defined('DAYONE_ENTRY') || (http_response_code(404) && exit);
 const BEACON_PATH = '/_dop/l';
 const BEACON_COOKIE = 'dop_v';
 /** ETag suffix of pages with the script. Changed the script, bump the version. */
-const BEACON_ETAG = '-b5';
+const BEACON_ETAG = '-b6';
 /** The longest time on a page that is taken (4 hours). */
 const BEACON_MAX_DURATION_MS = 14400000;
 /** The kinds of the first interaction ("i=<kind>"), as pages.hits.interaction takes them. */
@@ -68,13 +68,26 @@ const BEACON_SCRIPT = '<script data-dop-beacon>(function(){var v=(document.cooki
     . 'vw:innerWidth|0,vh:innerHeight|0,ptr:M("(pointer:fine)")?"fine":M("(pointer:coarse)")?"coarse":"none",hvr:M("(hover:hover)")?1:0,'
     . 'chr:window.chrome?1:0,cke:N.cookieEnabled?1:0};'
     . 'if(U.mobile!==undefined)S.mob=U.mobile?1:0;if(U.platform)S.upf=(""+U.platform).slice(0,32);'
-    . 'function s(){b("t="+Math.round(performance.now()));b(enc(S))}if(document.readyState==="complete")s();else addEventListener("load",s,{once:true});'
+    // The heavier tells run INSIDE s() — on the load event, after the page is
+    // painted — so nothing here delays what the visitor sees: the primary language
+    // (empty is a hint, with nl/np), automation artifacts (chromedriver cdc_,
+    // Playwright/Puppeteer/Selenium/phantom hooks — aut = how many) and the WebGL
+    // renderer (glsw = 1 when it is software: SwiftShader/llvmpipe/Mesa/no GL).
+    . 'function s(){S.lng=(""+(N.language||"")).slice(0,12);'
+    . 'try{var _w=window,_a=0;if(_w.__playwright||_w.__puppeteer||_w.__pw_manual||_w._phantom||_w.callPhantom||_w.__nightmare||_w.domAutomation||_w.domAutomationController||_w.Cypress)_a++;if(document.$cdc_asdjflasutopfhvcZLmcfl_||document.__webdriver_evaluate||document.__selenium_unwrapped||document.__fxdriver_evaluate||document.__driver_evaluate)_a++;for(var _k in _w){if(_k.indexOf("cdc_")===0||_k.indexOf("$cdc_")===0){_a++;break}}S.aut=_a}catch(e){}'
+    . 'try{var _cv=document.createElement("canvas"),_g=_cv.getContext("webgl")||_cv.getContext("experimental-webgl");if(_g){var _di=_g.getExtension("WEBGL_debug_renderer_info"),_r=""+(_di?_g.getParameter(_di.UNMASKED_RENDERER_WEBGL):_g.getParameter(_g.RENDERER));S.gl=_r.slice(0,60);S.glsw=/swiftshader|llvmpipe|softpipe|software|basic render|mesa|angle \\(google/i.test(_r)?1:0}else S.glsw=1}catch(e){}'
+    . 'b("t="+Math.round(performance.now()));b(enc(S))}if(document.readyState==="complete")s();else addEventListener("load",s,{once:true});'
     . 'var K={mm:0,md:0,wh:0,sc:0,ts:0,ky:0,ck:0},c=false;addEventListener("click",function(e){if(e.isTrusted&&K.ck<999)K.ck++;if(c)return;var t=e.target,a=t&&t.closest&&t.closest("a[href],[data-href]");if(!a)return;'
     . 'var h=a.getAttribute("data-href")||a.getAttribute("href")||"";if(!h||h.charAt(0)==="#"||h.indexOf("javascript:")===0)return;c=true;b("c=1")},true);'
+    // Mouse trajectory, not just the move count: str = how straight the path is
+    // (net displacement / path length, 0-100; a bot dragging in a line is ~100),
+    // dc = direction changes, tp = teleports (jumps > 250px, synthetic moves).
+    . 'var _px=null,_py,_pdx=0,_pdy=0,_pl=0,_fx=null,_fy,_lx=0,_ly=0,_tp=0,_dc=0;'
+    . 'addEventListener("mousemove",function(e){if(!e.isTrusted)return;var x=e.clientX,y=e.clientY;if(_fx===null){_fx=x;_fy=y}if(_px!==null){var dx=x-_px,dy=y-_py,ds=Math.abs(dx)+Math.abs(dy);_pl+=ds;if(ds>250)_tp++;if((dx>0&&_pdx<0)||(dx<0&&_pdx>0)||(dy>0&&_pdy<0)||(dy<0&&_pdy>0))_dc++;if(dx||dy){_pdx=dx;_pdy=dy}}_px=x;_py=y;_lx=x;_ly=y},{capture:true,passive:true});'
     . 'var i=false;function n(k,y){return function(e){if(e.isTrusted&&(e.type!=="mousemove"||e.movementX||e.movementY)&&K[y]<999)K[y]++;if(i||!e.isTrusted||(e.type==="mousemove"&&!e.movementX&&!e.movementY))return;i=true;b("i="+k+"&t="+Math.round(performance.now()))}}'
     . '[["mousemove","mouse","mm"],["mousedown","mouse","md"],["wheel","scroll","wh"],["touchstart","touch","ts"],["keydown","key","ky"]].forEach(function(p){addEventListener(p[0],n(p[1],p[2]),{capture:true,passive:true})});'
     . 'addEventListener("scroll",function(e){if(e.isTrusted&&K.sc<999)K.sc++},{capture:true,passive:true});'
-    . 'function u(){b("d="+Math.round(performance.now())+"&"+enc(K))}addEventListener("pagehide",u);addEventListener("visibilitychange",function(){if(document.visibilityState==="hidden")u()})})();</script>';
+    . 'function u(){if(_fx!==null){var dp=Math.abs(_lx-_fx)+Math.abs(_ly-_fy);K.tp=_tp;K.dc=_dc;K.str=_pl>0?Math.round(dp/_pl*100):0}b("d="+Math.round(performance.now())+"&"+enc(K))}addEventListener("pagehide",u);addEventListener("visibilitychange",function(){if(document.visibilityState==="hidden")u()})})();</script>';
 
 /**
  * Does this route's response carry the notice? Only a funnel's page served by

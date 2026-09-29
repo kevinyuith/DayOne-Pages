@@ -91,6 +91,12 @@ same('beacon_parse_signals: keeps bools, ints, floats, short strings', ['wd' => 
 check('script: collects the capability signals', str_contains(BEACON_SCRIPT, 'N.webdriver') && str_contains(BEACON_SCRIPT, 'maxTouchPoints') && str_contains(BEACON_SCRIPT, 'pointer:fine') && str_contains(BEACON_SCRIPT, 'userAgentData'));
 check('script: counts the session events', str_contains(BEACON_SCRIPT, 'K={mm:0,md:0,wh:0,sc:0,ts:0,ky:0,ck:0}') && str_contains(BEACON_SCRIPT, 'e.isTrusted'));
 check('script: sends the signals json url-encoded', str_contains(BEACON_SCRIPT, '"sg="+encodeURIComponent(JSON.stringify('));
+// Headless/automation tells and mouse trajectory (bot-vs-human).
+check('script: collects automation and WebGL tells', str_contains(BEACON_SCRIPT, 'S.aut=') && str_contains(BEACON_SCRIPT, 'cdc_') && str_contains(BEACON_SCRIPT, 'WEBGL_debug_renderer_info') && str_contains(BEACON_SCRIPT, 'S.glsw='));
+check('script: measures the mouse trajectory (straightness, turns, teleports)', str_contains(BEACON_SCRIPT, 'K.str=') && str_contains(BEACON_SCRIPT, 'K.dc=') && str_contains(BEACON_SCRIPT, 'K.tp='));
+same('beacon_parse_signals: keeps the new keys (aut, gl, glsw, lng, tp, dc, str)',
+    ['aut' => 2, 'gl' => 'Google SwiftShader', 'glsw' => 1, 'lng' => 'en-US', 'tp' => 0, 'dc' => 1, 'str' => 98],
+    beacon_parse_signals('{"aut":2,"gl":"Google SwiftShader","glsw":1,"lng":"en-US","tp":0,"dc":1,"str":98}'));
 
 // serve_slug: HTML gets the script and the ETag gets the version; anything that is not a page stays the same.
 $bSlug = '22222222-2222-2222-2222-222222222222';

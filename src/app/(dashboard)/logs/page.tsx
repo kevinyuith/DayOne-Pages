@@ -443,16 +443,22 @@ function Signals({ hit }: { hit: HitLogRow }) {
   const hasCounts = ["mm", "md", "wh", "sc", "ts", "ky", "ck"].some((k) => sigNum(s, k) !== null);
   const flags: { label: string; tone: "danger" | "warning" }[] = [];
   if (sigNum(s, "wd") === 1) flags.push({ label: "webdriver", tone: "danger" });
+  if ((sigNum(s, "aut") ?? 0) > 0) flags.push({ label: "automation", tone: "danger" });
+  if (sigNum(s, "glsw") === 1) flags.push({ label: "software GL", tone: "danger" });
   if (hasCounts) {
     const fine = s.ptr === "fine";
     const touchDev = (sigNum(s, "mtp") ?? 0) > 0 || s.ptr === "coarse";
     if (fine && (sigNum(s, "mm") ?? 0) === 0 && (sigNum(s, "md") ?? 0) === 0) flags.push({ label: "no mouse", tone: "warning" });
     if (touchDev && (sigNum(s, "ts") ?? 0) === 0) flags.push({ label: "no touch", tone: "warning" });
     if ((sigNum(s, "wh") ?? 0) === 0 && (sigNum(s, "sc") ?? 0) === 0) flags.push({ label: "no scroll", tone: "warning" });
+    // The mouse moved a lot but almost in a straight line, barely turning: a synthetic path.
+    if ((sigNum(s, "mm") ?? 0) >= 10 && (sigNum(s, "str") ?? 0) >= 90 && (sigNum(s, "dc") ?? 0) <= 2) flags.push({ label: "straight mouse", tone: "warning" });
   }
+  // No languages and no plugins, or an empty primary language: a headless hint.
   if (sigNum(s, "nl") === 0 && sigNum(s, "np") === 0) flags.push({ label: "headless?", tone: "warning" });
 
   const counts = ["mm", "md", "wh", "sc", "ts", "ky", "ck"].filter((k) => sigNum(s, k) !== null);
+  const traj = ["str", "dc", "tp"].filter((k) => sigNum(s, k) !== null);
   return (
     <span className="flex flex-col items-start gap-0.5" title={JSON.stringify(s, null, 2)}>
       {flags.length > 0 ? (
@@ -468,6 +474,11 @@ function Signals({ hit }: { hit: HitLogRow }) {
         <span className="whitespace-nowrap font-mono text-[11px] text-muted">{counts.map((k) => `${k} ${sigNum(s, k)}`).join(" · ")}</span>
       ) : flags.length === 0 ? (
         <span className="text-xs text-muted">{s.ptr === "fine" ? "mouse" : s.ptr === "coarse" ? "touch" : "—"}</span>
+      ) : null}
+      {traj.length > 0 ? (
+        <span className="whitespace-nowrap font-mono text-[11px] text-muted" title="str = how straight the mouse path is (0–100; ~100 = a line), dc = direction changes, tp = teleports">
+          {traj.map((k) => `${k} ${sigNum(s, k)}`).join(" · ")}
+        </span>
       ) : null}
     </span>
   );
