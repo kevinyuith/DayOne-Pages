@@ -109,3 +109,31 @@ check('VSL step: drawn — embed filled, dop_vsl + video_id cookies', !str_conta
 check('VSL step: the page\'s head is untouched (video_id goes in a cookie)', str_contains((string) $body, '<head><script src="dot.js"></script></head>'));
 check('VSL step: ETag with the step and the video', str_contains((string) $headers['ETag'], '-p_vsl-v' . ($vm[1] ?? '')), (string) $headers['ETag']);
 
+// ── The draw is the served step's: a {{video_id}} only in the <head> (every step's) draws nothing ──
+$r = vsl_placeholder_apply('<html><head><link rel="preload" href="/players/{{video_id}}/v4/player.js"></head><body><h1>PRE</h1></body></html>', $split, [], $fixed(0));
+check('{{video_id}} only in the <head>: no draw — empty, no video, no cookie', $r !== null && $r['tag'] === '' && $r['cookie'] === null && str_contains($r['html'], 'href="/players//v4/player.js"'), json_encode($r));
+$r = vsl_placeholder_apply('<html><head><link rel="preload" href="/players/{{video_id}}/v4/player.js"></head><body>' . $embed . '</body></html>', $split, [], $fixed(0));
+check('{{video_id}} in the step\'s own code: drawn, and the <head>\'s gets the same video', $r !== null && $r['tag'] === $vA && str_contains($r['html'], "href=\"/players/$vA/v4/player.js\"") && str_contains($r['html'], "id=\"vid-$vA\""), $r['html'] ?? '');
+same('the step\'s own code: from <body> on; without a <body>, all of it', ['<body class="x">B</body>', '<p>{{video_id}}</p>'], [vsl_step_code('<html><head><title>{{video_id}}</title></head><body class="x">B</body>'), vsl_step_code('<p>{{video_id}}</p>')]);
+
+// serve_slug: the player's preload in the <head> (as F68–F70 have it) no longer draws on the Pre Lander.
+$preloadHead = '<!doctype html><html><head><link rel="preload" href="https://scripts.converteai.net/acc/players/{{video_id}}/v4/player.js" as="script"></head><body>'
+    . '<section data-dop-page="p_pre" data-dop-kind="presell" data-dop-start><h1>PRE</h1><a href="#next-step">go</a></section>'
+    . '<section data-dop-page="p_vsl" data-dop-kind="main" hidden>' . $embed . '</section></body></html>';
+cache_put_content('vsl03', $preloadHead);
+$headRoute = ['content_hash' => 'vsl03', 'page_id' => '11111111-aaaa-4aaa-8aaa-0000000000d1'] + $stepRoute;
+[, $headers, $body, $extra] = serve_slug($headRoute, make_request(['HTTP_COOKIE' => "video_id=$vB"]));
+check('Pre Lander with the preload in the <head>: no draw — no video anywhere, the older video_id cookie deleted', str_contains((string) $body, 'PRE') && str_contains((string) $body, '/players//v4/player.js') && !str_contains((string) $body, 'video_id=') && !str_contains((string) $headers['ETag'], '-v') && ($extra['video'] ?? null) === null && (array) ($headers['Set-Cookie'] ?? []) === [video_id_cookie_clear()], json_encode([$headers, $extra]));
+check('… and its tracker is dot.js as pre_lander, without a video', str_contains((string) $body, '"presell":"/_dop/dot.js?v=' . tracker_version(TRACKER_DOT_JS) . '&origin=pre_lander&page_id=11111111-aaaa-4aaa-8aaa-0000000000d1"'), (string) $body);
+[, $headers, $body, $extra] = serve_slug($headRoute, make_request(['HTTP_COOKIE' => 'dop_step=p_vsl']));
+check('the VSL step draws: the player, the <head> preload, dot.js as lander and the dot click get the same video', preg_match('/vid-([ab]{24})"/', (string) $body, $vm) === 1 && str_contains((string) $body, "/players/{$vm[1]}/v4/player.js\" as=\"script\"") && str_contains((string) $body, "&origin=lander&page_id=11111111-aaaa-4aaa-8aaa-0000000000d1&video_id={$vm[1]}") && ($extra['video'] ?? null) === $vm[1], (string) $body);
+
+// A Pre Lander whose own code has {{video_id}} draws, and its tracker (pre_lander) carries the video.
+cache_put_content('vsl04', '<!doctype html><html><head></head><body><section data-dop-page="p_pre" data-dop-kind="presell" data-dop-start>' . $embed . '</section><section data-dop-page="p_vsl" data-dop-kind="main" hidden><h1>OFFER</h1></section></body></html>');
+[, , $body] = serve_slug(['content_hash' => 'vsl04'] + $headRoute, make_request());
+check('a Pre Lander with its own {{video_id}}: drawn, dot.js as pre_lander carries it', preg_match('/vid-([ab]{24})"/', (string) $body, $vm) === 1 && str_contains((string) $body, "&origin=pre_lander&page_id=11111111-aaaa-4aaa-8aaa-0000000000d1&video_id={$vm[1]}"), (string) $body);
+
+// A page without steps with {{video_id}} only in its own tracker tag in the <head> (no player): no draw, no video.
+cache_put_content('vsl05', '<html><head><script src="/_dop/dot.js?origin=lander&video_id={{video_id}}"></script></head><body><h1>No player</h1></body></html>');
+[, $headers, $body] = serve_slug(['content_hash' => 'vsl05', 'funnel' => false] + $headRoute, make_request());
+check('page without steps, {{video_id}} only in the <head>: no draw, the tag\'s video_id empty', str_contains((string) $body, '/_dop/dot.js?origin=lander&video_id="') && !str_contains((string) $headers['ETag'], '-v'), (string) $body);

@@ -21,9 +21,13 @@
  * embed, `<vturb-smartplayer id="vid-{{video_id}}">` and
  * `…/players/{{video_id}}/v4/player.js`. It becomes the same video the A/B
  * player would get (same dop_vsl draw); with no video in the split, empty.
- * The draw only happens in the step being served (funnel.php cuts the others
- * first), so a Pre Lander → VSL page draws when the visitor reaches the VSL.
- * A response that drew a video says which one: the `video_id` cookie (not
+ * The draw is the served step's: only a {{video_id}} in its own code (the
+ * <body> after funnel.php cut the other steps; a page without steps is all
+ * Lander) draws — the <head> is every step's, so a {{video_id}} there alone
+ * draws nothing and becomes empty. A Pre Lander → VSL page draws when the
+ * visitor reaches the VSL, even with the player's preload in the <head>.
+ * A response that drew a video says which one: the step's tracker URL
+ * (track.php, &video_id=), the `video_id` cookie (not
  * HttpOnly, for the page's own trackers — dot.js reads it) and, through the
  * route, the server's click event to dot (dot.php). A funnel page that drew no
  * video deletes an older video_id cookie, so it always speaks for the page it
@@ -88,9 +92,11 @@ function vsl_draw(array $videos, array $cookies, ?callable $rand = null): array
 }
 
 /**
- * {{video_id}} in the served step → the visitor's video (vsl_draw); with no
- * video in the funnel's split, empty text. null = no placeholder in the HTML
- * (nothing drawn). `tag` is the video ('' when empty).
+ * {{video_id}} in the served step's own code (vsl_step_code) → every
+ * {{video_id}} of the response (the <head>'s too) becomes the visitor's video
+ * (vsl_draw); only in the <head>, or no video in the funnel's split, empty
+ * text. null = no placeholder in the HTML (nothing drawn). `tag` is the video
+ * ('' when empty).
  *
  * @return array{html: string, tag: string, cookie: ?string}|null
  */
@@ -100,11 +106,17 @@ function vsl_placeholder_apply(string $html, mixed $vsl, array $cookies, ?callab
         return null;
     }
     $videos = vsl_videos($vsl);
-    if ($videos === []) {
+    if ($videos === [] || preg_match(VSL_PLACEHOLDER_RE, vsl_step_code($html)) !== 1) {
         return ['html' => (string) preg_replace(VSL_PLACEHOLDER_RE, '', $html), 'tag' => '', 'cookie' => null];
     }
     ['pick' => $pick, 'cookie' => $cookie] = vsl_draw($videos, $cookies, $rand);
     return ['html' => (string) preg_replace(VSL_PLACEHOLDER_RE, $pick, $html), 'tag' => $pick, 'cookie' => $cookie];
+}
+
+/** The served step's own code: from <body> on (the <head> is every step's); without a <body>, all of it. */
+function vsl_step_code(string $html): string
+{
+    return preg_match('/<body\b/i', $html, $m, PREG_OFFSET_CAPTURE) === 1 ? substr($html, (int) $m[0][1]) : $html;
 }
 
 /** The video_id cookie (not HttpOnly: the page's trackers read it). */

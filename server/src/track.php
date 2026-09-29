@@ -1,6 +1,7 @@
 <?php
 /**
- * Per-step tracker scripts on a funnel page.
+ * The funnel's tracker on a funnel page: ONE script, /_dop/dot.js, sent as
+ * the step it's on (?origin=pre_lander|lander).
  *
  * A funnel page is ONE HTML document with the steps as sibling
  * <section data-dop-page data-dop-kind="presell|main|backredirect">; the
@@ -12,43 +13,46 @@
  * When the delivery server serves a page that has steps, it injects a small
  * loader that loads the step's tracker when the step becomes visible, once:
  *
- *   Pre Lander (presell) → https://cdn.directdayone.com/js/pre_dot.js
- *   Lander (main)        → https://cdn.directdayone.com/js/dot.js?origin=lander&v=17
+ *   Pre Lander (presell) → /_dop/dot.js?origin=pre_lander
+ *   Lander (main)        → /_dop/dot.js?origin=lander
  *
  * The loader loads the initial step's tracker (the one that isn't `hidden`) and
  * listens for `dop:pageshow` for the following steps; the Backredirect has no
  * tracker. A funnel page WITHOUT steps is all Lander: when the gate serves it,
- * it gets dot.js itself (no loader), unless the page already has a dot.js or
- * pre_dot.js tag of its own. It's injected ONLY here, on the real delivery — never in the
- * dashboard preview (which serves the stored HTML without the server) — so it
- * can't fire tracking from a preview.
+ * it gets dot.js as the Lander itself (no loader), unless the page already has
+ * a dot.js or pre_dot.js tag of its own. It's injected ONLY here, on the real
+ * delivery — never in the dashboard preview (which serves the stored HTML
+ * without the server) — so it can't fire tracking from a preview.
  *
- * A version (TRACK_ETAG) goes into the ETag so a browser holding a copy from
- * before the loader revalidates and gets the new body.
+ * A version (TRACK_ETAG + the tracker URLs) goes into the ETag so a browser
+ * holding a copy from before revalidates and gets the new body.
  *
- * On a funnel page the gate served, the trackers' URLs also carry the page's
- * id (&page_id=, the same the page_id cookie has): the trackers take it from
- * their own URL first — as from `page_id={{page_id}}` in a tracker tag the
- * page has itself (beacon.php) — and from the cookie otherwise. When the
- * response drew a VSL video (vsl.php), the Lander's tracker (dot.js) also gets
- * it (&video_id=, as `video_id={{video_id}}` would); the Pre Lander's never.
+ * On a funnel page the gate served, the tracker's URL also carries the page's
+ * id (&page_id=, the same the page_id cookie has): the tracker takes it from
+ * its own URL first — as from `page_id={{page_id}}` in a tracker tag the page
+ * has itself (beacon.php) — and from the cookie otherwise. When the response
+ * drew a VSL video — the served step's own code has {{video_id}} (vsl.php) —
+ * the tracker gets it too (&video_id=, as `video_id={{video_id}}` would), on
+ * whichever step drew it; a step that drew nothing sends no video.
  */
 declare(strict_types=1);
 
 defined('DAYONE_ENTRY') || (http_response_code(404) && exit);
 
-/** ETag prefix of a funnel page with the tracker loader. Changed the loader, bump it (the trackers' versions go in by themselves). */
+/** ETag prefix of a funnel page with the tracker loader. Changed the loader, bump it (the tracker's URLs go in by themselves). */
 const TRACK_ETAG = '-k3';
 
 /**
- * The tracker of each step kind (the Backredirect has none): served by this
- * server on the funnel's own domain (first party — no third-party CDN), from
- * TRACKER_FILES below. The loader asks for them with ?v=<content hash>, so a
- * changed tracker is a new URL and the old one can be cached for good.
+ * The tracker: served by this server on the funnel's own domain (first party —
+ * no third-party CDN), from TRACKER_FILES below. Its URL has ?v=<content hash>,
+ * so a changed tracker is a new URL and the old one can be cached for good.
  */
-const TRACK_SCRIPTS = [
-    'presell' => '/_dop/pre_dot.js',
-    'main' => '/_dop/dot.js',
+const TRACKER_PATH = '/_dop/dot.js';
+
+/** The origin the tracker reports for each step kind (the Backredirect has none). */
+const TRACK_ORIGINS = [
+    'presell' => 'pre_lander',
+    'main' => 'lander',
 ];
 
 /** Does the served page have funnel steps? Then it carries the per-step tracker loader. */
@@ -58,33 +62,33 @@ function track_applies(string $html): bool
 }
 
 /**
- * The trackers' URLs, what the loader loads: the content version (?v=), the
- * served page's id (&page_id=) and, for the Lander's tracker only, the VSL
- * video the response drew (&video_id=).
+ * The tracker's URL for each step kind, what the loader loads: the content
+ * version (?v=), the step (&origin=), the served page's id (&page_id=) and the
+ * VSL video the response drew (&video_id=), if it drew one.
  */
 function track_urls(?string $pageId = null, ?string $videoId = null): array
 {
     $urls = [];
-    foreach (TRACK_SCRIPTS as $kind => $path) {
-        $q = ['v' => tracker_version(TRACKER_FILES[$path])];
+    foreach (TRACK_ORIGINS as $kind => $origin) {
+        $q = ['v' => tracker_version(TRACKER_FILES[TRACKER_PATH]), 'origin' => $origin];
         if ($pageId !== null) {
             $q['page_id'] = $pageId;
         }
-        if ($videoId !== null && $kind === 'main') {
+        if ($videoId !== null) {
             $q['video_id'] = $videoId;
         }
-        $urls[$kind] = $path . '?' . http_build_query($q, '', '&');
+        $urls[$kind] = TRACKER_PATH . '?' . http_build_query($q, '', '&');
     }
     return $urls;
 }
 
-/** The ETag suffix of a page with the loader: the loader's version and the trackers' (their URLs are in the page). */
+/** The ETag suffix of a page with the tracker: the loader's version and the tracker's URLs (they are in the page). */
 function track_etag(): string
 {
     return TRACK_ETAG . substr(md5(implode('|', track_urls())), 0, 6);
 }
 
-/** The loader script (built from TRACK_SCRIPTS, so the URLs live in one place). */
+/** The loader script (built from track_urls, so the URLs live in one place). */
 function track_script(?string $pageId = null, ?string $videoId = null): string
 {
     $map = json_encode(track_urls($pageId, $videoId), JSON_UNESCAPED_SLASHES);
@@ -105,8 +109,8 @@ function track_inject(string $html, ?string $pageId = null, ?string $videoId = n
 }
 
 /**
- * A funnel page without steps is all Lander, so it gets the Lander's tracker
- * (dot.js) — unless it already loads a tracker of its own (a dot.js or
+ * A funnel page without steps is all Lander, so it gets the tracker as the
+ * Lander — unless it already loads a tracker of its own (a dot.js or
  * pre_dot.js tag, on any host), which would then run twice.
  */
 function track_needs_lander(string $html): bool
@@ -114,7 +118,7 @@ function track_needs_lander(string $html): bool
     return !funnel_has_sections($html) && preg_match('~(?<![\w.-])(?:pre_)?dot\.js(?!\w)~i', $html) !== 1;
 }
 
-/** The Lander's tracker, the same URL the loader would load, before the last </body>. */
+/** The tracker as the Lander, the same URL the loader would load, before the last </body>. */
 function track_inject_lander(string $html, ?string $pageId = null, ?string $videoId = null): string
 {
     $src = htmlspecialchars(track_urls($pageId, $videoId)['main'], ENT_QUOTES);
@@ -127,19 +131,29 @@ function track_before_body_end(string $html, string $script): string
     return $pos === false ? $html . $script : substr_replace($html, $script, $pos, 0);
 }
 
-// ── The trackers themselves: /_dop/pre_dot.js and /_dop/dot.js ──────────────
-// They send to dayone-main's dot edge function (Supabase), like the CDN copies
-// they replace. dot.js takes the VSL video from the video_id cookie the server
-// sets with the page (vsl.php), never from the player.
+// ── The tracker itself: /_dop/dot.js ─────────────────────────────────────────
+// It sends to dayone-main's dot edge function (Supabase), like the CDN copies
+// (dot.js and pre_dot.js) it replaces. It takes the VSL video from its own URL
+// or the video_id cookie the server sets with the page (vsl.php), never from
+// the player.
 
 const TRACKER_DOT_JS = <<<'JS'
 /**
- * dot.js — VSL funnel tracker, served by DayOne Pages on the funnel's own domain (/_dop/dot.js)
+ * dot.js — the funnel's tracker, served by DayOne Pages on the funnel's own domain (/_dop/dot.js)
  * Endpoint: https://cdn.dayone.click/functions/v1/dot
  *
- * PAGE_VIEW: fires SYNCHRONOUSLY as soon as this script executes — the very
- *   first request the tracker makes, so the session (and the dotid the server
- *   mints for it) is registered immediately.
+ * ORIGIN: the step it's on, from this script's own URL (?origin=pre_lander or
+ *   lander; lander without one). The same code for both steps — it replaces
+ *   pre_dot.js.
+ *
+ * PAGE_VIEW:
+ *   - lander: fires SYNCHRONOUSLY as soon as this script executes — the very
+ *     first request the tracker makes, so the session (and the dotid the server
+ *     mints for it) is registered immediately.
+ *   - pre_lander: fires only when the page has finished loading (window "load";
+ *     at once if it already has), as pre_dot.js did — it reports "loaded", not
+ *     "script ran". Two nets: LOAD_TIMEOUT (10s) for a stuck asset, and
+ *     "pagehide" for the visitor who leaves first. Exactly one page_view either way.
  *
  * VIDEO_ID: comes from the funnel's server, never from the player. DayOne Pages
  *   draws the VSL video for the visitor (the funnel's VSLs tab; the page writes
@@ -150,14 +164,13 @@ const TRACKER_DOT_JS = <<<'JS'
  *   deletes the cookie: it never speaks for another page). The page_view carries it — and so does the server's own
  *   click event — so there is no video_load event and no waiting for the player.
  *   Video events (video_play, video_watch, video_pitch, video_click) are bound on
- *   player:ready and carry the same id; a page with no video_id cookie has no
- *   video to report.
+ *   player:ready and carry the same id, on whichever step drew the video; a page
+ *   with no video_id has no video to report.
  *
  * PAGE_ID: every event carries the funnel page the server served (the A/B
  *   split's pick) — dot's page_id column. The server writes it in this script's
  *   own URL (?page_id=, filled when the page is served) and sets it in the
- *   `page_id` cookie in the same response; the URL wins. pre_dot.js does the
- *   same on the Pre Lander.
+ *   `page_id` cookie in the same response; the URL wins.
  *
  * Also preserved: UTM/click-ID capture (sessionStorage dot_attr), dotid cookie
  * (1 day), ?dotid= propagation on external links, send retries, pagehide beacon.
@@ -181,17 +194,20 @@ const TRACKER_DOT_JS = <<<'JS'
     'sub9', 'sub10', 'sub11', 'gclid', 'fbclid', 'tclid', 'ttclid',
     'wbraid', 'gbraid', 'ref_id'
   ];
+  var LOAD_TIMEOUT = 10000;    // pre_lander: hard cap (ms) waiting for window "load"
   // ---- origin: read from ?origin= on this script's own tag <script src="...dot.js?origin=..."> ----
-  var origin = 'lander';
-  var scripts = document.getElementsByTagName('script');
-  for (var i = 0; i < scripts.length; i++) {
-    var src = scripts[i].src || '';
-    if (src.indexOf('/dot.js') !== -1) { // not pre_dot.js
-      var m = src.match(/[?&]origin=([^&]+)/);
-      if (m) origin = decodeURIComponent(m[1]);
-      break;
+  // currentScript is this very tag (the loader's or the page's own); without it, the first dot.js tag.
+  var me = document.currentScript;
+  var mySrc = me && me.src ? me.src : '';
+  if (mySrc.indexOf('/dot.js') === -1) {
+    var scripts = document.getElementsByTagName('script');
+    for (var i = 0; i < scripts.length; i++) {
+      var src = scripts[i].src || '';
+      if (/\/dot\.js(?:[?#]|$)/.test(src)) { mySrc = src; break; } // not pre_dot.js
     }
   }
+  var originMatch = mySrc.match(/[?&]origin=([^&#]+)/);
+  var origin = originMatch ? decodeURIComponent(originMatch[1]) : 'lander';
   // ---- capture and persist attribution parameters ----
   var query = new URLSearchParams(window.location.search);
   var attrs = JSON.parse(sessionStorage.getItem('dot_attr') || '{}');
@@ -208,8 +224,7 @@ const TRACKER_DOT_JS = <<<'JS'
   // served the page), otherwise from the `page_id` cookie set with the page.
   // Read once, now: a later page of the same domain (another tab) sets its own cookie.
   var pageId = (function () {
-    var me = document.currentScript;
-    var u = me && me.src ? me.src.match(/[?&]page_id=([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:[&#]|$)/) : null;
+    var u = mySrc.match(/[?&]page_id=([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:[&#]|$)/);
     if (u) return u[1];
     var m = document.cookie.match(/(?:^|;\s*)page_id=([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:;|$)/);
     return m ? m[1] : null;
@@ -308,8 +323,7 @@ const TRACKER_DOT_JS = <<<'JS'
   // 24 hex, from this script's own URL (?video_id=, filled by the server with the
   // draw), otherwise from the `video_id` cookie set in the same response.
   var videoId = (function () {
-    var me = document.currentScript;
-    var u = me && me.src ? me.src.match(/[?&]video_id=([0-9a-f]{24})(?:[&#]|$)/) : null;
+    var u = mySrc.match(/[?&]video_id=([0-9a-f]{24})(?:[&#]|$)/);
     if (u) return u[1];
     var m = document.cookie.match(/(?:^|;\s*)video_id=([0-9a-f]{24})(?:;|$)/);
     return m ? m[1] : null;
@@ -386,21 +400,37 @@ const TRACKER_DOT_JS = <<<'JS'
     document.addEventListener('DOMContentLoaded', decorateLinks);
   }
   // =====================================================================
-  // >>> PAGE_VIEW IMMEDIATELY ON SCRIPT LOAD <<<
-  // No waiting for the player. This is the first request made; it carries
-  // the video_id the server drew (when this page has one).
+  // >>> PAGE_VIEW <<<
+  // lander: IMMEDIATELY ON SCRIPT LOAD — no waiting for the player; this is
+  // the first request made. pre_lander: once the page has LOADED (or at the
+  // LOAD_TIMEOUT cap, or on pagehide if the visitor leaves first) — one send.
+  // It carries the video_id the server drew (when this page has one).
   // =====================================================================
   var pageView = {
     site: window.location.hostname,
     lander: window.location.pathname
   };
   if (videoId) pageView.video_id = videoId;
-  sendEvent('page_view', pageView);
+  var pageViewSent = false;
+  var loadTimer = null;
+  function sendPageView() {
+    if (pageViewSent) return;
+    pageViewSent = true;
+    if (loadTimer) { clearTimeout(loadTimer); loadTimer = null; }
+    sendEvent('page_view', pageView);
+  }
+  if (origin !== 'pre_lander' || document.readyState === 'complete') {
+    sendPageView();
+  } else {
+    window.addEventListener('load', sendPageView, { once: true });
+    loadTimer = setTimeout(sendPageView, LOAD_TIMEOUT); // stuck-asset safety cap
+    window.addEventListener('pagehide', sendPageView, { once: true }); // left before "load"
+  }
   // ---- player: binds the video events on player:ready ----
   // Registered RIGHT AWAY at script execution (the original only registered it
   // on DOMContentLoaded and lost the event if the player got ready earlier).
-  // The video is the server's (videoId above): a page with no video_id cookie has no video to report.
-  if (origin === 'lander' && videoId) {
+  // The video is the server's (videoId above), on whichever step drew it: a page with no video_id has no video to report.
+  if (videoId) {
     var videoBound = false;
     document.addEventListener('player:ready', function (ev) {
       var d = (ev && ev.detail) || {};
@@ -413,147 +443,9 @@ const TRACKER_DOT_JS = <<<'JS'
 })();
 JS;
 
-const TRACKER_PRE_DOT_JS = <<<'JS'
-/**
- * pre_dot.js — pre-lander tracker, served by DayOne Pages on the funnel's own domain (/_dop/pre_dot.js)
- * Endpoint: https://cdn.dayone.click/functions/v1/dot
- * Event:    page_view   |   origin: pre_lander
- *
- * WHAT CHANGED
- * ------------
- * BEFORE: the page_view was fired the instant the script executed — i.e. it
- *         reported "script ran", not "page loaded". On a page whose assets were
- *         still streaming in, the event was already counted.
- *
- * NOW:    the page_view fires ONLY when the page has actually finished loading:
- *           • if document.readyState is already "complete" when the script runs
- *             (script injected late / cached page), it fires immediately;
- *           • otherwise it waits for the window "load" event.
- *
- *         Two safety nets keep a slow or abandoned page from losing the session:
- *           • LOAD_TIMEOUT (10s) — if a single stuck third-party asset never
- *             lets "load" fire, the event goes out anyway;
- *           • "pagehide" — if the visitor leaves before the page finishes
- *             loading, the event is flushed on the way out (fetch keepalive).
- *         Every path goes through the same `sent` guard, so exactly ONE
- *         page_view is ever sent.
- *
- * TRADE-OFF worth knowing: waiting for "load" means a visitor who bounces in
- * the first instants is now recorded by the pagehide net, but their outbound
- * links were never decorated with ?dotid= (the response hadn't come back yet),
- * so that particular click won't stitch to the lander. That is the inherent
- * cost of measuring "loaded" instead of "script ran".
- *
- * PRESERVED, unchanged: UTM / click-ID capture from the query string, the
- * dotid cookie (1 day, minted by the server on the first event) and the
- * ?dotid= propagation on every link pointing to another domain.
- */
-(function () {
-  'use strict';
-
-  var ENDPOINT = 'https://cdn.dayone.click/functions/v1/dot';
-  var ORIGIN = 'pre_lander';
-  var LOAD_TIMEOUT = 10000; // ms — hard cap waiting for window "load"
-
-  // Attribution parameters read from the URL of THIS page view
-  var ATTRIBUTION_PARAMS = [
-    'rtkcid', 'sub1', 'sub2', 'sub3', 'sub4', 'sub5', 'sub6', 'sub7',
-    'sub9', 'sub10', 'sub11', 'gclid', 'fbclid', 'tclid', 'ttclid',
-    'wbraid', 'gbraid', 'ref_id'
-  ];
-
-  var query = new URLSearchParams(location.search);
-
-  // ---- visitor identifier (URL > cookie) ----
-  var cookieMatch = document.cookie.match(/(?:^|;\s*)dotid=([^;]+)/);
-  var dotid = query.get('dotid') || (cookieMatch && cookieMatch[1]) || null;
-
-  // ---- the funnel page the server served: this script's own URL (?page_id=, filled
-  // by the server), otherwise the `page_id` cookie set with this page (a uuid) ----
-  // Read now, not at "load": by then another tab of the same domain may have set its own.
-  var me = document.currentScript;
-  var pageMatch = (me && me.src ? me.src.match(/[?&]page_id=([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:[&#]|$)/) : null) ||
-    document.cookie.match(/(?:^|;\s*)page_id=([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:;|$)/);
-  var pageId = pageMatch ? pageMatch[1] : null;
-
-  function buildPayload() {
-    var payload = {
-      event: 'page_view',
-      origin: ORIGIN,
-      url: location.href,
-      referrer: document.referrer || null,
-      site: location.hostname,
-      lander: location.pathname
-    };
-    if (dotid) payload.dotid = dotid;
-    if (pageId) payload.page_id = pageId;
-    ATTRIBUTION_PARAMS.forEach(function (p) {
-      var v = query.get(p);
-      if (v) payload[p] = v;
-    });
-    return payload;
-  }
-
-  // Server minted a dotid on this first event: persist it and carry it forward
-  function adoptDotid(data) {
-    if (!data || !data.dotid || dotid) return;
-    dotid = data.dotid;
-
-    var exp = new Date();
-    exp.setTime(exp.getTime() + 86400000); // 1 day
-    document.cookie = 'dotid=' + dotid + ';path=/;expires=' + exp.toUTCString() + ';SameSite=Lax';
-
-    document.querySelectorAll('a[href]').forEach(function (a) {
-      try {
-        var u = new URL(a.href, location.origin);
-        if (u.hostname !== location.hostname && !u.searchParams.has('dotid')) {
-          u.searchParams.set('dotid', dotid);
-          a.href = u.toString();
-        }
-      } catch (e) {}
-    });
-  }
-
-  // ---- the single send, guarded so it can only ever happen once ----
-  var sent = false;
-  var timer = null;
-
-  function sendPageView() {
-    if (sent) return;
-    sent = true;
-    if (timer) { clearTimeout(timer); timer = null; }
-
-    fetch(ENDPOINT, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(buildPayload()),
-      keepalive: true // survives the pagehide path
-    })
-      .then(function (res) { return res.ok ? res.json() : null; })
-      .then(adoptDotid)
-      .catch(function () {});
-  }
-
-  // =====================================================================
-  // >>> FIRE ONLY WHEN THE PAGE HAS LOADED <<<
-  // =====================================================================
-  if (document.readyState === 'complete') {
-    // page was already fully loaded before this script executed
-    sendPageView();
-  } else {
-    window.addEventListener('load', sendPageView, { once: true });
-    timer = setTimeout(sendPageView, LOAD_TIMEOUT); // stuck-asset safety cap
-  }
-
-  // Net for the visitor who leaves before "load" ever fires
-  window.addEventListener('pagehide', sendPageView, { once: true });
-})();
-JS;
-
 /** Served path → source. */
 const TRACKER_FILES = [
-    '/_dop/pre_dot.js' => TRACKER_PRE_DOT_JS,
-    '/_dop/dot.js' => TRACKER_DOT_JS,
+    TRACKER_PATH => TRACKER_DOT_JS,
 ];
 
 /** A tracker's version: its content hash (the loader's ?v= and the ETag). */
@@ -563,7 +455,7 @@ function tracker_version(string $js): string
 }
 
 /**
- * GET/HEAD /_dop/pre_dot.js or /_dop/dot.js on any domain. With the current
+ * GET/HEAD /_dop/dot.js on any domain. With the current
  * ?v= it's cacheable for good (a new version is a new URL); without it (or an
  * old one), 5 minutes. null = not a tracker path.
  *

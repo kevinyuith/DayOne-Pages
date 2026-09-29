@@ -4,7 +4,7 @@
  *
  *   /_health, /_purge      → internal handlers
  *   /_dop/l                → browser load notice (beacon.php)
- *   /_dop/pre_dot.js, /_dop/dot.js → the funnel's trackers (track.php)
+ *   /_dop/dot.js           → the funnel's tracker (track.php)
  *   method ∉ {GET, HEAD}   → 405
  *   invalid host           → 404 (no cache, no Supabase)
  *   path too long          → 404 (same)
