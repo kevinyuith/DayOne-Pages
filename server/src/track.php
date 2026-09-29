@@ -378,13 +378,16 @@ const TRACKER_DOT_JS = <<<'JS'
   // the exit video_watch/video_pitch. The event also goes to the outbox: the
   // beacon's answer can't be read, so the next page of this domain sends it
   // again (harmless: dot keeps one). The XHR path stays for browsers without sendBeacon.
+  // The beacon goes as text/plain: dot parses the body whatever its type, and a JSON
+  // type to another origin needs a preflight, which Chrome refuses for a beacon (it
+  // throws — the click then fell back to a synchronous XHR that held the navigation).
   function sendSync(payload) {
     var item = newItem(payload);
     outboxAdd(item);
     var body = bodyOf(item);
     try {
       if (navigator.sendBeacon) {
-        var blob = new Blob([body], { type: 'application/json' });
+        var blob = new Blob([body], { type: 'text/plain;charset=UTF-8' });
         if (navigator.sendBeacon(ENDPOINT, blob)) return;
       }
     } catch (e) {}
@@ -547,13 +550,19 @@ const TRACKER_DOT_JS = <<<'JS'
     var lateCheck = function () { if (!videoBound) bindOnce(readyPlayer()); };
     document.addEventListener('DOMContentLoaded', lateCheck);
     window.addEventListener('load', lateCheck);
-    // the player's call to action: VTurb dispatches it from inside the player (bubbles, composed)
-    document.addEventListener('analytics:exited-click', fireClick);
-    // a checkout link on the page (any button: a new tab still counts)
+    // the player's call to action: VTurb dispatches it from inside the player (bubbles, composed),
+    // and the player's own listener — CAPTURE, on the <vturb-smartplayer> — counts it as "clicked"
+    // and stops it there (stopImmediatePropagation). Only a capture listener on the document runs
+    // before that one; a bubbling listener never hears the click.
+    document.addEventListener('analytics:exited-click', fireClick, true);
+    // a checkout link on the page (any button: a new tab still counts), found on the event's path:
+    // the player's call to action lives in its shadow DOM, where ev.target is only the player.
     document.addEventListener('click', function (ev) {
-      var t = ev.target;
-      var link = t && t.closest ? t.closest("a[href*='checkout']") : null;
-      if (link) fireClick();
+      var path = ev.composedPath ? ev.composedPath() : [ev.target];
+      for (var i = 0; i < path.length; i++) {
+        var n = path[i];
+        if (n && n.tagName === 'A' && (n.getAttribute('href') || '').indexOf('checkout') >= 0) { fireClick(); return; }
+      }
     }, true);
   }
 })();
