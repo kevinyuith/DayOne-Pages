@@ -59,6 +59,23 @@ check('the safe page: no page_id field (not a funnel page), it stays in the meta
 $safe = ['action' => 'SERVE', 'match_type' => 'GATE-SAFE', '_rule_label' => 'Bot', '_rule' => 'DC', '_rule_reason' => 'Datacenter', '_rule_tags' => ['FB']];
 $m = json_decode(dot_click_payload($dotReq('/?fbclid=F1'), ['route' => $safe], [])['_metadata'], true)['dayone_pages'];
 same('a click a rule caught: sent, with the rule', [false, 'Bot', 'DC', 'Datacenter', ['FB']], [$m['sent_to_funnel'], $m['rule_label'], $m['rule'], $m['rule_reason'], $m['rule_tags']]);
+
+// ── A pre-lander (a slug outside the home + the legal pages): a real click gets a server-side page_view ──
+// The click event itself is unchanged — no origin, on any slug.
+check('the click event keeps no origin on a pre-lander slug', !array_key_exists('origin', dot_click_payload($dotReq('/pre?gclid=G9'), ['status' => 200, 'route' => ['match_type' => 'GATE-SAFE']], [])));
+
+// dot_pre_lander_origin: served 200 + a non-standard slug + no rule caught it (and not a funnel page the gate served).
+$gateSafe = ['match_type' => 'GATE-SAFE'];
+same('pre_lander: a non-standard slug served 200, clean', 'pre_lander', dot_pre_lander_origin('/pre', 200, $gateSafe));
+same('pre_lander: not for the home', null, dot_pre_lander_origin('/', 200, $gateSafe));
+same('pre_lander: not for a legal page', null, dot_pre_lander_origin('/privacy-policy', 200, $gateSafe));
+same('pre_lander: only on served 200 (not 304/404)', [null, null], [dot_pre_lander_origin('/pre', 304, $gateSafe), dot_pre_lander_origin('/pre', 404, $gateSafe)]);
+same('pre_lander: not a funnel page the gate served (it has dot.js)', null, dot_pre_lander_origin('/pre', 200, ['match_type' => GATE_MATCH]));
+same('pre_lander: not when a rule caught it (datacenter, crawler…)', null, dot_pre_lander_origin('/pre', 200, $gateSafe + ['_rule_label' => 'Bot']));
+
+// dot_page_view: the click's own fields, as event page_view, marked origin pre_lander (the click is left as it was).
+$pvFrom = dot_page_view(['event' => 'click', 'site' => 's', 'ext_click_id' => 'G9'], 'pre_lander');
+same('page_view: the click fields, event page_view, origin pre_lander', ['page_view', 'pre_lander', 's', 'G9'], [$pvFrom['event'], $pvFrom['origin'], $pvFrom['site'], $pvFrom['ext_click_id']]);
 same('gclid + wbraid: ext_click_id is gclid, wbraid goes too', ['G1', 'W1'], array_values(array_intersect_key(dot_click_payload($dotReq('/?wbraid=W1&gclid=G1'), [], []), array_flip(['ext_click_id', 'wbraid']))));
 same('?dotid= wins over the cookie', '11111111-22222222-33333333-09252103', dot_click_payload($dotReq('/?fbclid=x&dotid=11111111-22222222-33333333-09252103', ['HTTP_COOKIE' => 'dotid=aebe26bd-d0245268-71fa28c5-09252103']), [], [])['dotid']);
 check('a malformed dotid is dropped (dot makes one)', !array_key_exists('dotid', dot_click_payload($dotReq('/?fbclid=x', ['HTTP_COOKIE' => 'dotid=<script>']), [], [])));

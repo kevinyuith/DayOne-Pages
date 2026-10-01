@@ -19,7 +19,17 @@
  *
  * The www entry redirect isn't sent: the same click comes right back on the
  * bare domain and is sent then. Nor is a prefetch (request_is_prefetch): the
- * page loaded ahead of a click is not a click. Nobody waits: it runs after the response,
+ * page loaded ahead of a click is not a click.
+ *
+ * A real click on a PRE-LANDER page (a slug outside PRE_LANDER_STANDARD_SLUGS —
+ * the home and the legal pages —, served 200, clean, with a click id) carries
+ * no dot.js, so the server sends its page_view itself: the SAME click fields as
+ * event `page_view`, origin `pre_lander`. The click event is left exactly as it
+ * was (no origin). Nothing is added to the HTML. A rule-caught click sends only
+ * the click. A duplicate page_view is harmless — dot doesn't count the
+ * server-side one in its funnel maths.
+ *
+ * Nobody waits: it runs after the response,
  * with a timeout above dot's own (DOT_TIMEOUT, 8 s: dot gives its database
  * write up to 4 s, and a slow answer is still a queued click); a click dot
  * didn't queue (no answer, or a 5xx) is sent again 1 s and 4 s later
@@ -80,9 +90,44 @@ function dot_click_ids(array $query): array
 }
 
 /**
+ * The home and the legal pages: a click landing on one of these is NOT a
+ * pre-lander. Every OTHER slug — served, clean, with a click id — is a
+ * pre-lander page (an advertorial/presell the ad points to before the lander).
+ */
+const PRE_LANDER_STANDARD_SLUGS = ['/', '/contact', '/disclaimer', '/privacy-policy', '/refund-policy', '/shipping', '/terms-of-use'];
+
+/**
+ * 'pre_lander' when this request is a real click on a pre-lander page, else
+ * null. A pre-lander is a slug outside PRE_LANDER_STANDARD_SLUGS, served 200 as
+ * a plain page (not a funnel page the gate served — that one has dot.js), that
+ * no rule caught. The caller has already required a click id and ruled out a
+ * prefetch. When it is one, the server sends a page_view marked `origin:
+ * pre_lander` — the page has no dot.js to send it, and nothing is added to the
+ * HTML. The click event itself is left unchanged (no origin).
+ */
+function dot_pre_lander_origin(string $path, int $status, array $route): ?string
+{
+    if ($status !== 200) {
+        return null; // only a page actually served (200) is a page view
+    }
+    if (($route['match_type'] ?? '') === GATE_MATCH) {
+        return null; // a funnel page the gate served: it already has dot.js (origin lander)
+    }
+    if (in_array($path, PRE_LANDER_STANDARD_SLUGS, true)) {
+        return null; // the home or a legal page: not a pre-lander
+    }
+    $label = $route['_rule_label'] ?? null;
+    if (is_string($label) && $label !== '') {
+        return null; // a rule caught it (datacenter, crawler, suspicious…): not a real click
+    }
+    return 'pre_lander';
+}
+
+/**
  * The dot payload for this request, or null when it isn't sent (no click id,
  * not a page, the www entry redirect, a prefetch). $ctx: what the server did —
  * hit_id, domain_id, outcome, status, route, visit_id, asn, as_name, hostname.
+ * A real click on a pre-lander page is marked `origin: pre_lander` (dot_pre_lander_origin).
  */
 function dot_click_payload(Request $req, array $ctx, array $server): ?array
 {
@@ -238,7 +283,15 @@ function dot_deliver(callable $try, ?callable $sleep = null): ?array
     return ['tries' => $tries, 'why' => $r['why'], 'retry' => $r['retry']];
 }
 
-/** Sends this request's click to dot (after the response). Only a click that still failed after the tries goes to the log. */
+/** The page_view a pre-lander sends: the click's own fields, as event page_view, marked with the origin. */
+function dot_page_view(array $click, string $origin): array
+{
+    $click['event'] = 'page_view';
+    $click['origin'] = $origin;
+    return $click;
+}
+
+/** Sends this request's events to dot (after the response): the click as always, plus a pre-lander's page_view. */
 function dot_click(Request $req, array $ctx, ?array $server = null): void
 {
     $cfg = config();
@@ -249,6 +302,21 @@ function dot_click(Request $req, array $ctx, ?array $server = null): void
     if ($payload === null) {
         return;
     }
+    dot_send($payload); // the click, unchanged
+    // A real click on a pre-lander page (served 200, clean, a non-standard slug):
+    // the page carries no dot.js, so the server sends its page_view too — nothing
+    // is added to the HTML and the click is untouched. A duplicate is harmless:
+    // dot doesn't count the server-side page_view in its funnel maths.
+    $route = is_array($ctx['route'] ?? null) ? $ctx['route'] : [];
+    $origin = dot_pre_lander_origin($req->path, (int) ($ctx['status'] ?? 0), $route);
+    if ($origin !== null) {
+        dot_send(dot_page_view($payload, $origin));
+    }
+}
+
+/** Sends one event to dot (a click or a page_view), with the retries and, on failure, the spool. */
+function dot_send(array $payload): void
+{
     $body = json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
     if ($body === false) {
         return;
@@ -260,7 +328,7 @@ function dot_click(Request $req, array $ctx, ?array $server = null): void
         if ($failed['retry'] && dot_spool($body)) {
             return; // not lost: it goes again from the spool
         }
-        error_log('[dayone-pages] dot click failed after ' . $failed['tries'] . ' tries (' . $failed['why'] . ')');
+        error_log('[dayone-pages] dot ' . ($payload['event'] ?? 'event') . ' failed after ' . $failed['tries'] . ' tries (' . $failed['why'] . ')');
     }
 }
 
