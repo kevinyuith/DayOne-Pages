@@ -12,6 +12,9 @@
  * DNS of the IP), ASN, raw User-Agent and Cookie header, the route that decided
  * (route, page, slug, decision), the final URL (Location) if it was a redirect
  * and, if it was an HTML page, the visit id of the load notice (beacon.php).
+ * When the device checkpoint is on (eval.php), the decision gains its mark:
+ * " · EVAL" (the interstitial page itself) or " · EVAL-PREFETCH" (a prefetch
+ * skipped it and stayed on the domain's page).
  * Turned on/off by LOG_HITS (config).
  */
 declare(strict_types=1);
@@ -95,14 +98,21 @@ function log_hit(Request $req, int $status, string $outcome, ?string $domainId, 
  * "SERVE · FALLBACK", "BLOCK · BOTGATE", "REDIRECT · PREFIX"…; "NONE" when no
  * route matched. A funnel's step switch (the reload that carries `dop_step`,
  * see funnel.php) ends in " · STEP": the same visit, not a new one — the
- * Funnel screen doesn't count it as another view.
+ * Funnel screen doesn't count it as another view. The device checkpoint
+ * (eval.php) adds " · EVAL" (the interstitial was served) or
+ * " · EVAL-PREFETCH" (a prefetch skipped it, on the domain's page).
  */
 function hit_decision(?array $route): string
 {
     if ($route === null) {
         return 'NONE';
     }
-    $parts = array_filter([(string) ($route['action'] ?? ''), (string) ($route['match_type'] ?? ''), !empty($route['_step']) ? 'STEP' : ''], fn (string $p) => $p !== '');
+    $parts = array_filter([
+        (string) ($route['action'] ?? ''),
+        (string) ($route['match_type'] ?? ''),
+        !empty($route['_step']) ? 'STEP' : '',
+        ($route['_eval'] ?? null) === 'checkpoint' ? 'EVAL' : (($route['_eval'] ?? null) === 'prefetch' ? 'EVAL-PREFETCH' : ''),
+    ], fn (string $p) => $p !== '');
     return implode(' · ', $parts);
 }
 

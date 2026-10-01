@@ -336,7 +336,7 @@ function dot_send(array $payload): void
 function dot_curl(string $body): \CurlHandle
 {
     $cfg = config();
-    $ch = curl_init($cfg['dot_url']);
+    $ch = http_curl($cfg['dot_url']);
     curl_setopt_array($ch, [
         CURLOPT_POST => true,
         CURLOPT_POSTFIELDS => $body,

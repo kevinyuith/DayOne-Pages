@@ -19,11 +19,17 @@
  *
  * The rules walk: the first one whose conditions ALL match marks the click
  * with the rule's LABEL and it gets the domain's page at the requested slug.
- * No match (clean traffic) and the slug is allowed ("/" or a gate_slug) → the
- * sub1's [F…] token names the funnel, whose split decides the page (sticky
- * dop_pg). Any other slug → the domain's page at that slug (404 when no page
- * has it). "/" is just a gate_slug like the others: take it out of the list
- * and the root stays on the safe page. Nothing is detected in code:
+ * The walk is two-stage: BOT rules run first (request data only — a bot gets
+ * the safe page right away); SUSPICIOUS rules run last, so a rule that only
+ * knows the click is bad once the device's signals arrive (eval.php: no
+ * touchscreen on a "mobile", a bot that never saw the checkpoint…) still
+ * loses to a Bot verdict and never shields one. No match (clean traffic)
+ * and the slug is allowed ("/" or a gate_slug) → the sub1's [F…] token
+ * names the funnel — but only after the DEVICE CHECKPOINT (eval.php) has
+ * passed: when the gate data carries eval rules, the funnel route is held
+ * back until the visitor's checkpoint cookie proves the interstitial ran.
+ * "/" is just a gate_slug like the others: take it out of the list and the
+ * root stays on the safe page. Nothing is detected in code:
  * bot/suspicious are the rules you write.
  *
  * The conditions are the hit log's fields (rule_conditions_match): the click's
@@ -47,7 +53,7 @@ const GATE_SAFE_MATCH = 'GATE-SAFE';
 const GATE_REASONS = ['slug_not_allowed', 'no_funnel_token', 'funnel_not_live', 'domain_disabled', 'domain_locked', 'domain_unlocked'];
 
 /** The rule-only condition keys (the base ones are conditions_match's). */
-const RULE_OWN_CONDITIONS = ['sub1', 'sub11', 'param', 'user_agent', 'user_agent_mode', 'prefetch', 'ips', 'ips_mode', 'asns', 'asns_mode', 'hostname', 'hostname_mode'];
+const RULE_OWN_CONDITIONS = ['sub1', 'sub11', 'param', 'user_agent', 'user_agent_mode', 'prefetch', 'ips', 'ips_mode', 'asns', 'asns_mode', 'hostname', 'hostname_mode', 'accept_languages'];
 
 /**
  * Builds the SERVE route the gate decides on, or null when the click falls
@@ -78,8 +84,11 @@ function gate_pick(array $routes, array $gate, Request $req): ?array
     // 1) The rules walk: the first match marks the click with the rule's label
     //    and it gets the domain's page at this slug. Nothing is detected in code.
     //    An UNLOCKED domain skips the walk: every click is funnel-bound.
+    //    Bot rules run first; Suspicious rules run last (they include the ones
+    //    a click can only trip after the device checkpoint — eval.php).
     if ($status !== 'UNLOCKED') {
         $rules = is_array($gate['rules'] ?? null) ? $gate['rules'] : [];
+        usort($rules, static fn ($a, $b): int => gate_label_rank((string) ($a['label'] ?? '')) <=> gate_label_rank((string) ($b['label'] ?? '')));
         foreach ($rules as $rule) {
             if (!is_array($rule)) {
                 continue;
@@ -88,6 +97,26 @@ function gate_pick(array $routes, array $gate, Request $req): ?array
             if (!rule_conditions_match($cond, $req)) {
                 continue;
             }
+            return gate_flag_route($domainPage, GATE_SAFE_MATCH, [
+                '_rule_label' => (string) ($rule['label'] ?? ''),
+                '_rule' => (string) ($rule['name'] ?? ''),
+                '_rule_reason' => (string) ($rule['reason'] ?? ''),
+                '_rule_tags' => is_array($rule['tags'] ?? null) ? array_values(array_filter($rule['tags'], 'is_string')) : [],
+            ]);
+        }
+    }
+
+    // 2) The Suspicious stage's verdict, when the device checkpoint (eval.php)
+    //    ran in the browser: the checkpoint's form POSTed the device's signals
+    //    back to this same URL (the payload is in the request, parsed by
+    //    app.php into evalSignals). The eval rules whose conditions now ALL
+    //    match flag the click — after every server-side rule (Bot first) — and
+    //    it gets the domain's safe page; a POST with no match passed the
+    //    checkpoint and the visitor gets the ok cookie with the funnel below.
+    $evalPost = null;
+    if ($status !== 'UNLOCKED' && is_array($req->evalSignals ?? null) && gate_eval_on($gate)) {
+        $evalPost = $req->evalSignals;
+        foreach (eval_rules_matched(is_array($gate['eval_rules'] ?? null) ? $gate['eval_rules'] : [], eval_request_from_query($req), $evalPost, null) as $rule) {
             return gate_flag_route($domainPage, GATE_SAFE_MATCH, [
                 '_rule_label' => (string) ($rule['label'] ?? ''),
                 '_rule' => (string) ($rule['name'] ?? ''),
@@ -125,6 +154,53 @@ function gate_pick(array $routes, array $gate, Request $req): ?array
         return gate_flag_route($domainPage, GATE_SAFE_MATCH, ['_funnel' => $code, '_gate_reason' => $code === null ? 'no_funnel_token' : 'funnel_not_live']);
     }
 
+    // The device checkpoint (eval.php): with eval rules in the gate data, the
+    // funnel is held back until this visitor passed the interstitial page —
+    // the Suspicious stage of the walk runs there, in the browser, on the
+    // device's signals. But only for a click a Suspicious rule is still after
+    // (eval_checkpoint_applies: its sub11, its conditions): any other clean
+    // click goes straight to the funnel. The checkpoint's own POST that
+    // matched no rule passed: it goes to the funnel with the ok cookie. A
+    // prefetch isn't a click: it skips the checkpoint and stays on the
+    // domain's page (marked, for the log).
+    $evalCookie = (string) ($req->cookies[EVAL_COOKIE] ?? '');
+    $evalRules = is_array($gate['eval_rules'] ?? null) ? $gate['eval_rules'] : [];
+    $evalPassed = $evalPost !== null; // a checkpoint POST, no eval rule matched
+    if ($status !== 'UNLOCKED' && $evalRules !== [] && !$evalPassed && $evalCookie !== EVAL_COOKIE_OK && eval_checkpoint_applies($evalRules, eval_request_from_query($req))) {
+        if ($req->prefetch) {
+            return gate_flag_route($domainPage, GATE_SAFE_MATCH, ['_funnel' => $code, '_gate_reason' => 'no_funnel_token', '_eval' => 'prefetch']);
+        }
+        // "No JS": the checkpoint page was already served (the chk cookie) and
+        // the visitor came back with a GET, never the POST — the form never
+        // ran. A rule that names no_js: 1 flags the click right away; without
+        // one, the blank page below holds the bot (it never reaches the funnel).
+        if ($evalCookie === 'chk' && ($noJs = eval_no_js_rule($evalRules, eval_request_from_query($req))) !== null) {
+            return gate_flag_route($domainPage, GATE_SAFE_MATCH, [
+                '_rule_label' => (string) ($noJs['label'] ?? ''),
+                '_rule' => (string) ($noJs['name'] ?? ''),
+                '_rule_reason' => (string) ($noJs['reason'] ?? ''),
+                '_rule_tags' => is_array($noJs['tags'] ?? null) ? array_values(array_filter($noJs['tags'], 'is_string')) : [],
+            ]);
+        }
+        $first = $split[0];
+        return gate_flag_route([
+            'route_id' => null,
+            'domain_id' => $domainId,
+            'priority' => -3,
+            'match_type' => GATE_MATCH,
+            'conditions' => [],
+            'action' => 'SERVE',
+            'page_id' => (string) ($first['page_id'] ?? ''),
+            'slug' => '/',
+            'slug_id' => null,
+            'content_type' => null,
+            'content_hash' => null,
+            'preserve_query' => true,
+            '_funnel' => $code,
+            '_eval' => 'checkpoint',
+        ], GATE_MATCH, []);
+    }
+
     $first = $split[0];
     $route = [
         'route_id' => null,
@@ -157,7 +233,29 @@ function gate_pick(array $routes, array $gate, Request $req): ?array
     if (is_array($funnel['vsl'] ?? null)) {
         $route['vsl'] = array_values(array_filter($funnel['vsl'], 'is_array'));
     }
+    // A checkpoint POST that passed: the funnel response marks the visitor ok
+    // (and the eval signals get stored, so a later checkpoint can skip the
+    // round trip).
+    if ($evalPassed) {
+        $route['_eval_ok'] = true;
+    }
     return $route;
+}
+
+/** Bot rules walk before Suspicious ones (the checkpoint's second stage — eval.php); anything else keeps its place. */
+function gate_label_rank(string $label): int
+{
+    return match (strtolower($label)) {
+        'bot' => 0,
+        'suspicious' => 2,
+        default => 1,
+    };
+}
+
+/** The device checkpoint is on while the gate data carries eval rules (eval.php). */
+function gate_eval_on(array $gate): bool
+{
+    return is_array($gate['eval_rules'] ?? null) && $gate['eval_rules'] !== [];
 }
 
 /** The first route that is a SERVE of a domain page (they all are, at the requested slug). */
@@ -311,6 +409,22 @@ function rule_conditions_match(array $cond, Request $req): bool
         return false;
     }
 
+    // `accept_languages`: the number of language TAGS in the Accept-Language
+    // header (without the q weights). A bot often sends a bare "en" (one
+    // tag); a real browser sends the region AND the base ("en-US,en") — so
+    // `{max: 1}` flags a click whose browser speaks a single language tag
+    // (or none: 0 ≤ 1), and `{min: 2}` the opposite.
+    if (isset($cond['accept_languages']) && is_array($cond['accept_languages'])) {
+        $count = count(language_tags_from_header($req->acceptLanguage));
+        $al = $cond['accept_languages'];
+        if (isset($al['min']) && $count < (int) $al['min']) {
+            return false;
+        }
+        if (isset($al['max']) && $count > (int) $al['max']) {
+            return false;
+        }
+    }
+
     // The click's IP against IPs and CIDR ranges. An invalid IP can't be told: no match.
     if (isset($cond['ips'])) {
         $in = ip_in_ranges($req->ip, is_array($cond['ips']) ? $cond['ips'] : []);
@@ -390,7 +504,7 @@ function gate_content_refs(array $rulesData): array
     return array_values($refs);
 }
 
-/** The rules_data the current refresh just fetched (resolve_routes returns it on a MISS, when the entry isn't in the cache yet). */
+/** The gate data the current refresh just fetched (resolve_routes returns it on a MISS, when the entry isn't in the cache yet). */
 function gate_last_refresh_data(?array $set = null): ?array
 {
     static $data = null;

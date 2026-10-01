@@ -151,8 +151,8 @@ front of the host, or an IP allowlist on the reverse proxy.
 Apply the migrations in `supabase/migrations/` in name order on top of the
 `pages` schema that already exists in the project (SQL Editor); all of them are
 idempotent. `20260921_folders.sql` is required for the templates screen
-(without it, `/templates` fails to load the folders). Then register the
-delivery server key in `pages.server_keys` (see `server/README.md`).
+(without it, `/templates` fails to load the folders). The delivery server
+keys are hashes listed in `pages.server_key_ok` (see `server/README.md`).
 
 Never run `supabase db push` / `db reset` against the project: the database is
 shared with other systems; this product only touches the `pages` schema.

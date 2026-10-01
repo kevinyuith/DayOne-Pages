@@ -9,7 +9,7 @@
  *   devices         ["mobile","tablet","desktop"] device from the User-Agent ∈ list
  *   languages       ["en","es"]                 browser Accept-Language ∩ list
  *   languages_mode  "block"                     inverts: matches whoever does NOT have the languages
- *   query           {"utm_source": "present" | "absent" | {"equals": "x"}}
+ *   query           {"utm_source": "present" | "absent" | "empty" | {"equals": "x"}}
  *   referrer        "text"                      Referer contains (case-insensitive)
  *   bot             true                        crawler/scraper User-Agent.
  *                                               Only valid on BLOCK routes; respond.php
@@ -74,6 +74,11 @@ function conditions_match(array $cond, Request $req): bool
                 if ($present) {
                     return false;
                 }
+            } elseif ($rule === 'empty') {
+                // Absent, or there but with no value ("gclid="): no real value.
+                if ($present && is_scalar($params[$name]) && (string) $params[$name] !== '') {
+                    return false;
+                }
             } elseif (is_array($rule) && array_key_exists('equals', $rule)) {
                 if (!$present || !is_scalar($params[$name]) || (string) $params[$name] !== (string) $rule['equals']) {
                     return false;
@@ -97,6 +102,29 @@ function conditions_match(array $cond, Request $req): bool
     }
 
     return true;
+}
+
+/**
+ * The full tags of an Accept-Language header, without duplicates.
+ * "en-US,en;q=0.9,pt-BR;q=0.8" → ["en-us","en","pt-br"]. A bot often sends a
+ * bare "en" (one tag); a real browser sends the region AND the base
+ * ("en-US,en") — so counting tags tells them apart in a way the primary
+ * subtags (languages_from_header: "en-US,en" both collapse to "en") can't.
+ */
+function language_tags_from_header(string $header): array
+{
+    if (trim($header) === '') {
+        return [];
+    }
+    $out = [];
+    foreach (explode(',', $header) as $part) {
+        $tag = strtolower(trim(explode(';', $part, 2)[0]));
+        if ($tag === '' || $tag === '*' || preg_match('/^[a-z]{1,8}(-[a-z0-9]{1,8})*$/i', $tag) !== 1) {
+            continue;
+        }
+        $out[$tag] = true;
+    }
+    return array_keys($out);
 }
 
 /**

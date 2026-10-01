@@ -216,14 +216,17 @@ The server doesn't get the Supabase service key. It calls the function
 openssl rand -hex 32        # → PAGES_SERVER_KEY in server/.env
 ```
 
-And in the project's SQL Editor:
+The accepted keys are the sha256 hashes listed in the function
+`pages.server_key_ok` (there is no table). A new key is a migration that
+replaces that function with its hash added:
 
-```sql
-INSERT INTO pages.server_keys (name, key_hash)
-VALUES ('origin-1', encode(sha256(convert_to('<the generated key>', 'UTF8')), 'hex'));
+```bash
+printf %s '<the generated key>' | shasum -a 256
 ```
 
-To revoke: `UPDATE pages.server_keys SET revoked_at = now() WHERE name = 'origin-1';`
+To revoke a key, the same: a migration that replaces `pages.server_key_ok`
+without its hash. To rotate, add the new hash, deploy the new `.env`, then
+remove the old one.
 
 ## Cloudflare (per domain)
 

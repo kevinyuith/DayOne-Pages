@@ -15,9 +15,9 @@ return [
     'SUPABASE_URL'      => 'https://YOUR-PROJECT.supabase.co',
     'SUPABASE_ANON_KEY' => '',
 
-    // This server's key. Its hash must be in pages.server_keys:
-    //   INSERT INTO pages.server_keys (name, key_hash)
-    //   VALUES ('my-server', encode(sha256(convert_to('<the key>', 'UTF8')), 'hex'));
+    // This server's key. Its hash must be listed in pages.server_key_ok
+    // (a migration; see server/README.md, "Server key"):
+    //   printf %s '<the key>' | shasum -a 256
     'PAGES_SERVER_KEY'  => '',
 
     // Marker returned by /_health. Same as the panel's SERVER_ID.

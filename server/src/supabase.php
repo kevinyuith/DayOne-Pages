@@ -5,7 +5,7 @@
  * pages whose hash the disk doesn't have yet), plus the logging ones (log_*).
  *
  * They go with the publishable (anon) key and with THIS server's key
- * (PAGES_SERVER_KEY), whose hash lives in pages.server_keys. The functions in
+ * (PAGES_SERVER_KEY), whose hash is listed in pages.server_key_ok. The functions in
  * the database are SECURITY DEFINER. The service key never reaches this machine.
  *
  * `Content-Profile: pages` because the function doesn't live in the `public` schema.
@@ -15,6 +15,36 @@
 declare(strict_types=1);
 
 defined('DAYONE_ENTRY') || (http_response_code(404) && exit);
+
+/**
+ * The connections to Supabase (and dot) stay open between requests: one curl
+ * share per php-fpm worker, kept by PHP ≥ 8.5 (curl_share_init_persistent),
+ * with the open connections, the TLS sessions and the DNS answers. A new
+ * HTTPS connection costs ~14 ms of CPU (the TLS handshake), a reused one
+ * ~0.5 ms — in a crawler burst, the new connections were ~90% of a request's
+ * CPU. Older PHP gets null: a new connection per call, as before.
+ */
+function http_share(): ?\CurlSharePersistentHandle
+{
+    static $share = false;
+    if ($share === false) {
+        $share = function_exists('curl_share_init_persistent')
+            ? curl_share_init_persistent([CURL_LOCK_DATA_CONNECT, CURL_LOCK_DATA_SSL_SESSION, CURL_LOCK_DATA_DNS])
+            : null;
+    }
+    return $share;
+}
+
+/** A new curl handle for $url, on the connections kept open (http_share). */
+function http_curl(string $url): \CurlHandle
+{
+    $ch = curl_init($url);
+    $share = http_share();
+    if ($share !== null) {
+        curl_setopt($ch, CURLOPT_SHARE, $share);
+    }
+    return $ch;
+}
 
 /**
  * The routes for (host, path), without the HTML: `content_hash` is the sha256
@@ -74,7 +104,7 @@ function supabase_rpc(string $fn, array $params): array
         return ['ok' => false, 'error' => 'json_encode'];
     }
 
-    $ch = curl_init($cfg['supabase_url'] . '/rest/v1/rpc/' . $fn);
+    $ch = http_curl($cfg['supabase_url'] . '/rest/v1/rpc/' . $fn);
     curl_setopt_array($ch, [
         CURLOPT_POST => true,
         CURLOPT_POSTFIELDS => $body,
@@ -182,7 +212,7 @@ function supabase_fire(string $fn, array $params): mixed
         return null;
     }
 
-    $ch = curl_init($cfg['supabase_url'] . '/rest/v1/rpc/' . $fn);
+    $ch = http_curl($cfg['supabase_url'] . '/rest/v1/rpc/' . $fn);
     curl_setopt_array($ch, [
         CURLOPT_POST => true,
         CURLOPT_POSTFIELDS => $body,

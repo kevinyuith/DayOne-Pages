@@ -1,0 +1,7 @@
+{
+    "chat.byokUtilityModelDefault": "mainAgent",
+    "chat.tools.terminal.autoApprove": {
+        "command": true,
+        "pg_config": true
+    }
+}

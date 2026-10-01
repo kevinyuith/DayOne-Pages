@@ -48,9 +48,9 @@ same('rule match: detection logged', ['Suspicious', 'Datacenter US', []], [$rout
 same('rule match: the reason goes to the log', 'Datacenter IP range', $route['_rule_reason']);
 check('rule match: the page HTML', str_contains((string) $body, 'HOME'));
 
-// The first match wins.
+// Bot rules walk before Suspicious ones, whatever their position: the Bot one wins.
 [, , , , $route] = decide($root, make_request(['REQUEST_URI' => '/?net=dc', 'HTTP_USER_AGENT' => 'x ScraperXYZ']), $gate);
-same('first match wins', ['Suspicious', 'Datacenter US'], [$route['_rule_label'], $route['_rule']]);
+same('Bot before Suspicious', ['Bot', 'Bad UA'], [$route['_rule_label'], $route['_rule']]);
 // Only the UA rule matches (its tags go along).
 [, , , , $route] = decide($root, make_request(['HTTP_USER_AGENT' => 'x EvilScraper']), $gate);
 same('UA rule: label + tags', ['Bot', 'Bad UA', ['scrape']], [$route['_rule_label'], $route['_rule'], $route['_rule_tags']]);
@@ -194,6 +194,20 @@ check('param absent_or_equals: different value fails', !rule_conditions_match(['
 check('UA regex', rule_conditions_match(['user_agent' => 'chrome'], $req));
 check('UA + base', rule_conditions_match(['user_agent' => 'chrome', 'countries' => ['BR']], $req));
 check('empty conditions', rule_conditions_match([], $req));
+
+// accept_languages: the language-tag count (a bot's bare "en" vs a real "en-US,en").
+$langOne = make_request(['HTTP_ACCEPT_LANGUAGE' => 'en']);
+$langTwo = make_request(['HTTP_ACCEPT_LANGUAGE' => 'en-US,en;q=0.9']);
+$langThree = make_request(['HTTP_ACCEPT_LANGUAGE' => 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7']);
+check('accept_languages max 1: a bare "en" flags', rule_conditions_match(['accept_languages' => ['max' => 1]], $langOne));
+check('accept_languages max 1: "en-US,en" passes', !rule_conditions_match(['accept_languages' => ['max' => 1]], $langTwo));
+check('accept_languages max 1: no header flags too (0 ≤ 1)', rule_conditions_match(['accept_languages' => ['max' => 1]], make_request(['HTTP_ACCEPT_LANGUAGE' => ''])));
+check('accept_languages min 2: a real browser flags', rule_conditions_match(['accept_languages' => ['min' => 2]], $langTwo));
+check('accept_languages min 2: a bare "en" passes', !rule_conditions_match(['accept_languages' => ['min' => 2]], $langOne));
+check('accept_languages min 2 max 2: two tags flag', rule_conditions_match(['accept_languages' => ['min' => 2, 'max' => 2]], $langTwo));
+check('accept_languages min 2 max 2: three tags pass', !rule_conditions_match(['accept_languages' => ['min' => 2, 'max' => 2]], $langThree));
+same('language tags: en-US,en are two', ['en-us', 'en'], language_tags_from_header('en-US,en;q=0.9'));
+same('language tags: primaries collapse (en-US,en → en)', ['en'], languages_from_header('en-US,en;q=0.9'));
 
 // A prefetch: TikTok's Android app (X-Moz) and browsers (Sec-Purpose, Purpose) loading the page ahead of a click.
 check('prefetch: a normal request is not one', !$req->prefetch && !rule_conditions_match(['prefetch' => true], $req));

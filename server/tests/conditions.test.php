@@ -51,6 +51,13 @@ check('query absent does not match', !conditions_match(['query' => ['gclid' => '
 check('query equals matches', conditions_match(['query' => ['utm_source' => ['equals' => 'tiktok']]], $withQuery));
 check('query equals does not match', !conditions_match(['query' => ['utm_source' => ['equals' => 'meta']]], $withQuery));
 check('query invalid rule does not match', !conditions_match(['query' => ['x' => 'maybe']], $withQuery));
+// "empty": absent, or there but with no value.
+$emptyVal = make_request(['REQUEST_URI' => '/?gclid=&sub12=abc']);
+check('query empty: absent matches', conditions_match(['query' => ['gclid' => 'empty']], $desktop));
+check('query empty: present-but-empty matches', conditions_match(['query' => ['gclid' => 'empty']], $emptyVal));
+check('query empty: with a value does not match', !conditions_match(['query' => ['sub12' => 'empty']], $emptyVal));
+check('query empty: all three empty matches', conditions_match(['query' => ['gclid' => 'empty', 'sub12' => 'empty', 'sub13' => 'empty']], make_request(['REQUEST_URI' => '/?gclid=&sub12='])));
+check('query empty: one filled does not match', !conditions_match(['query' => ['gclid' => 'empty', 'sub12' => 'empty']], $withQuery));
 
 check('referrer matches', conditions_match(['referrer' => 'facebook.com'], $fromFb));
 check('referrer case-insensitive', conditions_match(['referrer' => 'FACEBOOK'], $fromFb));
