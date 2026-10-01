@@ -33,6 +33,10 @@ final class Request
         /** Normalized host and path; filled in by app.php. */
         public string $host = '',
         public string $path = '/',
+        /** The eval checkpoint's query parameters (eval.php): sub ids and URL parameters. */
+        public array $evalParams = [],
+        /** The device signals the checkpoint's form POSTed (eval.php); null on any other request. */
+        public ?array $evalSignals = null,
     ) {
     }
 

@@ -1,0 +1,219 @@
+<?php
+declare(strict_types=1);
+
+// ── The device checkpoint: the Suspicious stage of the gate, run in the browser (eval.php) ──
+
+$domId = '99999999-0000-4000-8000-000000000099';
+$pageId = '88888888-0000-4000-8000-000000000088';
+$pgA = '11111111-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+
+$routeAt = fn (string $slug, string $hash): array => [
+    'route_id' => null, 'domain_id' => $domId, 'priority' => 0, 'match_type' => 'PAGE',
+    'conditions' => [], 'action' => 'SERVE', 'page_id' => $pageId, 'slug' => $slug,
+    'slug_id' => '44444444-0000-4000-8000-0000000000aa', 'content_type' => 'text/html; charset=utf-8',
+    'content_hash' => $hash, 'preserve_query' => true,
+];
+
+// A gate with the checkpoint ON (eval_rules present) and a live funnel. The
+// eval rule goes after a mobile click from Taboola — a click that isn't that
+// skips the checkpoint entirely (eval_checkpoint_applies).
+$mobileUA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
+$gate = [
+    'gate_slugs' => ['/'],
+    'rules' => [],
+    'eval_rules' => [
+        ['name' => 'Mobile no touch', 'label' => 'Suspicious', 'reason' => 'Mobile UA without a touchscreen', 'tags' => ['emu'], 'conditions' => ['sub11' => 'taboola', 'devices' => ['mobile'], 'touch' => 0]],
+    ],
+    'funnels' => [
+        'F23' => [
+            'split' => [
+                ['page_id' => $pgA, 'content_type' => 'text/html; charset=utf-8', 'content_hash' => 'fade01', 'weight' => 100],
+            ],
+        ],
+    ],
+];
+$click = fn (string $qs = '', array $over = []) => make_request(array_merge(['REQUEST_URI' => '/?sub1=' . rawurlencode('x[F23]') . '&sub11=taboola' . $qs, 'HTTP_USER_AGENT' => $mobileUA], $over));
+
+cache_put_content('home01', '<html><body>HOME</body></html>');
+cache_put_content('fade01', '<html><body>F23-A</body></html>');
+$root = [$routeAt('/', 'home01')];
+
+// ── A clean click the eval rule is after (sub11=taboola, mobile): the checkpoint page ──
+[$st, $hd, $body, $outcome, $route] = decide($root, $click(), $gate);
+same('checkpoint: served', [200, 'served', 'GATE'], [$st, $outcome, $route['match_type']]);
+same('checkpoint: the _eval mark', 'checkpoint', $route['_eval'] ?? null);
+check('checkpoint: the interstitial page runs the eval script', str_contains((string) $body, 'name=' . json_encode(EVAL_FIELD)) && str_contains((string) $body, 'f.submit()'));
+check('checkpoint: no title (a cloaker fingerprint)', !str_contains((string) $body, '<title>'));
+check('checkpoint: the script is in the head', str_contains((string) $body, '</script></head><body>'));
+check('checkpoint: never cached', str_contains((string) ($hd['Cache-Control'] ?? ''), 'no-store'));
+check('checkpoint: not the funnel page', !str_contains((string) $body, 'F23-A'));
+same('checkpoint: decision marker', 'SERVE · GATE · EVAL', hit_decision($route));
+
+// ── The mid page only exists for a click a Suspicious rule is after ──
+// Another sub11: no rule is after it — straight to the funnel, no page.
+$other = make_request(['REQUEST_URI' => '/?sub1=' . rawurlencode('x[F23]') . '&sub11=facebook', 'HTTP_USER_AGENT' => $mobileUA]);
+[, , $body, , $route] = decide($root, $other, $gate);
+same('other sub11: skips the checkpoint, to the funnel', 'GATE', $route['match_type']);
+check('other sub11: the funnel page', str_contains((string) $body, 'F23-A'));
+check('other sub11: no checkpoint mark', !isset($route['_eval']));
+// A desktop UA: the rule's `devices` isn't met — no checkpoint either.
+$desk = make_request(['REQUEST_URI' => '/?sub1=' . rawurlencode('x[F23]') . '&sub11=taboola']);
+[, , $body, , $route] = decide($root, $desk, $gate);
+same('desktop UA: skips the checkpoint', 'GATE', $route['match_type']);
+
+// A prefetch isn't a click: it skips the checkpoint and stays on the domain's page.
+[$st, , $body, , $route] = decide($root, $click('', ['HTTP_SEC_PURPOSE' => 'prefetch']), $gate);
+same('prefetch: the safe page', [200, 'GATE-SAFE', 'home01'], [$st, $route['match_type'], $route['content_hash']]);
+same('prefetch: the _eval mark', 'prefetch', $route['_eval'] ?? null);
+same('prefetch: decision marker', 'SERVE · GATE-SAFE · EVAL-PREFETCH', hit_decision($route));
+
+// A passed checkpoint (dop_ev=ok): straight to the funnel.
+$okReq = $click('', ['HTTP_COOKIE' => EVAL_COOKIE . '=' . EVAL_COOKIE_OK]);
+[, , $body, , $route] = decide($root, $okReq, $gate);
+same('passed: the funnel', 'GATE', $route['match_type']);
+check('passed: the funnel page', str_contains((string) $body, 'F23-A'));
+check('passed: no checkpoint mark', !isset($route['_eval']));
+
+// Without eval rules the checkpoint is off: the funnel right away.
+[, , $body, , $route] = decide($root, $click(), [...$gate, 'eval_rules' => []]);
+same('no eval rules: the funnel', 'GATE', $route['match_type']);
+
+// ── The browser's verdict, via the form POST body (the Adspect flow): the
+// checkpoint posted the device's signals back to the same URL. A rule whose
+// conditions now all match flags the click → the safe page, in the POST's
+// own response.
+$post = $click();
+$post->evalSignals = ['mtp' => 0, 'ptr' => 'fine', 'wd' => 0]; // a desktop posing as a phone: no touch
+[, , $body, , $route] = decide($root, $post, $gate);
+same('verdict POST: the safe page', ['GATE-SAFE', 'home01'], [$route['match_type'], $route['content_hash']]);
+same('verdict POST: the rule flags', ['Suspicious', 'Mobile no touch', ['emu']], [$route['_rule_label'], $route['_rule'], $route['_rule_tags']]);
+same('verdict POST: the reason', 'Mobile UA without a touchscreen', $route['_rule_reason']);
+check('verdict POST: the safe HTML', str_contains((string) $body, 'HOME'));
+
+// A POST whose signals match NO eval rule passed the checkpoint: the funnel,
+// and the route is marked to set the ok cookie.
+$postOk = $click();
+$postOk->evalSignals = ['mtp' => 5, 'ptr' => 'coarse', 'wd' => 0]; // a real phone: touch
+[, , $body, , $route] = decide($root, $postOk, $gate);
+same('passed POST: the funnel', 'GATE', $route['match_type']);
+check('passed POST: the funnel page', str_contains((string) $body, 'F23-A'));
+check('passed POST: marked for the ok cookie', !empty($route['_eval_ok']));
+
+// ── Bot rules walk before Suspicious ones (position doesn't matter) ──
+$walkGate = [...$gate, 'eval_rules' => [], 'rules' => [
+    ['name' => 'A suspicious', 'label' => 'Suspicious', 'reason' => '', 'tags' => [], 'conditions' => ['devices' => ['mobile']]],
+    ['name' => 'A bot', 'label' => 'Bot', 'reason' => '', 'tags' => [], 'conditions' => ['devices' => ['mobile', 'desktop']]],
+]];
+[, , , , $route] = decide($root, make_request(['REQUEST_URI' => '/?sub1=x[F23]', 'HTTP_USER_AGENT' => $mobileUA]), $walkGate);
+same('walk: Bot before Suspicious', ['Bot', 'A bot'], [$route['_rule_label'], $route['_rule']]);
+// Only the Suspicious one matches (a desktop UA: the Bot rule wants mobile or desktop…
+// make it want mobile only so the desktop click leaves it out).
+$walkGate2 = [...$gate, 'eval_rules' => [], 'rules' => [
+    ['name' => 'A suspicious', 'label' => 'Suspicious', 'reason' => '', 'tags' => [], 'conditions' => ['devices' => ['mobile', 'desktop']]],
+    ['name' => 'A bot', 'label' => 'Bot', 'reason' => '', 'tags' => [], 'conditions' => ['devices' => ['mobile']]],
+]];
+[, , , , $route] = decide($root, make_request(['REQUEST_URI' => '/?sub1=x[F23]']), $walkGate2);
+same('walk: the Suspicious one alone still flags', ['Suspicious', 'A suspicious'], [$route['_rule_label'] ?? null, $route['_rule'] ?? null]);
+
+// ── eval_cookie "absent": a click that never passed the checkpoint ──
+$absentReq = make_request([]);
+$absentReq->evalParams = [];
+same('eval_cookie absent: no cookie matches', true, eval_conditions_match(['eval_cookie' => 'absent'], $absentReq, null, null));
+$withOk = make_request(['HTTP_COOKIE' => EVAL_COOKIE . '=' . EVAL_COOKIE_OK]);
+$withOk->evalParams = [];
+same('eval_cookie absent: passed cookie fails', false, eval_conditions_match(['eval_cookie' => 'absent'], $withOk, null, null));
+$withChk = make_request(['HTTP_COOKIE' => EVAL_COOKIE . '=chk']);
+$withChk->evalParams = [];
+same('eval_cookie absent: any checkpoint cookie fails', false, eval_conditions_match(['eval_cookie' => 'absent'], $withChk, null, null));
+
+// ── eval_conditions_match: sub ids, URL parameters and the signals ──
+$req = make_request([]);
+$req->evalParams = ['sub11' => 'Taboola'];
+check('sub id: exact, case-insensitive', eval_conditions_match(['sub11' => 'taboola'], $req, null, null));
+check('sub id: a different value fails', !eval_conditions_match(['sub11' => 'facebook'], $req, null, null));
+
+// A signal condition that's undecidable: no signals, no stored entry → no match (never confirms a bot).
+check('touch: undecidable is no match', !eval_conditions_match(['touch' => 0], $req, null, null));
+// …but the rule stays pending (the checkpoint's applies-check).
+check('touch: undecidable stays pending', eval_conditions_match(['touch' => 0], $req, [], null, true));
+
+// The POST's fresh signals (the beacon's "sg" keys).
+check('touch 0: mtp=0 matches', eval_conditions_match(['touch' => 0], $req, ['mtp' => 0], null));
+check('touch 0: mtp=5 fails', !eval_conditions_match(['touch' => 0], $req, ['mtp' => 5], null));
+check('pointer: ptr coarse matches', eval_conditions_match(['pointer' => 'coarse'], $req, ['ptr' => 'coarse'], null));
+check('pointer: ptr fine fails', !eval_conditions_match(['pointer' => 'coarse'], $req, ['ptr' => 'fine'], null));
+check('webdriver: wd=1 matches', eval_conditions_match(['webdriver' => 1], $req, ['wd' => 1], null));
+check('automation: aut>0 maps to 1', eval_conditions_match(['automation' => 1], $req, ['aut' => 3], null));
+check('platform: upf contained, case-insensitive', eval_conditions_match(['platform' => 'android'], $req, ['upf' => 'Android'], null));
+
+// ── The on/off bot tells (derived from the signals) ──
+// Mobile + sem touch: mtp=0 fires no_touch.
+check('no_touch: mtp=0 fires', eval_conditions_match(['no_touch' => 1], $req, ['mtp' => 0], null));
+check('no_touch: mtp=5 does not', !eval_conditions_match(['no_touch' => 1], $req, ['mtp' => 5], null));
+// Chrome UA + sem window.chrome: chr=0 fires no_chrome_object; chrome_ua reads the UA.
+$chromeReq = make_request(['HTTP_USER_AGENT' => 'Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 Chrome/120.0 Safari/537.36']);
+$chromeReq->evalParams = [];
+check('chrome_ua: a Chrome UA', eval_conditions_match(['chrome_ua' => 1], $chromeReq, [], null));
+$ffReq = make_request(['HTTP_USER_AGENT' => 'Mozilla/5.0 (Windows NT 10.0; rv:121.0) Gecko/20100101 Firefox/121.0']);
+$ffReq->evalParams = [];
+check('chrome_ua: not a Chrome UA', !eval_conditions_match(['chrome_ua' => 1], $ffReq, [], null));
+check('no_chrome_object: chr=0 fires', eval_conditions_match(['no_chrome_object' => 1], $chromeReq, ['chr' => 0], null));
+check('chrome UA + no window.chrome together', eval_conditions_match(['chrome_ua' => 1, 'no_chrome_object' => 1], $chromeReq, ['chr' => 0], null));
+check('no_chrome_object: chr=1 does not fire', !eval_conditions_match(['no_chrome_object' => 1], $chromeReq, ['chr' => 1], null));
+// Timezone incongruence: BR IP but a non-Brazil zone/offset.
+$brReq = new Request(method: 'POST', rawHost: 'example.com', rawPath: '/', rawQuery: '', userAgent: 'x', referer: '', country: 'BR', acceptLanguage: '', ip: '1.2.3.4', ifNoneMatch: null, purgeToken: null, viaCloudflare: true, cookies: []);
+$brReq->evalParams = [];
+check('tz_mismatch: BR + UTC zone name fires', eval_conditions_match(['tz_mismatch' => 1], $brReq, ['tze' => 'UTC'], null));
+check('tz_mismatch: BR + São Paulo does not', !eval_conditions_match(['tz_mismatch' => 1], $brReq, ['tze' => 'America/Sao_Paulo'], null));
+check('tz_mismatch: BR + offset 0 (UTC) fires', eval_conditions_match(['tz_mismatch' => 1], $brReq, ['tz' => 0], null));
+check('tz_mismatch: BR + offset 180 does not', !eval_conditions_match(['tz_mismatch' => 1], $brReq, ['tz' => 180], null));
+$usReq = new Request(method: 'POST', rawHost: 'example.com', rawPath: '/', rawQuery: '', userAgent: 'x', referer: '', country: 'US', acceptLanguage: '', ip: '1.2.3.4', ifNoneMatch: null, purgeToken: null, viaCloudflare: true, cookies: []);
+$usReq->evalParams = [];
+check('tz_mismatch: unlisted country never fires', !eval_conditions_match(['tz_mismatch' => 1], $usReq, ['tze' => 'UTC'], null));
+// Cookies disabled: cke=0 fires no_cookie.
+check('no_cookie: cke=0 fires', eval_conditions_match(['no_cookie' => 1], $req, ['cke' => 0], null));
+check('no_cookie: cke=1 does not', !eval_conditions_match(['no_cookie' => 1], $req, ['cke' => 1], null));
+// Odd resolution: the viewport bigger than the screen.
+check('odd_resolution: vw>sw fires', eval_conditions_match(['odd_resolution' => 1], $req, ['sw' => 360, 'sh' => 800, 'vw' => 1200, 'vh' => 700], null));
+check('odd_resolution: a normal viewport does not', !eval_conditions_match(['odd_resolution' => 1], $req, ['sw' => 390, 'sh' => 844, 'vw' => 390, 'vh' => 700], null));
+// no_js is never decided by signals (the GET-side walk handles it).
+check('no_js: not a signal condition', !eval_conditions_match(['no_js' => 1], $req, ['mtp' => 0], null));
+
+// The stored signals (a previous checkpoint's cache entry), mapped to the condition keys.
+$stored = ['mtp' => 5, 'ptr' => 'coarse', 'wd' => 0, 'aut' => 0, 'glsw' => 0, 'upf' => 'Android'];
+check('stored: touch from mtp', eval_conditions_match(['touch' => 1], $req, null, $stored));
+check('stored: pointer from ptr', eval_conditions_match(['pointer' => 'coarse'], $req, null, $stored));
+check('stored: platform from upf', eval_conditions_match(['platform' => 'android'], $req, null, $stored));
+check('stored: webdriver 0 matches', eval_conditions_match(['webdriver' => 0], $req, null, $stored));
+check('stored: missing key is undecidable', !eval_conditions_match(['mobile_hint' => 1], $req, null, $stored));
+
+// The example from the spec: sub11=Taboola + mobile + no touchscreen.
+$specReq = make_request(['HTTP_USER_AGENT' => $mobileUA]);
+$specReq->evalParams = ['sub11' => 'Taboola'];
+$specCond = ['sub11' => 'taboola', 'devices' => ['mobile'], 'touch' => 0];
+check('spec: sub11+mobile+no touch matches', eval_conditions_match($specCond, $specReq, ['mtp' => 0], null));
+check('spec: with a touchscreen it fails', !eval_conditions_match($specCond, $specReq, ['mtp' => 5], null));
+$specOther = make_request(['HTTP_USER_AGENT' => $mobileUA]);
+$specOther->evalParams = ['sub11' => 'facebook'];
+check('spec: another sub11 fails', !eval_conditions_match($specCond, $specOther, ['mtp' => 0], null));
+
+// ── The eval POST payload: parsed from the form body, query → evalParams ──
+$payloadReq = make_request(['REQUEST_METHOD' => 'POST', 'REQUEST_URI' => '/?sub1=x[F23]&sub11=taboola']);
+$parsed = eval_post_payload($payloadReq, EVAL_FIELD . '=' . rawurlencode(json_encode(['sg' => ['mtp' => 0, 'ptr' => 'fine']])));
+assert(is_array($parsed));
+[$preq, $psig] = $parsed;
+same('payload: evalParams from the query', 'taboola', $preq->evalParams['sub11'] ?? null);
+same('payload: the signals', ['mtp' => 0, 'ptr' => 'fine'], $psig);
+same('payload: no field → null', null, eval_post_payload($payloadReq, 'other=1'));
+same('payload: bad json → null', null, eval_post_payload($payloadReq, EVAL_FIELD . '=not-json'));
+
+// ── eval_rules_matched: the rules whose conditions all match, in order ──
+$mrules = [
+    ['name' => 'No touch', 'label' => 'Suspicious', 'reason' => '', 'tags' => [], 'conditions' => ['touch' => 0]],
+    ['name' => 'Webdriver', 'label' => 'Suspicious', 'reason' => '', 'tags' => [], 'conditions' => ['webdriver' => 1]],
+];
+$mreq = make_request([]);
+$mreq->evalParams = [];
+same('matched: touch=0 matches', ['No touch'], array_map(fn ($r) => $r['name'], eval_rules_matched($mrules, $mreq, ['mtp' => 0], null)));
+same('matched: touch+wd match both, in order', ['No touch', 'Webdriver'], array_map(fn ($r) => $r['name'], eval_rules_matched($mrules, $mreq, ['mtp' => 0, 'wd' => 1], null)));
+same('matched: touch=1 matches none', [], eval_rules_matched($mrules, $mreq, ['mtp' => 5], null));

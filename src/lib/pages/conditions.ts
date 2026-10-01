@@ -28,11 +28,11 @@ export const LIST_MODES = ["allow", "block"] as const;
 export type ListMode = (typeof LIST_MODES)[number];
 export const LIST_MODE_LABELS: Record<ListMode, string> = { allow: "Allow only", block: "Block" };
 
-export const QUERY_MODES = ["present", "absent", "equals"] as const;
+export const QUERY_MODES = ["present", "absent", "empty", "equals"] as const;
 export type QueryMode = (typeof QUERY_MODES)[number];
-export const QUERY_MODE_LABELS: Record<QueryMode, string> = { present: "present", absent: "absent", equals: "equals" };
+export const QUERY_MODE_LABELS: Record<QueryMode, string> = { present: "present", absent: "absent", empty: "absent or empty", equals: "equals" };
 
-const queryRule = z.union([z.literal("present"), z.literal("absent"), z.strictObject({ equals: z.string().min(1).max(200) })]);
+const queryRule = z.union([z.literal("present"), z.literal("absent"), z.literal("empty"), z.strictObject({ equals: z.string().min(1).max(200) })]);
 
 export const conditionsSchema = z
   .strictObject({
@@ -105,6 +105,15 @@ export const ruleConditionsSchema = conditionsSchema
     user_agent_mode: z.literal("block").optional(),
     // Only a prefetch: the page loaded ahead of a click (X-Moz / Sec-Purpose / Purpose: prefetch).
     prefetch: z.literal(true).optional(),
+    // The number of language tags in Accept-Language: a bot often sends a bare
+    // "en" (one tag), a real browser sends "en-US,en" (two). {max: 1} flags it.
+    accept_languages: z
+      .strictObject({
+        min: z.number().int().min(0).max(50).optional(),
+        max: z.number().int().min(0).max(50).optional(),
+      })
+      .refine((a) => a.min !== undefined || a.max !== undefined, { message: "min or max required" })
+      .optional(),
     // The click's IP (IPs and CIDR ranges), its AS number and its hostname (reverse DNS, a regex).
     ips: z.array(z.string().refine(isIpOrRange, "invalid IP or range")).min(1).max(200).optional(),
     ips_mode: z.literal("block").optional(),
@@ -112,6 +121,30 @@ export const ruleConditionsSchema = conditionsSchema
     asns_mode: z.literal("block").optional(),
     hostname: z.string().min(1).max(500).optional(),
     hostname_mode: z.literal("block").optional(),
+    // ── The device signals (the checkpoint, server/src/eval.php) — only the
+    // browser knows them; the gate's Suspicious stage runs there.
+    // eval_cookie "absent" = the visitor never passed the checkpoint.
+    eval_cookie: z.literal("absent").optional(),
+    touch: z.union([z.literal(0), z.literal(1)]).optional(),
+    mobile_hint: z.union([z.literal(0), z.literal(1)]).optional(),
+    pointer: z.enum(["coarse", "fine", "none"]).optional(),
+    webdriver: z.union([z.literal(0), z.literal(1)]).optional(),
+    automation: z.union([z.literal(0), z.literal(1)]).optional(),
+    gl_software: z.union([z.literal(0), z.literal(1)]).optional(),
+    platform: z.string().min(1).max(60).optional(),
+    iframe: z.union([z.literal(0), z.literal(1)]).optional(),
+    tostring_tampered: z.union([z.literal(0), z.literal(1)]).optional(),
+    proto_poisoned: z.union([z.literal(0), z.literal(1)]).optional(),
+    tz_offset: z.number().int().min(-840).max(840).optional(),
+    // The on/off detectors (1 = the tell fired). no_js is decided on the GET
+    // (the page served, no POST back), the rest from the browser's signals.
+    no_touch: z.union([z.literal(0), z.literal(1)]).optional(),
+    chrome_ua: z.union([z.literal(0), z.literal(1)]).optional(),
+    no_chrome_object: z.union([z.literal(0), z.literal(1)]).optional(),
+    tz_mismatch: z.union([z.literal(0), z.literal(1)]).optional(),
+    no_js: z.union([z.literal(0), z.literal(1)]).optional(),
+    no_cookie: z.union([z.literal(0), z.literal(1)]).optional(),
+    odd_resolution: z.union([z.literal(0), z.literal(1)]).optional(),
   })
   .refine((c) => !c.user_agent_mode || (c.user_agent?.length ?? 0) > 0, { message: "user_agent_mode requires user_agent", path: ["user_agent_mode"] })
   .refine((c) => !c.ips_mode || (c.ips?.length ?? 0) > 0, { message: "ips_mode requires ips", path: ["ips_mode"] })
@@ -318,6 +351,61 @@ export function parseRuleConditionsForm(fd: FormData): { ok: true; value: RuleCo
 
   if (fd.get("prefetch") === "on" || fd.get("prefetch") === "true") raw.prefetch = true;
 
+  // The Accept-Language tag count (min and/or max, independent).
+  const alMin = String(fd.get("accept_languages_min") ?? "").trim();
+  const alMax = String(fd.get("accept_languages_max") ?? "").trim();
+  if (alMin !== "" || alMax !== "") {
+    const al: { min?: number; max?: number } = {};
+    if (alMin !== "" && /^\d{1,2}$/.test(alMin)) al.min = Number(alMin);
+    if (alMax !== "" && /^\d{1,2}$/.test(alMax)) al.max = Number(alMax);
+    if (al.min !== undefined || al.max !== undefined) raw.accept_languages = al;
+  }
+
+  // The device signals (the checkpoint's browser stage). Each comes as a
+  // select: "" = not used, otherwise the value.
+  const bit = (name: string): 0 | 1 | undefined => {
+    const v = String(fd.get(name) ?? "");
+    return v === "1" ? 1 : v === "0" ? 0 : undefined;
+  };
+  const touch = bit("touch");
+  if (touch !== undefined) raw.touch = touch;
+  const mobileHint = bit("mobile_hint");
+  if (mobileHint !== undefined) raw.mobile_hint = mobileHint;
+  const pointer = String(fd.get("pointer") ?? "");
+  if (pointer === "coarse" || pointer === "fine" || pointer === "none") raw.pointer = pointer;
+  const webdriver = bit("webdriver");
+  if (webdriver !== undefined) raw.webdriver = webdriver;
+  const automation = bit("automation");
+  if (automation !== undefined) raw.automation = automation;
+  const glSoftware = bit("gl_software");
+  if (glSoftware !== undefined) raw.gl_software = glSoftware;
+  const platform = String(fd.get("signal_platform") ?? "").trim();
+  if (platform) raw.platform = platform;
+  const iframe = bit("iframe");
+  if (iframe !== undefined) raw.iframe = iframe;
+  const tostringTampered = bit("tostring_tampered");
+  if (tostringTampered !== undefined) raw.tostring_tampered = tostringTampered;
+  const protoPoisoned = bit("proto_poisoned");
+  if (protoPoisoned !== undefined) raw.proto_poisoned = protoPoisoned;
+  const tzOffset = String(fd.get("tz_offset") ?? "").trim();
+  if (tzOffset !== "" && /^-?\d{1,4}$/.test(tzOffset)) raw.tz_offset = Number(tzOffset);
+  if (fd.get("eval_cookie") === "absent") raw.eval_cookie = "absent";
+  // The on/off detectors.
+  const noTouch = bit("no_touch");
+  if (noTouch !== undefined) raw.no_touch = noTouch;
+  const chromeUa = bit("chrome_ua");
+  if (chromeUa !== undefined) raw.chrome_ua = chromeUa;
+  const noChromeObject = bit("no_chrome_object");
+  if (noChromeObject !== undefined) raw.no_chrome_object = noChromeObject;
+  const tzMismatch = bit("tz_mismatch");
+  if (tzMismatch !== undefined) raw.tz_mismatch = tzMismatch;
+  const noJs = bit("no_js");
+  if (noJs !== undefined) raw.no_js = noJs;
+  const noCookie = bit("no_cookie");
+  if (noCookie !== undefined) raw.no_cookie = noCookie;
+  const oddResolution = bit("odd_resolution");
+  if (oddResolution !== undefined) raw.odd_resolution = oddResolution;
+
   const parsed = ruleConditionsSchema.safeParse(raw);
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
@@ -336,14 +424,36 @@ export function ruleConditionsToForm(c: RuleConditions | null | undefined): Retu
   userAgent: string;
   userAgentMode: ListMode;
   prefetch: boolean;
+  acceptLanguagesMin: string;
+  acceptLanguagesMax: string;
   ips: string;
   ipsMode: ListMode;
   asns: string;
   asnsMode: ListMode;
   hostname: string;
   hostnameMode: ListMode;
+  evalCookie: boolean;
+  touch: "" | "0" | "1";
+  mobileHint: "" | "0" | "1";
+  pointer: "" | "coarse" | "fine" | "none";
+  webdriver: "" | "0" | "1";
+  automation: "" | "0" | "1";
+  glSoftware: "" | "0" | "1";
+  signalPlatform: string;
+  iframe: "" | "0" | "1";
+  tostringTampered: "" | "0" | "1";
+  protoPoisoned: "" | "0" | "1";
+  tzOffset: string;
+  noTouch: "" | "0" | "1";
+  chromeUa: "" | "0" | "1";
+  noChromeObject: "" | "0" | "1";
+  tzMismatch: "" | "0" | "1";
+  noJs: "" | "0" | "1";
+  noCookie: "" | "0" | "1";
+  oddResolution: "" | "0" | "1";
 } {
   const p = c?.param;
+  const bit = (v: 0 | 1 | undefined): "" | "0" | "1" => (v === 1 ? "1" : v === 0 ? "0" : "");
   return {
     ...conditionsToForm(c),
     sub1: c?.sub1 ?? "",
@@ -355,12 +465,33 @@ export function ruleConditionsToForm(c: RuleConditions | null | undefined): Retu
     userAgent: c?.user_agent ?? "",
     userAgentMode: c?.user_agent_mode === "block" ? "block" : "allow",
     prefetch: c?.prefetch === true,
+    acceptLanguagesMin: c?.accept_languages?.min !== undefined ? String(c.accept_languages.min) : "",
+    acceptLanguagesMax: c?.accept_languages?.max !== undefined ? String(c.accept_languages.max) : "",
     ips: (c?.ips ?? []).join(", "),
     ipsMode: c?.ips_mode === "block" ? "block" : "allow",
     asns: (c?.asns ?? []).join(", "),
     asnsMode: c?.asns_mode === "block" ? "block" : "allow",
     hostname: c?.hostname ?? "",
     hostnameMode: c?.hostname_mode === "block" ? "block" : "allow",
+    evalCookie: c?.eval_cookie === "absent",
+    touch: bit(c?.touch),
+    mobileHint: bit(c?.mobile_hint),
+    pointer: c?.pointer ?? "",
+    webdriver: bit(c?.webdriver),
+    automation: bit(c?.automation),
+    glSoftware: bit(c?.gl_software),
+    signalPlatform: c?.platform ?? "",
+    iframe: bit(c?.iframe),
+    tostringTampered: bit(c?.tostring_tampered),
+    protoPoisoned: bit(c?.proto_poisoned),
+    tzOffset: c?.tz_offset !== undefined ? String(c.tz_offset) : "",
+    noTouch: bit(c?.no_touch),
+    chromeUa: bit(c?.chrome_ua),
+    noChromeObject: bit(c?.no_chrome_object),
+    tzMismatch: bit(c?.tz_mismatch),
+    noJs: bit(c?.no_js),
+    noCookie: bit(c?.no_cookie),
+    oddResolution: bit(c?.odd_resolution),
   };
 }
 
@@ -386,10 +517,40 @@ export function summarizeRuleConditions(c: RuleConditions | null | undefined): s
     );
   if (c.user_agent) parts.push(`UA ${c.user_agent_mode === "block" ? "not " : ""}~ /${c.user_agent}/i`);
   if (c.prefetch) parts.push("Prefetch");
+  if (c.accept_languages) {
+    const { min, max } = c.accept_languages;
+    if (min !== undefined && max !== undefined) parts.push(`Languages ${min}–${max}`);
+    else if (max !== undefined) parts.push(`Languages ≤ ${max}`);
+    else if (min !== undefined) parts.push(`Languages ≥ ${min}`);
+  }
   if (c.ips?.length) parts.push(`IP ${c.ips_mode === "block" ? "not " : ""}in ${c.ips.join(", ")}`);
   if (c.asns?.length) parts.push(`ASN ${c.asns_mode === "block" ? "not " : ""}in ${c.asns.join(", ")}`);
   if (c.hostname) parts.push(`Hostname ${c.hostname_mode === "block" ? "not " : ""}~ /${c.hostname}/i`);
   const base = summarizeConditions(c);
   if (base !== "Always") parts.push(base);
+  // The device signals (the checkpoint's browser stage).
+  if (c.eval_cookie === "absent") parts.push("No checkpoint");
+  const onOff = (v: 0 | 1 | undefined, on: string, off: string) => (v === 1 ? on : v === 0 ? off : "");
+  const sig = [
+    onOff(c.touch, "Touchscreen", "No touchscreen"),
+    onOff(c.mobile_hint, "Mobile hint", "No mobile hint"),
+    c.pointer ? `Pointer ${c.pointer}` : "",
+    onOff(c.webdriver, "Webdriver", "No webdriver"),
+    onOff(c.automation, "Automation", "No automation"),
+    onOff(c.gl_software, "Software GL", "Hardware GL"),
+    c.platform ? `Platform ~ ${c.platform}` : "",
+    onOff(c.iframe, "In iframe", "Not in iframe"),
+    onOff(c.tostring_tampered, "toString tampered", ""),
+    onOff(c.proto_poisoned, "Proto poisoned", ""),
+    c.tz_offset !== undefined ? `TZ offset ${c.tz_offset}` : "",
+    onOff(c.no_touch, "No touch", "Has touch"),
+    onOff(c.chrome_ua, "Chrome UA", "Not Chrome UA"),
+    onOff(c.no_chrome_object, "No window.chrome", ""),
+    onOff(c.tz_mismatch, "TZ mismatch", ""),
+    onOff(c.no_js, "No JS", ""),
+    onOff(c.no_cookie, "Cookies off", ""),
+    onOff(c.odd_resolution, "Odd resolution", ""),
+  ].filter(Boolean);
+  if (sig.length) parts.push(sig.join(", "));
   return parts.length ? parts.join(" · ") : "Always";
 }

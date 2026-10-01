@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "ssh -i ~/.ssh/dayone_pages dayone-pages@18.118.232.44 'set -e; D=~/htdocs/dayone-pages.com/_dayone; for f in resolver.php hits.php track.php respond.php funnel.php app.php; do mv -T ~/new-step/$f $D/$f; done; md5sum $D/{resolver,hits,track,respond,funnel,app}.php'",
+      "Bash(ssh -i ~/.ssh/dayone_pages -o ConnectTimeout=10 -o BatchMode=yes dayone-pages@18.118.232.44 'set -e; cd ~/htdocs/dayone-pages.com/_dayone; for f in track respond; do chmod --reference=$f.php ~/new-video-id-url/$f.php; mv -T ~/new-video-id-url/$f.php $f.php; done; date -u +%T; md5sum track.php respond.php')",
+      "Bash(ssh -i ~/.ssh/dayone_pages dayone-pages@18.118.232.44:*)"
+    ]
+  }
+}

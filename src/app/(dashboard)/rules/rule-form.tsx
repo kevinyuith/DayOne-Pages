@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { CHECKBOX_CLASS, Field, INPUT_BASE, INPUT_CLASS, SELECT_BASE, SELECT_CLASS } from "@/components/ui/field";
 import { DEVICES, DEVICE_LABELS, ruleConditionsToForm } from "@/lib/pages/conditions";
-import { RULE_LABELS, isRuleLabel, type Rule } from "@/lib/pages/rules-types";
+import { RULE_LABELS, isRuleLabel, type Rule, type RuleLabel } from "@/lib/pages/rules-types";
 import { saveRule, type RuleFormState } from "./actions";
 
 const INITIAL: RuleFormState = { attempt: 0 };
@@ -48,6 +48,7 @@ export function RuleForm({ rule }: { rule?: Rule }) {
 function FormBody({ rule, onDone }: { rule?: Rule; onDone: () => void }) {
   const initial = ruleConditionsToForm(rule?.conditions);
   const [state, action, pending] = useActionState(saveRule, INITIAL);
+  const [label, setLabel] = useState<RuleLabel>(rule && isRuleLabel(rule.label) ? rule.label : RULE_LABELS[0]);
 
   if (state.success) {
     // Saved: the server revalidated the page; close the dialog.
@@ -63,7 +64,7 @@ function FormBody({ rule, onDone }: { rule?: Rule; onDone: () => void }) {
           <input name="name" defaultValue={rule?.name ?? ""} required maxLength={120} placeholder="Datacenter US" className={INPUT_CLASS} disabled={pending} />
         </Field>
         <Field label="Label" hint="What the log shows.">
-          <select name="label" defaultValue={rule && isRuleLabel(rule.label) ? rule.label : RULE_LABELS[0]} className={SELECT_CLASS} disabled={pending}>
+          <select name="label" value={label} onChange={(e) => setLabel(e.target.value as RuleLabel)} className={SELECT_CLASS} disabled={pending}>
             {RULE_LABELS.map((l) => (
               <option key={l} value={l}>
                 {l}
@@ -83,6 +84,8 @@ function FormBody({ rule, onDone }: { rule?: Rule; onDone: () => void }) {
       </div>
 
       <ConditionsBuilder initial={initial} disabled={pending} />
+
+      <DeviceSignals initial={initial} disabled={pending} label={label} />
 
       <label className="mt-4 flex items-center gap-2 text-sm">
         <input type="checkbox" name="is_active" defaultChecked={rule?.is_active ?? true} className={CHECKBOX_CLASS} disabled={pending} />
@@ -108,8 +111,81 @@ function FormBody({ rule, onDone }: { rule?: Rule; onDone: () => void }) {
   );
 }
 
+/**
+ * The device signals — the checkpoint's browser stage (server/src/eval.php).
+ * Fixed selects, each optional; they only run when the label is Suspicious
+ * (the gate's eval rules are the active Suspicious ones), on the page shown
+ * before the funnel.
+ */
+function DeviceSignals({ initial, disabled, label }: { initial: ReturnType<typeof ruleConditionsToForm>; disabled: boolean; label: string }) {
+  const bit = (name: string, legend: string, value: "" | "0" | "1") => {
+    const capable = legend === "Touchscreen" || legend === "Mobile hint";
+    const tell = name.startsWith("no_") || name === "tz_mismatch" || name === "odd_resolution";
+    return (
+      <Field label={legend} key={name}>
+        <select name={name} defaultValue={value} className={SELECT_CLASS} disabled={disabled}>
+          <option value="">—</option>
+          <option value="1">{capable ? "capable" : tell ? "fired" : "yes"}</option>
+          <option value="0">{capable ? "not capable" : tell ? "not fired" : "no"}</option>
+        </select>
+      </Field>
+    );
+  };
+  return (
+    <fieldset className="mt-5 min-w-0 rounded-lg border border-border p-3">
+      <legend className="px-1 text-xs font-semibold uppercase tracking-wide text-muted">Device signals</legend>
+      <p className="text-xs text-muted">
+        Only the browser knows these — they run on the checkpoint page before the funnel, when the label is <strong>Suspicious</strong>.
+      </p>
+      {label !== "Suspicious" ? (
+        <p className="mt-2 rounded-md bg-amber-500/10 px-2 py-1.5 text-xs text-amber-700 dark:text-amber-400">
+          The label is {label}: these signals won&apos;t run. Set the label to Suspicious for the checkpoint to evaluate them.
+        </p>
+      ) : null}
+      <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {bit("touch", "Touchscreen", initial.touch)}
+        {bit("mobile_hint", "Mobile hint", initial.mobileHint)}
+        <Field label="Pointer">
+          <select name="pointer" defaultValue={initial.pointer} className={SELECT_CLASS} disabled={disabled}>
+            <option value="">—</option>
+            <option value="coarse">coarse (touch)</option>
+            <option value="fine">fine (mouse)</option>
+            <option value="none">none</option>
+          </select>
+        </Field>
+        {bit("webdriver", "Webdriver", initial.webdriver)}
+        {bit("automation", "Automation", initial.automation)}
+        {bit("gl_software", "Software WebGL", initial.glSoftware)}
+        {bit("iframe", "In iframe", initial.iframe)}
+        {bit("tostring_tampered", "toString tampered", initial.tostringTampered)}
+        {bit("proto_poisoned", "Proto poisoned", initial.protoPoisoned)}
+        <Field label="Platform contains">
+          <input name="signal_platform" defaultValue={initial.signalPlatform} maxLength={60} placeholder="android" className={INPUT_CLASS} disabled={disabled} />
+        </Field>
+        <Field label="TZ offset (min)" hint="getTimezoneOffset: São Paulo = 180, UTC = 0.">
+          <input name="tz_offset" defaultValue={initial.tzOffset} inputMode="numeric" placeholder="180" className={INPUT_CLASS} disabled={disabled} />
+        </Field>
+      </div>
+      <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-muted">Bot tells</p>
+      <div className="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {bit("no_touch", "No touchscreen", initial.noTouch)}
+        {bit("chrome_ua", "Chrome UA", initial.chromeUa)}
+        {bit("no_chrome_object", "No window.chrome", initial.noChromeObject)}
+        {bit("tz_mismatch", "TZ ≠ IP country", initial.tzMismatch)}
+        {bit("no_js", "No JavaScript", initial.noJs)}
+        {bit("no_cookie", "Cookies disabled", initial.noCookie)}
+        {bit("odd_resolution", "Odd resolution", initial.oddResolution)}
+      </div>
+      <label className="mt-3 flex items-center gap-2 text-sm">
+        <input type="checkbox" name="eval_cookie" value="absent" defaultChecked={initial.evalCookie} className={CHECKBOX_CLASS} disabled={disabled} />
+        No checkpoint cookie (the visitor never passed the checkpoint — e.g. a replayed funnel URL)
+      </label>
+    </fieldset>
+  );
+}
+
 /** The kinds of condition a rule can use. "URL parameter" can repeat; the others go once. */
-type CondType = "user_agent" | "prefetch" | "ips" | "asns" | "hostname" | "param" | "countries" | "languages" | "devices" | "referrer";
+type CondType = "user_agent" | "prefetch" | "ips" | "asns" | "hostname" | "param" | "countries" | "languages" | "devices" | "referrer" | "accept_languages";
 const COND_TYPES: { type: CondType; label: string; repeat?: true }[] = [
   { type: "user_agent", label: "User-Agent" },
   { type: "prefetch", label: "Prefetch" },
@@ -121,15 +197,17 @@ const COND_TYPES: { type: CondType; label: string; repeat?: true }[] = [
   { type: "languages", label: "Language" },
   { type: "devices", label: "Device" },
   { type: "referrer", label: "Referrer" },
+  { type: "accept_languages", label: "Languages count" },
 ];
 const COND_LABEL = Object.fromEntries(COND_TYPES.map((c) => [c.type, c.label])) as Record<CondType, string>;
 
 /** A URL parameter row: "contains"/"not equals"/"absent or equals" is the rule's `param` (one per rule); the others go into `query`. */
-type ParamRowMode = "present" | "absent" | "equals" | "not_equals" | "absent_or_equals" | "contains";
-const PARAM_ROW_MODES: ParamRowMode[] = ["present", "absent", "equals", "not_equals", "absent_or_equals", "contains"];
+type ParamRowMode = "present" | "absent" | "empty" | "equals" | "not_equals" | "absent_or_equals" | "contains";
+const PARAM_ROW_MODES: ParamRowMode[] = ["present", "absent", "empty", "equals", "not_equals", "absent_or_equals", "contains"];
 const PARAM_ROW_LABELS: Record<ParamRowMode, string> = {
   present: "present",
   absent: "absent",
+  empty: "absent or empty",
   equals: "equals",
   not_equals: "not equals",
   absent_or_equals: "absent or equals",
@@ -144,6 +222,7 @@ function initialRows(initial: ReturnType<typeof ruleConditionsToForm>): Row[] {
   const rows: Omit<Row, "id">[] = [];
   if (initial.userAgent) rows.push({ type: "user_agent" });
   if (initial.prefetch) rows.push({ type: "prefetch" });
+  if (initial.acceptLanguagesMin !== "" || initial.acceptLanguagesMax !== "") rows.push({ type: "accept_languages" });
   if (initial.ips) rows.push({ type: "ips" });
   if (initial.asns) rows.push({ type: "asns" });
   if (initial.hostname) rows.push({ type: "hostname" });
@@ -208,6 +287,32 @@ function ConditionsBuilder({ initial, disabled }: { initial: ReturnType<typeof r
           <>
             <span className={op}>the request is a prefetch</span>
             <input type="hidden" name="prefetch" value="on" />
+          </>
+        );
+      case "accept_languages":
+        return (
+          <>
+            <span className={op}>between</span>
+            <input
+              name="accept_languages_min"
+              defaultValue={initial.acceptLanguagesMin}
+              inputMode="numeric"
+              placeholder="min"
+              className={`${INPUT_BASE} w-20 shrink-0 font-mono`}
+              disabled={disabled}
+              aria-label="Min languages"
+            />
+            <span className={op}>and</span>
+            <input
+              name="accept_languages_max"
+              defaultValue={initial.acceptLanguagesMax}
+              inputMode="numeric"
+              placeholder="max"
+              className={`${INPUT_BASE} w-20 shrink-0 font-mono`}
+              disabled={disabled}
+              aria-label="Max languages"
+            />
+            <span className={op}>language tags (a bot often sends just one — max 1 flags it)</span>
           </>
         );
       case "ips":

@@ -55,7 +55,18 @@ function dayone_handle(): void
         return;
     }
 
-    if ($req->method !== 'GET' && $req->method !== 'HEAD') {
+    // The device checkpoint's form POST (eval.php): the browser posted the
+    // device's signals back to the same URL. The payload goes on the request
+    // and the flow continues as a GET would: the gate re-decides with the
+    // signals now known and the final page (safe or funnel) is the response.
+    $evalBody = null;
+    if ($req->method === 'POST') {
+        $evalBody = (string) file_get_contents('php://input', false, null, 0, 8192);
+        if (eval_post_payload($req, $evalBody) === null) {
+            send_response(405, ['Allow' => 'GET, HEAD', 'Content-Type' => 'text/plain; charset=utf-8', 'Cache-Control' => 'no-store'], "Method not allowed\n", false);
+            return;
+        }
+    } elseif ($req->method !== 'GET' && $req->method !== 'HEAD') {
         send_response(405, ['Allow' => 'GET, HEAD', 'Content-Type' => 'text/plain; charset=utf-8', 'Cache-Control' => 'no-store'], "Method not allowed\n", false);
         return;
     }
@@ -76,6 +87,18 @@ function dayone_handle(): void
 
     $req->host = $host;
     $req->path = $path;
+
+    // The checkpoint POST's payload, now that the request is normalized.
+    if ($evalBody !== null) {
+        $payload = eval_post_payload($req, $evalBody);
+        if ($payload !== null) {
+            [$evalReq, $evalSignals] = $payload;
+            $req = $evalReq;
+            $req->host = $host;
+            $req->path = $path;
+            $req->evalSignals = $evalSignals;
+        }
+    }
 
     $resolved = resolve_routes($host, $path);
     if ($resolved === null) {
@@ -113,6 +136,18 @@ function dayone_handle(): void
         if ($pageCookie !== null) {
             $headers['Set-Cookie'][] = $pageCookie;
         }
+    }
+    // The device checkpoint: the interstitial page marks the visitor as
+    // "checking"; a POST that passed gets the ok cookie (and its signals are
+    // stored for a later checkpoint), a POST a rule caught gets neither.
+    if ($route !== null && ($route['_eval'] ?? null) === 'checkpoint') {
+        $headers['Set-Cookie'] = [...(array) ($headers['Set-Cookie'] ?? []), eval_cookie('chk')];
+    } elseif ($route !== null && !empty($route['_eval_ok'])) {
+        $cookies = [eval_cookie(EVAL_COOKIE_OK)];
+        if (is_array($req->evalSignals) && $req->evalSignals !== []) {
+            $cookies[] = eval_cookie(eval_signals_put($req->ip, $req->userAgent, $req->evalSignals));
+        }
+        $headers['Set-Cookie'] = [...(array) ($headers['Set-Cookie'] ?? []), ...$cookies];
     }
     if ($cfg['debug_headers']) {
         $headers['X-Cache'] = $resolved['xcache'];

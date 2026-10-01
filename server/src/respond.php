@@ -93,6 +93,13 @@ function decide(array $routes, Request $req, ?array $gate = null): array
 function decide_route(array $route, Request $req, ?array $cond = null): ?array
 {
     $cond ??= is_array($route['conditions'] ?? null) ? $route['conditions'] : [];
+    // The device checkpoint (eval.php): a funnel-bound click that hasn't passed
+    // gets the interstitial page instead of the funnel — the Suspicious stage
+    // runs there, in the browser. No split draw yet (nothing is served).
+    if (($route['_eval'] ?? null) === 'checkpoint') {
+        [$eStatus, $eHeaders, $eBody] = eval_checkpoint_response();
+        return [$eStatus, $eHeaders, $eBody, 'served', $route];
+    }
     switch ((string) ($route['action'] ?? '')) {
         case 'SERVE':
             // A/B test between the pages of a funnel: the route becomes the drawn page.
