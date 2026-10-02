@@ -85,7 +85,9 @@ function FormBody({ rule, onDone }: { rule?: Rule; onDone: () => void }) {
 
       <ConditionsBuilder initial={initial} disabled={pending} />
 
-      <DeviceSignals initial={initial} disabled={pending} label={label} />
+      {/* Bot rules decide from the request alone; only Suspicious rules reach the
+          browser checkpoint, so the device signals show only for that label. */}
+      {label === "Suspicious" ? <DeviceSignals initial={initial} disabled={pending} /> : null}
 
       <label className="mt-4 flex items-center gap-2 text-sm">
         <input type="checkbox" name="is_active" defaultChecked={rule?.is_active ?? true} className={CHECKBOX_CLASS} disabled={pending} />
@@ -117,7 +119,7 @@ function FormBody({ rule, onDone }: { rule?: Rule; onDone: () => void }) {
  * (the gate's eval rules are the active Suspicious ones), on the page shown
  * before the funnel.
  */
-function DeviceSignals({ initial, disabled, label }: { initial: ReturnType<typeof ruleConditionsToForm>; disabled: boolean; label: string }) {
+function DeviceSignals({ initial, disabled }: { initial: ReturnType<typeof ruleConditionsToForm>; disabled: boolean }) {
   const bit = (name: string, legend: string, value: "" | "0" | "1") => {
     const capable = legend === "Touchscreen" || legend === "Mobile hint";
     const tell = name.startsWith("no_") || name === "tz_mismatch" || name === "odd_resolution";
@@ -137,11 +139,6 @@ function DeviceSignals({ initial, disabled, label }: { initial: ReturnType<typeo
       <p className="text-xs text-muted">
         Only the browser knows these — they run on the checkpoint page before the funnel, when the label is <strong>Suspicious</strong>.
       </p>
-      {label !== "Suspicious" ? (
-        <p className="mt-2 rounded-md bg-amber-500/10 px-2 py-1.5 text-xs text-amber-700 dark:text-amber-400">
-          The label is {label}: these signals won&apos;t run. Set the label to Suspicious for the checkpoint to evaluate them.
-        </p>
-      ) : null}
       <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {bit("touch", "Touchscreen", initial.touch)}
         {bit("mobile_hint", "Mobile hint", initial.mobileHint)}
@@ -185,7 +182,7 @@ function DeviceSignals({ initial, disabled, label }: { initial: ReturnType<typeo
 }
 
 /** The kinds of condition a rule can use. "URL parameter" can repeat; the others go once. */
-type CondType = "user_agent" | "prefetch" | "ips" | "asns" | "hostname" | "param" | "countries" | "languages" | "devices" | "referrer" | "accept_languages";
+type CondType = "user_agent" | "prefetch" | "ips" | "asns" | "hostname" | "param" | "countries" | "languages" | "devices" | "referrer" | "referrer_absent" | "accept_languages";
 const COND_TYPES: { type: CondType; label: string; repeat?: true }[] = [
   { type: "user_agent", label: "User-Agent" },
   { type: "prefetch", label: "Prefetch" },
@@ -197,6 +194,7 @@ const COND_TYPES: { type: CondType; label: string; repeat?: true }[] = [
   { type: "languages", label: "Language" },
   { type: "devices", label: "Device" },
   { type: "referrer", label: "Referrer" },
+  { type: "referrer_absent", label: "Referrer absent" },
   { type: "accept_languages", label: "Languages count" },
 ];
 const COND_LABEL = Object.fromEntries(COND_TYPES.map((c) => [c.type, c.label])) as Record<CondType, string>;
@@ -232,6 +230,7 @@ function initialRows(initial: ReturnType<typeof ruleConditionsToForm>): Row[] {
   if (initial.languages) rows.push({ type: "languages" });
   if (initial.devices.length) rows.push({ type: "devices" });
   if (initial.referrer) rows.push({ type: "referrer" });
+  if (initial.referrerAbsent) rows.push({ type: "referrer_absent" });
   if (initial.sub11) rows.push({ type: "param", key: "sub11", mode: "equals", value: initial.sub11 });
   if (initial.sub1) rows.push({ type: "param", key: "sub1", mode: "equals", value: initial.sub1 });
   return rows.map((r, id) => ({ ...r, id }));
@@ -393,6 +392,13 @@ function ConditionsBuilder({ initial, disabled }: { initial: ReturnType<typeof r
           <>
             <span className={op}>contains</span>
             <input name="referrer" defaultValue={initial.referrer} required placeholder="facebook.com" className={input} disabled={disabled} aria-label="Referrer contains" />
+          </>
+        );
+      case "referrer_absent":
+        return (
+          <>
+            <span className={op}>the Referer header is empty (no referrer)</span>
+            <input type="hidden" name="referrer_absent" value="on" />
           </>
         );
       case "param": {

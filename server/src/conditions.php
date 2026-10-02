@@ -11,6 +11,7 @@
  *   languages_mode  "block"                     inverts: matches whoever does NOT have the languages
  *   query           {"utm_source": "present" | "absent" | "empty" | {"equals": "x"}}
  *   referrer        "text"                      Referer contains (case-insensitive)
+ *   referrer_absent true                        the Referer header is empty (no referrer)
  *   bot             true                        crawler/scraper User-Agent.
  *                                               Only valid on BLOCK routes; respond.php
  *                                               ignores routes that use it with another action.
@@ -26,7 +27,7 @@ declare(strict_types=1);
 
 defined('DAYONE_ENTRY') || (http_response_code(404) && exit);
 
-const KNOWN_CONDITIONS = ['countries', 'countries_mode', 'devices', 'languages', 'languages_mode', 'query', 'referrer', 'bot'];
+const KNOWN_CONDITIONS = ['countries', 'countries_mode', 'devices', 'languages', 'languages_mode', 'query', 'referrer', 'referrer_absent', 'bot'];
 
 function conditions_match(array $cond, Request $req): bool
 {
@@ -91,6 +92,13 @@ function conditions_match(array $cond, Request $req): bool
 
     if (isset($cond['referrer'])) {
         if ($req->referer === '' || stripos($req->referer, (string) $cond['referrer']) === false) {
+            return false;
+        }
+    }
+
+    if (isset($cond['referrer_absent'])) {
+        // Matches only when there is no referrer at all (empty Referer header).
+        if ($cond['referrer_absent'] !== true || $req->referer !== '') {
             return false;
         }
     }

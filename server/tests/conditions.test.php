@@ -64,6 +64,17 @@ check('referrer case-insensitive', conditions_match(['referrer' => 'FACEBOOK'], 
 check('referrer does not match', !conditions_match(['referrer' => 'tiktok'], $fromFb));
 check('missing referrer does not match', !conditions_match(['referrer' => 'x'], $desktop));
 
+// referrer_absent: matches only when there is no referrer at all.
+check('referrer_absent matches when no referrer', conditions_match(['referrer_absent' => true], $desktop));
+check('referrer_absent does not match with a referrer', !conditions_match(['referrer_absent' => true], $fromFb));
+
+// The live "Taboola no referrer" rule shape: sub11=Taboola (query, exact) AND no referrer.
+$tbNoRef = make_request(['REQUEST_URI' => '/?sub11=Taboola&tblci=abc']);
+$tbRef = make_request(['REQUEST_URI' => '/?sub11=Taboola&tblci=abc', 'HTTP_REFERER' => 'https://trc.taboola.com/x']);
+$tbRule = ['query' => ['sub11' => ['equals' => 'Taboola']], 'referrer_absent' => true];
+check('Taboola no-referrer rule: flags a click with no referrer', conditions_match($tbRule, $tbNoRef));
+check('Taboola no-referrer rule: leaves a click with a referrer', !conditions_match($tbRule, $tbRef));
+
 check('bot matches googlebot', conditions_match(['bot' => true], $bot));
 check('bot matches with no UA', conditions_match(['bot' => true], $noUa));
 check('bot does not match a browser', !conditions_match(['bot' => true], $desktop));

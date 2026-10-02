@@ -15,6 +15,7 @@ import { z } from "zod";
  *   languages_mode  same as countries_mode, for languages.
  *   query           per parameter: "present" | "absent" | { equals: "value" }.
  *   referrer        text contained in the Referer header (case-insensitive).
+ *   referrer_absent true = the Referer header is empty (no referrer at all).
  *   bot             true = crawler/scraper User-Agent. Only the domain's bot block uses it
  *                   (the filter rejects it). Meant for blocking, never for swapping content.
  */
@@ -43,6 +44,7 @@ export const conditionsSchema = z
     languages_mode: z.literal("block").optional(),
     query: z.record(z.string().regex(/^[A-Za-z0-9_.\-\[\]]{1,100}$/, "invalid parameter name"), queryRule).optional(),
     referrer: z.string().min(1).max(200).optional(),
+    referrer_absent: z.literal(true).optional(),
     bot: z.literal(true).optional(),
   })
   // A mode without its list decides nothing: reject it here so no junk gets saved.
@@ -203,6 +205,8 @@ export function parseConditionsForm(fd: FormData): { ok: true; value: RouteCondi
   const referrer = String(fd.get("referrer") ?? "").trim();
   if (referrer) raw.referrer = referrer;
 
+  if (fd.get("referrer_absent") === "on" || fd.get("referrer_absent") === "true") raw.referrer_absent = true;
+
   if (fd.get("bot") === "on" || fd.get("bot") === "true") raw.bot = true;
 
   const parsed = conditionsSchema.safeParse(raw);
@@ -222,6 +226,7 @@ export function conditionsToForm(c: RouteConditions | null | undefined): {
   languagesMode: ListMode;
   query: QueryRuleRow[];
   referrer: string;
+  referrerAbsent: boolean;
   bot: boolean;
 } {
   const query: QueryRuleRow[] = Object.entries(c?.query ?? {}).map(([key, rule]) =>
@@ -235,6 +240,7 @@ export function conditionsToForm(c: RouteConditions | null | undefined): {
     languagesMode: c?.languages_mode === "block" ? "block" : "allow",
     query,
     referrer: c?.referrer ?? "",
+    referrerAbsent: c?.referrer_absent === true,
     bot: c?.bot === true,
   };
 }
@@ -250,6 +256,7 @@ export function summarizeConditions(c: RouteConditions | null | undefined): stri
     parts.push(typeof rule === "string" ? `?${key} ${QUERY_MODE_LABELS[rule]}` : `?${key} = ${rule.equals}`);
   }
   if (c.referrer) parts.push(`Referrer contains "${c.referrer}"`);
+  if (c.referrer_absent) parts.push("No referrer");
   if (c.bot) parts.push("Bots/crawlers only");
   return parts.length ? parts.join(" · ") : "Always";
 }
