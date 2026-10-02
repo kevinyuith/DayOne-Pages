@@ -141,6 +141,13 @@ function dot_click_payload(Request $req, array $ctx, array $server): ?array
     if (($route['match_type'] ?? '') === 'WWW') {
         return null;
     }
+    // The device checkpoint's interstitial (eval.php) isn't the page the visitor will get: the split
+    // draws it on the POST that follows, with this same URL and click id. Sent here, the click would
+    // carry the FIRST page of the split, and dot keeps only the first click event of a click id — so
+    // every click would count for page 1 no matter which page the A/B test drew.
+    if (($route['_eval'] ?? null) === 'checkpoint') {
+        return null;
+    }
     $query = [];
     parse_str($req->rawQuery, $query);
     $ids = dot_click_ids($query);
