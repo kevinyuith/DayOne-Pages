@@ -335,9 +335,17 @@ function gate_funnel_code(string $sub1): ?string
  * generic URL parameter and the User-Agent regex (case-insensitive;
  * `user_agent_mode: block` inverts). The base evaluator would reject the
  * rule-only keys as unknown, so they're stripped before calling it.
+ *
+ * A device-signal condition (a Suspicious rule's touch, webdriver…) only
+ * exists after the browser checkpoint (eval.php): the request can't decide
+ * it, so the request walk never matches the rule — quietly (the base
+ * evaluator would log it as unknown for every such rule on every clean click).
  */
 function rule_conditions_match(array $cond, Request $req): bool
 {
+    if (array_intersect_key($cond, array_flip(EVAL_OWN_CONDITIONS)) !== []) {
+        return false;
+    }
     $base = $cond;
     foreach (RULE_OWN_CONDITIONS as $k) {
         unset($base[$k]);

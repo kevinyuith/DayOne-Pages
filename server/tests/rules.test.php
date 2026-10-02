@@ -195,6 +195,17 @@ check('UA regex', rule_conditions_match(['user_agent' => 'chrome'], $req));
 check('UA + base', rule_conditions_match(['user_agent' => 'chrome', 'countries' => ['BR']], $req));
 check('empty conditions', rule_conditions_match([], $req));
 
+// A device-signal condition only exists after the checkpoint: the request
+// walk never matches the rule, and says nothing in the log (it used to log
+// every such rule on every clean click as an unknown condition).
+$logFile = (string) tempnam(sys_get_temp_dir(), 'dop-log');
+$prevLog = ini_set('error_log', $logFile);
+check('device signal: no match in the request walk', !rule_conditions_match(['sub11' => 'fb', 'devices' => ['desktop'], 'no_touch' => 1], $req));
+check('device signal: webdriver alone, no match', !rule_conditions_match(['sub11' => 'fb', 'webdriver' => 1], $req));
+ini_set('error_log', $prevLog === false ? '' : $prevLog);
+same('device signal: nothing logged', '', (string) file_get_contents($logFile));
+@unlink($logFile);
+
 // accept_languages: the language-tag count (a bot's bare "en" vs a real "en-US,en").
 $langOne = make_request(['HTTP_ACCEPT_LANGUAGE' => 'en']);
 $langTwo = make_request(['HTTP_ACCEPT_LANGUAGE' => 'en-US,en;q=0.9']);
