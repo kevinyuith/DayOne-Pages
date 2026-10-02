@@ -41,9 +41,9 @@ export async function saveRule(prev: RuleFormState, fd: FormData): Promise<RuleF
   if (reason.length > 200) return { error: "The reason goes up to 200 characters.", attempt };
 
   const tags = Array.from(new Set(String(fd.get("tags") ?? "").split(/[\s,;]+/).map((t) => t.trim()).filter(Boolean)));
-  if (tags.length > 10) return { error: "Up to 10 flows.", attempt };
+  if (tags.length > 10) return { error: "Up to 10 platforms.", attempt };
   const badTag = tags.find((t) => !TAG_RE.test(t));
-  if (badTag) return { error: `Invalid flow "${badTag}".`, attempt };
+  if (badTag) return { error: `Invalid platform "${badTag}".`, attempt };
 
   const cond = parseRuleConditionsForm(fd);
   if (!cond.ok) return { error: cond.reason, attempt };
@@ -84,7 +84,7 @@ export async function deleteRule(id: string): Promise<ActionResult> {
   return { ok: true };
 }
 
-/** Duplicates a rule: a copy with a free name ("… (copy)"), same label, flows, conditions and state, at the end of the walk. */
+/** Duplicates a rule: a copy with a free name ("… (copy)"), same label, platforms, conditions and state, at the end of the walk. */
 export async function duplicateRule(id: string): Promise<ActionResult> {
   if (!UUID_RE.test(id)) return fail("Invalid rule.");
   try {

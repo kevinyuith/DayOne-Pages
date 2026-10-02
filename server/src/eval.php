@@ -128,43 +128,12 @@ function eval_checkpoint_response(): array
     // script in the <head>: the earlier it runs, the less time a bot has to
     // inspect the page before the POST is gone. The form submits without
     // being in the DOM (every modern browser), so there's no waiting for <body>.
+    // The script is the frozen EVAL_SCRIPT blob: nothing is built per response.
     $html = '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">'
         . '<meta http-equiv="X-UA-Compatible" content="IE=Edge">'
         . '<meta name="viewport" content="width=device-width, initial-scale=1">'
         . '<meta name="robots" content="noindex,nofollow">'
-        . '<script>(function(){'
-        // The capability signals — the same keys the beacon sends in "sg" (beacon.php).
-        . 'var M=function(q){try{return matchMedia(q).matches}catch(e){return false}},N=navigator,U=N.userAgentData||{},S={'
-        . 'wd:N.webdriver===true?1:0,pl:(""+(N.platform||"")).slice(0,32),mtp:N.maxTouchPoints|0,hc:N.hardwareConcurrency|0,dm:N.deviceMemory||0,'
-        . 'nl:(N.languages||[]).length,np:(N.plugins||[]).length,sw:screen.width|0,sh:screen.height|0,dpr:+(window.devicePixelRatio||1).toFixed(2),'
-        . 'vw:innerWidth|0,vh:innerHeight|0,ptr:M("(pointer:fine)")?"fine":M("(pointer:coarse)")?"coarse":"none",hvr:M("(hover:hover)")?1:0,'
-        . 'chr:window.chrome?1:0,cke:N.cookieEnabled?1:0};'
-        . 'if(U.mobile!==undefined)S.mob=U.mobile?1:0;if(U.platform)S.upf=(""+U.platform).slice(0,32);'
-        // The Adspect-style tells: an iframe (self!==top — the page is never
-        // framed legitimately on the gate), a monkey-patched toString (a bot
-        // hides its hooks by overriding Function.prototype.toString; calling
-        // it on a function that was NEVER overridden returns the native
-        // source only when clean — the counter trick: a native toString is
-        // called once by console.log and returns ""), a poisoned prototype
-        // (a userscript/Tampermonkey replaced Array.prototype.includes: the
-        // reference we saved is not the current one), and the time zone
-        // (an emulator often has UTC while the IP says São Paulo).
-        . 'try{S.ifr=(self!==top)?1:0}catch(e){S.ifr=1}'
-        . 'try{var _f=function(){},_n=0;_f.toString=function(){_n++;return""};if(window.console&&console.log)console.log(_f);S.tst=(_n>0)?1:0}catch(e){}'
-        . 'try{var _ai=Array.prototype.includes;S.ppo=(Array.prototype.includes!==_ai||(""+_ai).indexOf("[native code]")<0)?1:0}catch(e){}'
-        . 'try{S.tz=(new Date).getTimezoneOffset()|0}catch(e){}'
-        // The time zone's name ("America/Sao_Paulo"): the offset alone can't
-        // tell São Paulo from Greenland; the name can (Intl, every modern browser).
-        . 'try{var _tz=(Intl.DateTimeFormat().resolvedOptions().timeZone||"");if(_tz)S.tze=(""+_tz).slice(0,40)}catch(e){}'
-        // Automation tells and the WebGL renderer run right away: this page
-        // has nothing to paint, nothing to delay.
-        . 'try{var _w=window,_a=0;if(_w.__playwright||_w.__puppeteer||_w.__pw_manual||_w._phantom||_w.callPhantom||_w.__nightmare||_w.domAutomation||_w.domAutomationController||_w.Cypress)_a++;if(document.$cdc_asdjflasutopfhvcZLmcfl_||document.__webdriver_evaluate||document.__selenium_unwrapped||document.__fxdriver_evaluate||document.__driver_evaluate)_a++;for(var _k in _w){if(_k.indexOf("cdc_")===0||_k.indexOf("$cdc_")===0){_a++;break}}S.aut=_a}catch(e){}'
-        . 'try{var _cv=document.createElement("canvas"),_g=_cv.getContext("webgl")||_cv.getContext("experimental-webgl");if(_g){var _di=_g.getExtension("WEBGL_debug_renderer_info"),_r=""+(_di?_g.getParameter(_di.UNMASKED_RENDERER_WEBGL):_g.getParameter(_g.RENDERER));S.gl=_r.slice(0,60);S.glsw=/swiftshader|llvmpipe|softpipe|software|basic render|mesa|angle \\(google/i.test(_r)?1:0}else S.glsw=1}catch(e){}'
-        // The payload and the form POST back to the same URL — submitted
-        // without being in the DOM: no waiting for the body, nothing to see.
-        . 'var f=document.createElement("form"),i=document.createElement("input");'
-        . 'f.method="POST";f.action=location.pathname+location.search;i.type="hidden";i.name=' . json_encode(EVAL_FIELD) . ';'
-        . 'i.value=JSON.stringify({sg:S});f.appendChild(i);document.documentElement.appendChild(f);f.submit()})();</script>'
+        . '<script>' . EVAL_SCRIPT . '</script>'
         . '</head><body></body></html>';
     return [200, [
         'Content-Type' => 'text/html; charset=utf-8',
@@ -173,9 +142,140 @@ function eval_checkpoint_response(): array
     ], $html];
 }
 
+/** XOR-encodes a string with the build key and base64s it (the JS decoder undoes it). */
+function eval_obf(string $s, int $key): string
+{
+    $x = '';
+    for ($i = 0, $n = strlen($s); $i < $n; $i++) {
+        $x .= chr(ord($s[$i]) ^ $key);
+    }
+    return base64_encode($x);
+}
+
 /**
- * The eval payload from the checkpoint's POST body, when there is one:
- * `dop_ev` = {"sg":{…signals…}}. The request's evalParams come from the
+ * The checkpoint's script, OBFUSCATED — a fixed, unreadable blob, built once
+ * and served as-is (zero work per response). Every string (property names,
+ * hooks, the regex, the form field's name — `dop_ev` plus a suffix) is
+ * XOR+base64 and decoded in runtime by an opaque decoder; every global is
+ * reached through `window[…]` with the name encoded, so no `navigator`,
+ * `webdriver`, `maxTouchPoints`, `form` or `dop_ev` ever appears in the
+ * clear. `atob` is spelled out as char codes. Only the control flow and a
+ * few opaque one-letter locals stay readable — nothing that says what the
+ * page measures or where the POST goes.
+ *
+ * Frozen from eval_checkpoint_build by `php server/dev/regen-eval-script.php`
+ * — run it again (and review the diff) whenever the signals change. The test
+ * asserts this constant matches the build, so a drift is caught.
+ */
+/** The fixed seed the frozen EVAL_SCRIPT was built with (eval_checkpoint_build's defaults). */
+const EVAL_BUILD_KEY = 46;
+const EVAL_BUILD_IDENT = 'mlsZWGP';
+const EVAL_BUILD_FIELD_SUFFIX = 'a1b2c3';
+
+const EVAL_SCRIPT =
+    '(function(){var k=46;function mlsZWGP(s,x){var b=window[String.fromCharCode(97,116,111,98)](s),o=\'\',i;for(i=0;i<b.length;i++)o+=String.fromCharCode(b.charCodeAt(i)^x);return o}
+var W=window,D=W[mlsZWGP(\'SkFNW0NLQFo=\',k)],M=function(q){try{return W[mlsZWGP(\'Q09aTUZjS0pHTw==\',k)](q)[mlsZWGP(\'Q09aTUZLXQ==\',k)]}catch(e){return false}},N=W[mlsZWGP(\'QE9YR0lPWkFc\',k)],U=N[mlsZWGP(\'W11LXG9JS0Baak9aTw==\',k)]||{},S={},A=function(n,v){S[n]=v};
+A(mlsZWGP(\'WUo=\',k),N[mlsZWGP(\'WUtMSlxHWEtc\',k)]===true?1:0);
+A(mlsZWGP(\'XkI=\',k),(mlsZWGP(\'\',k)+(N[mlsZWGP(\'XkJPWkhBXEM=\',k)]||mlsZWGP(\'\',k)))[mlsZWGP(\'XUJHTUs=\',k)](0,32));
+A(mlsZWGP(\'Q1pe\',k),N[mlsZWGP(\'Q09WekFbTUZ+QUdAWl0=\',k)]|0);
+A(mlsZWGP(\'Rk0=\',k),N[mlsZWGP(\'Rk9cSllPXEttQUBNW1xcS0BNVw==\',k)]|0);
+A(mlsZWGP(\'SkM=\',k),N[mlsZWGP(\'SktYR01LY0tDQVxX\',k)]||0);
+A(mlsZWGP(\'QEI=\',k),(N[mlsZWGP(\'Qk9ASVtPSUtd\',k)]||[])[mlsZWGP(\'QktASVpG\',k)]);
+A(mlsZWGP(\'QF4=\',k),(N[mlsZWGP(\'XkJbSUdAXQ==\',k)]||[])[mlsZWGP(\'QktASVpG\',k)]);
+A(mlsZWGP(\'XVk=\',k),W[mlsZWGP(\'XU1cS0tA\',k)][mlsZWGP(\'WUdKWkY=\',k)]|0);
+A(mlsZWGP(\'XUY=\',k),W[mlsZWGP(\'XU1cS0tA\',k)][mlsZWGP(\'RktHSUZa\',k)]|0);
+A(mlsZWGP(\'Sl5c\',k),+(W[mlsZWGP(\'SktYR01LfkdWS0J8T1pHQQ==\',k)]||1)[mlsZWGP(\'WkFoR1ZLSg==\',k)](2));
+A(mlsZWGP(\'WFk=\',k),W[mlsZWGP(\'R0BAS1x5R0paRg==\',k)]|0);
+A(mlsZWGP(\'WEY=\',k),W[mlsZWGP(\'R0BAS1xmS0dJRlo=\',k)]|0);
+A(mlsZWGP(\'Xlpc\',k),M(mlsZWGP(\'Bl5BR0BaS1wUSEdASwc=\',k))?mlsZWGP(\'SEdASw==\',k):M(mlsZWGP(\'Bl5BR0BaS1wUTUFPXF1LBw==\',k))?mlsZWGP(\'TUFPXF1L\',k):mlsZWGP(\'QEFASw==\',k));
+A(mlsZWGP(\'Rlhc\',k),M(mlsZWGP(\'BkZBWEtcFEZBWEtcBw==\',k))?1:0);
+A(mlsZWGP(\'TUZc\',k),W[mlsZWGP(\'TUZcQUNL\',k)]?1:0);
+A(mlsZWGP(\'TUVL\',k),N[mlsZWGP(\'TUFBRUdLa0BPTEJLSg==\',k)]?1:0);
+if(U[mlsZWGP(\'Q0FMR0JL\',k)]!==undefined)A(mlsZWGP(\'Q0FM\',k),U[mlsZWGP(\'Q0FMR0JL\',k)]?1:0);
+if(U[mlsZWGP(\'XkJPWkhBXEM=\',k)])A(mlsZWGP(\'W15I\',k),(mlsZWGP(\'\',k)+U[mlsZWGP(\'XkJPWkhBXEM=\',k)])[mlsZWGP(\'XUJHTUs=\',k)](0,32));
+try{A(mlsZWGP(\'R0hc\',k),(W[mlsZWGP(\'XUtCSA==\',k)]!==W[mlsZWGP(\'WkFe\',k)])?1:0)}catch(e){A(mlsZWGP(\'R0hc\',k),1)}
+try{var _f=function(){},_n=0;_f[mlsZWGP(\'WkF9WlxHQEk=\',k)]=function(){_n++;returnmlsZWGP(\'\',k)};if(W[mlsZWGP(\'TUFAXUFCSw==\',k)]&&W[mlsZWGP(\'TUFAXUFCSw==\',k)][mlsZWGP(\'QkFJ\',k)])W[mlsZWGP(\'TUFAXUFCSw==\',k)][mlsZWGP(\'QkFJ\',k)](_f);A(mlsZWGP(\'Wl1a\',k),(_n>0)?1:0)}catch(e){}
+try{var _ai=W[mlsZWGP(\'b1xcT1c=\',k)][mlsZWGP(\'XlxBWkFaV15L\',k)][mlsZWGP(\'R0BNQltKS10=\',k)];A(mlsZWGP(\'Xl5B\',k),(W[mlsZWGP(\'b1xcT1c=\',k)][mlsZWGP(\'XlxBWkFaV15L\',k)][mlsZWGP(\'R0BNQltKS10=\',k)]!==_ai||(mlsZWGP(\'\',k)+_ai)[mlsZWGP(\'R0BKS1ZhSA==\',k)](mlsZWGP(\'dUBPWkdYSw5NQUpLcw==\',k))<0)?1:0)}catch(e){}
+try{A(mlsZWGP(\'WlQ=\',k),(new (W[mlsZWGP(\'ak9aSw==\',k)])())[mlsZWGP(\'SUtaekdDS1RBQEthSEhdS1o=\',k)]()|0)}catch(e){}
+try{var _tz=(W[mlsZWGP(\'Z0BaQg==\',k)][mlsZWGP(\'ak9aS3pHQ0toQVxDT1o=\',k)]())[mlsZWGP(\'XEtdQUJYS0phXlpHQUBd\',k)]()[mlsZWGP(\'WkdDS3RBQEs=\',k)]||mlsZWGP(\'\',k);if(_tz)A(mlsZWGP(\'WlRL\',k),(mlsZWGP(\'\',k)+_tz)[mlsZWGP(\'XUJHTUs=\',k)](0,40))}catch(e){}
+try{var _w=W,_a=0;if(_w[mlsZWGP(\'cXFeQk9XWVxHSUZa\',k)]||_w[mlsZWGP(\'cXFeW15eS1pLS1w=\',k)]||_w[mlsZWGP(\'cXFeWXFDT0BbT0I=\',k)]||_w[mlsZWGP(\'cV5GT0BaQUM=\',k)]||_w[mlsZWGP(\'TU9CQn5GT0BaQUM=\',k)]||_w[mlsZWGP(\'cXFAR0lGWkNPXEs=\',k)]||_w[mlsZWGP(\'SkFDb1taQUNPWkdBQA==\',k)]||_w[mlsZWGP(\'SkFDb1taQUNPWkdBQG1BQFpcQUJCS1w=\',k)]||_w[mlsZWGP(\'bVdeXEtdXQ==\',k)])_a++;if(D[mlsZWGP(\'Ck1KTXFPXUpESEJPXVtaQV5IRlhNdGJDTUhCcQ==\',k)]||D[mlsZWGP(\'cXFZS0xKXEdYS1xxS1hPQltPWks=\',k)]||D[mlsZWGP(\'cXFdS0JLQEdbQ3FbQFlcT15eS0o=\',k)]||D[mlsZWGP(\'cXFIVkpcR1hLXHFLWE9CW09aSw==\',k)]||D[mlsZWGP(\'cXFKXEdYS1xxS1hPQltPWks=\',k)])_a++;for(var _k in _w){if(_k[mlsZWGP(\'R0BKS1ZhSA==\',k)](mlsZWGP(\'TUpNcQ==\',k))===0||_k[mlsZWGP(\'R0BKS1ZhSA==\',k)](mlsZWGP(\'Ck1KTXE=\',k))===0){_a++;break}}A(mlsZWGP(\'T1ta\',k),_a)}catch(e){}
+try{var _cv=D[mlsZWGP(\'TVxLT1pLa0JLQ0tAWg==\',k)](mlsZWGP(\'TU9AWE9d\',k)),_g=_cv[mlsZWGP(\'SUtabUFAWktWWg==\',k)](mlsZWGP(\'WUtMSUI=\',k))||_cv[mlsZWGP(\'SUtabUFAWktWWg==\',k)](mlsZWGP(\'S1ZeS1xHQ0tAWk9CA1lLTElC\',k));if(_g){var _di=_g[mlsZWGP(\'SUtaa1ZaS0BdR0FA\',k)](mlsZWGP(\'eWtsaWJxSktMW0lxXEtASktcS1xxR0BIQQ==\',k)),_r=mlsZWGP(\'\',k)+(_di?_g[mlsZWGP(\'SUtafk9cT0NLWktc\',k)](_di[mlsZWGP(\'e2Bjb31la2pxfGtgamt8a3xxeWtsaWI=\',k)]):_g[mlsZWGP(\'SUtafk9cT0NLWktc\',k)](_g[mlsZWGP(\'fGtgamt8a3w=\',k)]));A(mlsZWGP(\'SUI=\',k),_r[mlsZWGP(\'XUJHTUs=\',k)](0,60));A(mlsZWGP(\'SUJdWQ==\',k),new (W[mlsZWGP(\'fEtJa1Ze\',k)])(mlsZWGP(\'XVlHSFpdRk9KS1xSQkJYQ15HXktSXUFIWl5HXktSXUFIWllPXEtSTE9dR00OXEtASktcUkNLXU9ST0BJQksOdQZzSUFBSUJL\',k),mlsZWGP(\'Rw==\',k))[mlsZWGP(\'WktdWg==\',k)](_r)?1:0)}else A(mlsZWGP(\'SUJdWQ==\',k),1)}catch(e){}
+var _p={};_p[mlsZWGP(\'XUk=\',k)]=S;
+var _m=D[mlsZWGP(\'TVxLT1pLa0JLQ0tAWg==\',k)](mlsZWGP(\'SEFcQw==\',k)),_i=D[mlsZWGP(\'TVxLT1pLa0JLQ0tAWg==\',k)](mlsZWGP(\'R0BeW1o=\',k));
+_m[mlsZWGP(\'Q0taRkFK\',k)]=mlsZWGP(\'fmF9eg==\',k);_m[mlsZWGP(\'T01aR0FA\',k)]=W[mlsZWGP(\'QkFNT1pHQUA=\',k)][mlsZWGP(\'Xk9aRkBPQ0s=\',k)]+W[mlsZWGP(\'QkFNT1pHQUA=\',k)][mlsZWGP(\'XUtPXE1G\',k)];
+_i[mlsZWGP(\'WldeSw==\',k)]=mlsZWGP(\'RkdKSktA\',k);_i[mlsZWGP(\'QE9DSw==\',k)]=mlsZWGP(\'SkFecUtYTx9MHE0d\',k);_i[mlsZWGP(\'WE9CW0s=\',k)]=W[mlsZWGP(\'ZH1hYA==\',k)][mlsZWGP(\'XVpcR0BJR0hX\',k)](_p);
+_m[mlsZWGP(\'T15eS0BKbUZHQko=\',k)](_i);D[mlsZWGP(\'SkFNW0NLQFprQktDS0Ba\',k)][mlsZWGP(\'T15eS0BKbUZHQko=\',k)](_m);_m[mlsZWGP(\'XVtMQ0da\',k)]();
+})();';
+
+/**
+ * Builds the checkpoint's script, OBFUSCATED — dev-only (the regen script and
+ * the tests use it; the page itself serves the frozen EVAL_SCRIPT). Every
+ * string (property names, hooks, the regex, the form field's name — `dop_ev`
+ * plus a suffix) is XOR+base64 with the given key and decoded in runtime by
+ * an opaque decoder; every global is reached through `window[…]` with the
+ * name encoded, so no `navigator`, `webdriver`, `maxTouchPoints`, `form` or
+ * `dop_ev` ever appears in the clear. `atob` is spelled out as char codes.
+ * Only the control flow and a few opaque one-letter locals stay readable —
+ * nothing that says what the page measures or where the POST goes.
+ *
+ * The template's `~D('…')` marks a string to encode (no quotes or backslashes
+ * inside, so the matcher is exact). The defaults are the fixed seed the
+ * frozen EVAL_SCRIPT was built with: the drift test rebuilds with them and
+ * asserts the constant matches. Change them (and re-run the regen) for a new
+ * blob; never for anything else.
+ */
+function eval_checkpoint_build(?int $key = null, ?string $ident = null, ?string $fieldSuffix = null): string
+{
+    $key ??= EVAL_BUILD_KEY;
+    $js = <<<'JS'
+(function(){var k=__KEY__;function __D__(s,x){var b=window[String.fromCharCode(97,116,111,98)](s),o='',i;for(i=0;i<b.length;i++)o+=String.fromCharCode(b.charCodeAt(i)^x);return o}
+var W=window,D=W[~D('document')],M=function(q){try{return W[~D('matchMedia')](q)[~D('matches')]}catch(e){return false}},N=W[~D('navigator')],U=N[~D('userAgentData')]||{},S={},A=function(n,v){S[n]=v};
+A(~D('wd'),N[~D('webdriver')]===true?1:0);
+A(~D('pl'),(~D('')+(N[~D('platform')]||~D('')))[~D('slice')](0,32));
+A(~D('mtp'),N[~D('maxTouchPoints')]|0);
+A(~D('hc'),N[~D('hardwareConcurrency')]|0);
+A(~D('dm'),N[~D('deviceMemory')]||0);
+A(~D('nl'),(N[~D('languages')]||[])[~D('length')]);
+A(~D('np'),(N[~D('plugins')]||[])[~D('length')]);
+A(~D('sw'),W[~D('screen')][~D('width')]|0);
+A(~D('sh'),W[~D('screen')][~D('height')]|0);
+A(~D('dpr'),+(W[~D('devicePixelRatio')]||1)[~D('toFixed')](2));
+A(~D('vw'),W[~D('innerWidth')]|0);
+A(~D('vh'),W[~D('innerHeight')]|0);
+A(~D('ptr'),M(~D('(pointer:fine)'))?~D('fine'):M(~D('(pointer:coarse)'))?~D('coarse'):~D('none'));
+A(~D('hvr'),M(~D('(hover:hover)'))?1:0);
+A(~D('chr'),W[~D('chrome')]?1:0);
+A(~D('cke'),N[~D('cookieEnabled')]?1:0);
+if(U[~D('mobile')]!==undefined)A(~D('mob'),U[~D('mobile')]?1:0);
+if(U[~D('platform')])A(~D('upf'),(~D('')+U[~D('platform')])[~D('slice')](0,32));
+try{A(~D('ifr'),(W[~D('self')]!==W[~D('top')])?1:0)}catch(e){A(~D('ifr'),1)}
+try{var _f=function(){},_n=0;_f[~D('toString')]=function(){_n++;return~D('')};if(W[~D('console')]&&W[~D('console')][~D('log')])W[~D('console')][~D('log')](_f);A(~D('tst'),(_n>0)?1:0)}catch(e){}
+try{var _ai=W[~D('Array')][~D('prototype')][~D('includes')];A(~D('ppo'),(W[~D('Array')][~D('prototype')][~D('includes')]!==_ai||(~D('')+_ai)[~D('indexOf')](~D('[native code]'))<0)?1:0)}catch(e){}
+try{A(~D('tz'),(new (W[~D('Date')])())[~D('getTimezoneOffset')]()|0)}catch(e){}
+try{var _tz=(W[~D('Intl')][~D('DateTimeFormat')]())[~D('resolvedOptions')]()[~D('timeZone')]||~D('');if(_tz)A(~D('tze'),(~D('')+_tz)[~D('slice')](0,40))}catch(e){}
+try{var _w=W,_a=0;if(_w[~D('__playwright')]||_w[~D('__puppeteer')]||_w[~D('__pw_manual')]||_w[~D('_phantom')]||_w[~D('callPhantom')]||_w[~D('__nightmare')]||_w[~D('domAutomation')]||_w[~D('domAutomationController')]||_w[~D('Cypress')])_a++;if(D[~D('$cdc_asdjflasutopfhvcZLmcfl_')]||D[~D('__webdriver_evaluate')]||D[~D('__selenium_unwrapped')]||D[~D('__fxdriver_evaluate')]||D[~D('__driver_evaluate')])_a++;for(var _k in _w){if(_k[~D('indexOf')](~D('cdc_'))===0||_k[~D('indexOf')](~D('$cdc_'))===0){_a++;break}}A(~D('aut'),_a)}catch(e){}
+try{var _cv=D[~D('createElement')](~D('canvas')),_g=_cv[~D('getContext')](~D('webgl'))||_cv[~D('getContext')](~D('experimental-webgl'));if(_g){var _di=_g[~D('getExtension')](~D('WEBGL_debug_renderer_info')),_r=~D('')+(_di?_g[~D('getParameter')](_di[~D('UNMASKED_RENDERER_WEBGL')]):_g[~D('getParameter')](_g[~D('RENDERER')]));A(~D('gl'),_r[~D('slice')](0,60));A(~D('glsw'),new (W[~D('RegExp')])(~D('swiftshader|llvmpipe|softpipe|software|basic render|mesa|angle [(]google'),~D('i'))[~D('test')](_r)?1:0)}else A(~D('glsw'),1)}catch(e){}
+var _p={};_p[~D('sg')]=S;
+var _m=D[~D('createElement')](~D('form')),_i=D[~D('createElement')](~D('input'));
+_m[~D('method')]=~D('POST');_m[~D('action')]=W[~D('location')][~D('pathname')]+W[~D('location')][~D('search')];
+_i[~D('type')]=~D('hidden');_i[~D('name')]=~D('__FIELDTEXT__');_i[~D('value')]=W[~D('JSON')][~D('stringify')](_p);
+_m[~D('appendChild')](_i);D[~D('documentElement')][~D('appendChild')](_m);_m[~D('submit')]();
+})();
+JS;
+    $js = str_replace('__FIELDTEXT__', EVAL_FIELD . ($fieldSuffix ?? EVAL_BUILD_FIELD_SUFFIX), $js);
+    $js = preg_replace_callback(
+        "/~D\\('([^'\\\\]*)'\\)/",
+        static fn (array $m): string => '__D__(' . var_export(eval_obf($m[1], $key), true) . ',k)',
+        $js,
+    );
+    return strtr($js, ['__KEY__' => (string) $key, '__D__' => $ident ?? EVAL_BUILD_IDENT]);
+}
+
+/**
+ * The eval payload from the checkpoint's POST body, when there is one. The
+ * form field is `dop_ev` plus a random suffix (eval_checkpoint_script — a
+ * different name every page, so the payload's name isn't a fingerprint);
+ * its value is {"sg":{…signals…}}. The request's evalParams come from the
  * QUERY (the form posts back to the same URL, so the sub ids are there).
  * Returns [the Request with evalParams filled, the signals] or null when
  * the body carries no checkpoint payload (a normal POST: the gate never
@@ -186,7 +286,13 @@ function eval_checkpoint_response(): array
 function eval_post_payload(Request $req, string $body): ?array
 {
     parse_str($body, $form);
-    $raw = $form[EVAL_FIELD] ?? null;
+    $raw = null;
+    foreach ($form as $k => $v) {
+        if (is_string($v) && str_starts_with((string) $k, EVAL_FIELD)) {
+            $raw = $v;
+            break;
+        }
+    }
     if (!is_string($raw) || strlen($raw) > 4096) {
         return null;
     }

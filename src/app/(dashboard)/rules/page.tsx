@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/page-header";
 import { RowAction } from "@/components/row-action";
 import { Badge } from "@/components/ui/badge";
 import { Table, Td, Th, Tr } from "@/components/ui/table";
+import { PlatformChip } from "@/components/platform-chip";
 import { summarizeRuleConditions } from "@/lib/pages/conditions";
 import { parseRange, resolveRange } from "@/lib/pages/dashboard-filters";
 import { listRules, ruleStats, type Rule, type RuleCount } from "@/lib/pages/rules";
@@ -37,11 +38,10 @@ function Count({ count, href }: { count: RuleCount | undefined; href: string }) 
  * the stage and the ↑/↓ move a rule among its own stage (rule_move stays within
  * the label). A rule that caught nothing in the period is dimmed.
  */
-function StageSection({ step, label, tone, rules, byRule }: { step: number; label: string; tone: "danger" | "warning"; rules: Rule[]; byRule: Map<string, RuleCount> }) {
+function StageSection({ label, tone, rules, byRule }: { label: string; tone: "danger" | "warning"; rules: Rule[]; byRule: Map<string, RuleCount> }) {
   return (
     <section className="mb-8">
       <div className="mb-2 flex items-center gap-2">
-        <span className="flex size-5 items-center justify-center rounded-full bg-foreground/10 text-[11px] font-semibold tabular-nums">{step}</span>
         <Badge tone={tone}>{label}</Badge>
         <span className="text-xs text-muted">{rules.length}</span>
       </div>
@@ -50,7 +50,7 @@ function StageSection({ step, label, tone, rules, byRule }: { step: number; labe
           <tr>
             <Th className="w-px">Order</Th>
             <Th>Rule</Th>
-            <Th>Flow</Th>
+            <Th>Platform</Th>
             <Th>Conditions</Th>
             <Th>Status</Th>
             <Th className="text-right">Actions</Th>
@@ -77,8 +77,8 @@ function StageSection({ step, label, tone, rules, byRule }: { step: number; labe
                   {r.reason ? <span className="block text-xs text-muted">{r.reason}</span> : null}
                 </Td>
                 <Td>
-                  <span className="flex flex-wrap gap-1">
-                    {r.tags.length ? r.tags.map((t) => <Badge key={t} tone="info">{t}</Badge>) : <span className="text-xs text-muted">—</span>}
+                  <span className="flex flex-wrap gap-x-3 gap-y-1">
+                    {r.tags.length ? r.tags.map((t) => <PlatformChip key={t} tag={t} />) : <span className="text-xs text-muted">—</span>}
                   </span>
                 </Td>
                 <Td className="max-w-xs">
@@ -109,32 +109,33 @@ function StageSection({ step, label, tone, rules, byRule }: { step: number; labe
  * request), then Suspicious (after the device checkpoint, in the browser) —
  * each in its own order, with how many clicks each one caught in the period
  * (?range=) and, last, the clicks that passed the gate. ?q= searches by name/
- * reason, ?stage= shows one stage, ?flow= one flow (tag). Each number opens
- * those hits in the Logs.
+ * reason, ?stage= shows one stage, ?platform= one platform (tag). Each number
+ * opens those hits in the Logs.
  */
-export default async function RulesPage({ searchParams }: { searchParams: Promise<{ flow?: string; range?: string; q?: string; stage?: string }> }) {
+export default async function RulesPage({ searchParams }: { searchParams: Promise<{ platform?: string; range?: string; q?: string; stage?: string }> }) {
   // Dynamic Server Component: reading the clock per request is intentional.
   // eslint-disable-next-line react-hooks/purity
   const nowMs = Date.now();
-  const { flow, range: rangeParam, q: qParam, stage: stageParam } = await searchParams;
+  const { platform, range: rangeParam, q: qParam, stage: stageParam } = await searchParams;
   const range = parseRange(rangeParam);
   const [all, stats] = await Promise.all([listRules(), ruleStats(resolveRange(range, nowMs).since)]);
 
-  const flows = [...new Set(all.flatMap((r) => r.tags))].sort((a, b) => a.localeCompare(b));
-  const selectedFlow = typeof flow === "string" && flows.includes(flow) ? flow : null;
+  // One entry per platform, case-insensitive (a "Google" and a "google" tag are the same chip).
+  const platforms = [...new Map(all.flatMap((r) => r.tags).map((t) => [t.toLowerCase(), t] as const)).values()].sort((a, b) => a.localeCompare(b));
+  const selectedPlatform = typeof platform === "string" ? (platforms.find((p) => p.toLowerCase() === platform.toLowerCase()) ?? null) : null;
   const q = (qParam ?? "").trim();
   const stage: StageFilter = stageParam === "bot" || stageParam === "suspicious" ? stageParam : null;
 
   const needle = q.toLowerCase();
   const rules = all.filter((r) => {
-    if (selectedFlow && !r.tags.includes(selectedFlow)) return false;
+    if (selectedPlatform && !r.tags.some((t) => t.toLowerCase() === selectedPlatform.toLowerCase())) return false;
     if (needle && !`${r.name} ${r.reason ?? ""}`.toLowerCase().includes(needle)) return false;
     return true;
   });
   const isBot = (r: Rule) => r.label.toLowerCase() === "bot";
   const bot = rules.filter(isBot);
   const suspicious = rules.filter((r) => !isBot(r));
-  const filtered = selectedFlow !== null || q !== "" || stage !== null;
+  const filtered = selectedPlatform !== null || q !== "" || stage !== null;
 
   return (
     <>
@@ -144,7 +145,7 @@ export default async function RulesPage({ searchParams }: { searchParams: Promis
         <RuleForm />
       </div>
 
-      {all.length ? <RulesFilters range={range} flow={selectedFlow} flows={flows} q={q} stage={stage} /> : null}
+      {all.length ? <RulesFilters range={range} platform={selectedPlatform} platforms={platforms} q={q} stage={stage} /> : null}
 
       {rules.length === 0 ? (
         <EmptyState
@@ -153,8 +154,8 @@ export default async function RulesPage({ searchParams }: { searchParams: Promis
         />
       ) : (
         <>
-          {stage !== "suspicious" && bot.length ? <StageSection step={1} label="Bot" tone="danger" rules={bot} byRule={stats.byRule} /> : null}
-          {stage !== "bot" && suspicious.length ? <StageSection step={2} label="Suspicious" tone="warning" rules={suspicious} byRule={stats.byRule} /> : null}
+          {stage !== "suspicious" && bot.length ? <StageSection label="Bot" tone="danger" rules={bot} byRule={stats.byRule} /> : null}
+          {stage !== "bot" && suspicious.length ? <StageSection label="Suspicious" tone="warning" rules={suspicious} byRule={stats.byRule} /> : null}
 
           <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-surface px-4 py-3">
             <span className="text-sm font-medium">Passed</span>

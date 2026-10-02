@@ -5,12 +5,12 @@ export type StageFilter = "bot" | "suspicious" | null;
 
 /**
  * The Rules screen's URL: the period of the numbers (?range=, left out when it's
- * the default), the flow (?flow=), a text search (?q=) and the stage (?stage=).
+ * the default), the platform (?platform=), a text search (?q=) and the stage (?stage=).
  */
-export function rulesHref(range: RangeKey, flow: string | null, q = "", stage: StageFilter = null): string {
+export function rulesHref(range: RangeKey, platform: string | null, q = "", stage: StageFilter = null): string {
   const qs = new URLSearchParams();
   if (range !== DEFAULT_RANGE) qs.set("range", range);
-  if (flow) qs.set("flow", flow);
+  if (platform) qs.set("platform", platform);
   if (q.trim()) qs.set("q", q.trim());
   if (stage) qs.set("stage", stage);
   const s = qs.toString();

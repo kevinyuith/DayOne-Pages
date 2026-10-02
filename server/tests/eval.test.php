@@ -42,12 +42,24 @@ $root = [$routeAt('/', 'home01')];
 [$st, $hd, $body, $outcome, $route] = decide($root, $click(), $gate);
 same('checkpoint: served', [200, 'served', 'GATE'], [$st, $outcome, $route['match_type']]);
 same('checkpoint: the _eval mark', 'checkpoint', $route['_eval'] ?? null);
-check('checkpoint: the interstitial page runs the eval script', str_contains((string) $body, 'name=' . json_encode(EVAL_FIELD)) && str_contains((string) $body, 'f.submit()'));
+check('checkpoint: the interstitial page runs the eval script', str_contains((string) $body, '<script>(function(){'));
 check('checkpoint: no title (a cloaker fingerprint)', !str_contains((string) $body, '<title>'));
 check('checkpoint: the script is in the head', str_contains((string) $body, '</script></head><body>'));
 check('checkpoint: never cached', str_contains((string) ($hd['Cache-Control'] ?? ''), 'no-store'));
 check('checkpoint: not the funnel page', !str_contains((string) $body, 'F23-A'));
 same('checkpoint: decision marker', 'SERVE · GATE · EVAL', hit_decision($route));
+
+// The script is obfuscated: nothing readable about what it measures or where
+// the POST goes (no field name, no property names, no globals in the clear).
+foreach (['dop_ev', 'webdriver', 'maxTouchPoints', 'cookieEnabled', 'userAgentData', 'navigator', 'matchMedia', 'createElement', 'submit', 'playwright', 'swiftshader', 'timezone', 'WEBGL'] as $word) {
+    check("obfuscated: no readable \"$word\"", !str_contains((string) $body, $word));
+}
+// It's a fixed blob (zero work per response): the same every time, and it
+// matches the builder's output (a drift = someone changed the signals and
+// forgot to re-run server/dev/regen-eval-script.php).
+[, , $body2] = eval_checkpoint_response();
+check('obfuscated: a fixed blob (same every response)', $body === $body2);
+check('obfuscated: EVAL_SCRIPT matches the build', EVAL_SCRIPT === eval_checkpoint_build());
 
 // ── The mid page only exists for a click a Suspicious rule is after ──
 // Another sub11: no rule is after it — straight to the funnel, no page.
@@ -206,6 +218,10 @@ same('payload: evalParams from the query', 'taboola', $preq->evalParams['sub11']
 same('payload: the signals', ['mtp' => 0, 'ptr' => 'fine'], $psig);
 same('payload: no field → null', null, eval_post_payload($payloadReq, 'other=1'));
 same('payload: bad json → null', null, eval_post_payload($payloadReq, EVAL_FIELD . '=not-json'));
+// The obfuscated script posts the field with a random suffix: any dop_ev* name is read.
+$suffixed = eval_post_payload($payloadReq, EVAL_FIELD . 'a9f3c1=' . rawurlencode(json_encode(['sg' => ['mtp' => 5]])));
+assert(is_array($suffixed));
+same('payload: a suffixed field name parses', ['mtp' => 5], $suffixed[1]);
 
 // ── eval_rules_matched: the rules whose conditions all match, in order ──
 $mrules = [

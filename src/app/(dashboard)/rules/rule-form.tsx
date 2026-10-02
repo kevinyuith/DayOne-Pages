@@ -72,7 +72,7 @@ function FormBody({ rule, onDone }: { rule?: Rule; onDone: () => void }) {
             ))}
           </select>
         </Field>
-        <Field label="Flow" hint="Comma-separated.">
+        <Field label="Platform" hint="Comma-separated.">
           <input name="tags" defaultValue={(rule?.tags ?? []).join(", ")} maxLength={200} placeholder="Facebook" className={INPUT_CLASS} disabled={pending} />
         </Field>
       </div>

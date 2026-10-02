@@ -3,22 +3,23 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useOptimistic, useState, useTransition } from "react";
 import { ChevronDownIcon } from "@/components/icons";
+import { PlatformTile, platformMeta } from "@/components/platform-chip";
 import { RANGES, RANGE_SHORT, type RangeKey } from "@/lib/pages/dashboard-filters";
 import { rulesHref, type StageFilter } from "./rules-href";
 
-type Value = { range: RangeKey; flow: string | null; q: string; stage: StageFilter };
+type Value = { range: RangeKey; platform: string | null; q: string; stage: StageFilter };
 
 /**
  * The Rules screen's bar: the period of the Blocked numbers (?range=), a text
  * search by name/reason (?q=), the stage (?stage=, Bot or Suspicious) and the
- * Flow filter (?flow=). Each navigates and page.tsx reads them on the server;
- * the choice shows right away (useOptimistic) and the table is dimmed while the
- * new numbers come (data-dash-pending, as on the Dashboard). The search debounces.
+ * Platform filter (?platform=). Each navigates and page.tsx reads them on the
+ * server; the choice shows right away (useOptimistic) and the table is dimmed
+ * while the new numbers come (data-dash-pending, as on the Dashboard). The search debounces.
  */
-export function RulesFilters({ range, flow, flows, q, stage }: Value & { flows: string[] }) {
+export function RulesFilters({ range, platform, platforms, q, stage }: Value & { platforms: string[] }) {
   const router = useRouter();
   const [pending, start] = useTransition();
-  const [shown, setShown] = useOptimistic<Value>({ range, flow, q, stage });
+  const [shown, setShown] = useOptimistic<Value>({ range, platform, q, stage });
   const [text, setText] = useState(q);
 
   useEffect(() => {
@@ -28,10 +29,10 @@ export function RulesFilters({ range, flow, flows, q, stage }: Value & { flows: 
   }, [pending]);
 
   const go = (partial: Partial<Value>) => {
-    const next: Value = { range: shown.range, flow: shown.flow, stage: shown.stage, q: text, ...partial };
+    const next: Value = { range: shown.range, platform: shown.platform, stage: shown.stage, q: text, ...partial };
     start(() => {
       setShown(next);
-      router.push(rulesHref(next.range, next.flow, next.q, next.stage), { scroll: false });
+      router.push(rulesHref(next.range, next.platform, next.q, next.stage), { scroll: false });
     });
   };
 
@@ -87,18 +88,24 @@ export function RulesFilters({ range, flow, flows, q, stage }: Value & { flows: 
         <ChevronDownIcon className="pointer-events-none absolute right-2.5 top-1/2 size-4 -translate-y-1/2 text-muted" />
       </label>
 
-      <label className="relative inline-flex items-center">
-        <span className="sr-only">Flow</span>
-        <select value={shown.flow ?? ""} onChange={(e) => go({ flow: e.target.value || null })} className={selectCls(shown.flow !== null)}>
-          <option value="">All flows</option>
-          {flows.map((f) => (
-            <option key={f} value={f}>
-              {f}
-            </option>
-          ))}
-        </select>
-        <ChevronDownIcon className="pointer-events-none absolute right-2.5 top-1/2 size-4 -translate-y-1/2 text-muted" />
-      </label>
+      <div role="group" aria-label="Platform" className="inline-flex h-9 flex-wrap items-center gap-1 rounded-lg border border-border bg-surface px-1.5">
+        {platforms.map((p) => {
+          const active = (shown.platform ?? "").toLowerCase() === p.toLowerCase();
+          return (
+            <button
+              key={p}
+              type="button"
+              aria-pressed={active}
+              title={platformMeta(p).label}
+              onClick={() => go({ platform: active ? null : p })}
+              className={`rounded-md p-1 transition-colors ${active ? "bg-foreground/[0.12]" : "opacity-60 hover:opacity-100"}`}
+            >
+              <span className="sr-only">{platformMeta(p).label}</span>
+              <PlatformTile tag={p} />
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

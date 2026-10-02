@@ -56,7 +56,7 @@ defined('DAYONE_ENTRY') || (http_response_code(404) && exit);
 const BEACON_PATH = '/_dop/l';
 const BEACON_COOKIE = 'dop_v';
 /** ETag suffix of pages with the script. Changed the script, bump the version. */
-const BEACON_ETAG = '-b7';
+const BEACON_ETAG = '-b8';
 /** The longest time on a page that is taken (4 hours). */
 const BEACON_MAX_DURATION_MS = 14400000;
 /** The kinds of the first interaction ("i=<kind>"), as pages.hits.interaction takes them. */
@@ -79,7 +79,11 @@ const BEACON_SCRIPT = '<script data-dop-beacon>(function(){var v=(document.cooki
     // (empty is a hint, with nl/np), automation artifacts (chromedriver cdc_,
     // Playwright/Puppeteer/Selenium/phantom hooks — aut = how many) and the WebGL
     // renderer (glsw = 1 when it is software: SwiftShader/llvmpipe/Mesa/no GL).
+    // tz = getTimezoneOffset (minutes; an emulator's often mismatches the IP's
+    // country), tze = the IANA zone name — the same pair the eval checkpoint takes.
     . 'function s(){S.lng=(""+(N.language||"")).slice(0,12);'
+    . 'try{S.tz=new Date().getTimezoneOffset()|0}catch(e){}'
+    . 'try{var _tz=(Intl.DateTimeFormat().resolvedOptions().timeZone||"");if(_tz)S.tze=(""+_tz).slice(0,40)}catch(e){}'
     . 'try{var _w=window,_a=0;if(_w.__playwright||_w.__puppeteer||_w.__pw_manual||_w._phantom||_w.callPhantom||_w.__nightmare||_w.domAutomation||_w.domAutomationController||_w.Cypress)_a++;if(document.$cdc_asdjflasutopfhvcZLmcfl_||document.__webdriver_evaluate||document.__selenium_unwrapped||document.__fxdriver_evaluate||document.__driver_evaluate)_a++;for(var _k in _w){if(_k.indexOf("cdc_")===0||_k.indexOf("$cdc_")===0){_a++;break}}S.aut=_a}catch(e){}'
     . 'try{var _cv=document.createElement("canvas"),_g=_cv.getContext("webgl")||_cv.getContext("experimental-webgl");if(_g){var _di=_g.getExtension("WEBGL_debug_renderer_info"),_r=""+(_di?_g.getParameter(_di.UNMASKED_RENDERER_WEBGL):_g.getParameter(_g.RENDERER));S.gl=_r.slice(0,60);S.glsw=/swiftshader|llvmpipe|softpipe|software|basic render|mesa|angle \\(google/i.test(_r)?1:0}else S.glsw=1}catch(e){}'
     . 'b("t="+Math.round(performance.now()));b(enc(S));_sd=true}if(document.readyState==="complete")s();else addEventListener("load",s,{once:true});'
