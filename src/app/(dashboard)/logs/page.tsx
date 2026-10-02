@@ -119,7 +119,7 @@ export default async function LogsPage({
           description="Requests show up here as the delivery server logs them."
         />
       ) : (
-        <Table className="min-w-[4240px] [&_td]:px-6 [&_td]:py-3 [&_th]:whitespace-nowrap [&_th]:px-6 [&_th]:py-3">
+        <Table className="min-w-[4380px] [&_td]:px-6 [&_td]:py-3 [&_th]:whitespace-nowrap [&_th]:px-6 [&_th]:py-3">
           <thead>
             <tr>
               <Th>Date</Th>
@@ -144,6 +144,9 @@ export default async function LogsPage({
                 Signals
               </Th>
               <Th>Time on page</Th>
+              <Th title="How far down the page the visitor got: the deepest the bottom of the screen reached, % of the page's height (the first screen counts without a scroll). — = not measured (no scroll on a page that scrolls inside an element, or no report).">
+                Read
+              </Th>
               <Th>Country</Th>
               <Th>State</Th>
               <Th>Language</Th>
@@ -290,6 +293,9 @@ export default async function LogsPage({
                     <Signals hit={h} />
                   </Td>
                   <Td className="whitespace-nowrap tabular-nums">{h.duration_ms !== null ? formatDuration(h.duration_ms) : <span className="text-muted">—</span>}</Td>
+                  <Td className="whitespace-nowrap">
+                    <ReadDepth hit={h} />
+                  </Td>
                   <Td className="text-muted">{h.country || "—"}</Td>
                   <Td className="whitespace-nowrap text-muted">{h.region || "—"}</Td>
                   <Td className="whitespace-nowrap" title={h.accept_language ?? undefined}>
@@ -436,6 +442,22 @@ function formatDuration(ms: number): string {
   if (s < 60) return `${s}s`;
   if (s < 3600) return `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`;
   return `${Math.floor(s / 3600)}h ${String(Math.floor((s % 3600) / 60)).padStart(2, "0")}m`;
+}
+
+/** How far down the page the visitor read (the beacon's sd, % of the page; ph = its height in px), as a number and a bar. */
+function ReadDepth({ hit }: { hit: HitLogRow }) {
+  const sd = hit.signals ? sigNum(hit.signals, "sd") : null;
+  if (sd === null) return <span className="text-muted">—</span>;
+  const ph = hit.signals ? sigNum(hit.signals, "ph") : null;
+  const pct = Math.max(0, Math.min(100, sd));
+  return (
+    <span className="inline-flex items-center gap-2" title={ph !== null ? `Page height: ${ph.toLocaleString("en-US")} px` : undefined}>
+      <span className="h-1.5 w-16 overflow-hidden rounded-full bg-border">
+        <span className="block h-full rounded-full bg-accent" style={{ width: `${pct}%` }} />
+      </span>
+      <span className="tabular-nums">{pct}%</span>
+    </span>
+  );
 }
 
 /** The visitor's first interaction (kind and time to it) and whether they clicked out of the page. */

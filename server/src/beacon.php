@@ -21,7 +21,9 @@
  *      (visibilitychange → hidden, pagehide) it sends "d=<ms>" (how long it
  *      has been open) with "sg=<json>": the session's trusted event counts
  *      (mouse, scroll, touch, key, click — 0 on a device that has the pointer
- *      means nobody drove it, a bot hint).
+ *      means nobody drove it, a bot hint) and how far down the page it was
+ *      read (sd = the deepest the bottom of the screen got, % of the page's
+ *      height; ph = that height in px).
  *   3. /_dop/l answers 204 right away and, after the response, marks the
  *      visit's hit (pages.hits.loaded_at/load_ms — RPC log_load; interacted_at/
  *      interaction/interaction_ms — log_interact; clicked_at — log_click;
@@ -56,7 +58,7 @@ defined('DAYONE_ENTRY') || (http_response_code(404) && exit);
 const BEACON_PATH = '/_dop/l';
 const BEACON_COOKIE = 'dop_v';
 /** ETag suffix of pages with the script. Changed the script, bump the version. */
-const BEACON_ETAG = '-b8';
+const BEACON_ETAG = '-b9';
 /** The longest time on a page that is taken (4 hours). */
 const BEACON_MAX_DURATION_MS = 14400000;
 /** The kinds of the first interaction ("i=<kind>"), as pages.hits.interaction takes them. */
@@ -96,8 +98,16 @@ const BEACON_SCRIPT = '<script data-dop-beacon>(function(){var v=(document.cooki
     . 'addEventListener("mousemove",function(e){if(!e.isTrusted)return;var x=e.clientX,y=e.clientY;if(_fx===null){_fx=x;_fy=y}if(_px!==null){var dx=x-_px,dy=y-_py,ds=Math.abs(dx)+Math.abs(dy);_pl+=ds;if(ds>250)_tp++;if((dx>0&&_pdx<0)||(dx<0&&_pdx>0)||(dy>0&&_pdy<0)||(dy<0&&_pdy>0))_dc++;if(dx||dy){_pdx=dx;_pdy=dy}}_px=x;_py=y;_lx=x;_ly=y},{capture:true,passive:true});'
     . 'var i=false;function n(k,y){return function(e){if(e.isTrusted&&(e.type!=="mousemove"||e.movementX||e.movementY)&&K[y]<999)K[y]++;if(i||!e.isTrusted||(e.type==="mousemove"&&!e.movementX&&!e.movementY))return;i=true;b("i="+k+"&t="+Math.round(performance.now()))}}'
     . '[["mousemove","mouse","mm"],["mousedown","mouse","md"],["wheel","scroll","wh"],["touchstart","touch","ts"],["keydown","key","ky"]].forEach(function(p){addEventListener(p[0],n(p[1],p[2]),{capture:true,passive:true})});'
-    . 'addEventListener("scroll",function(e){if(e.isTrusted&&K.sc<999)K.sc++},{capture:true,passive:true});'
-    . 'function u(){if(_fx!==null){var dp=Math.abs(_lx-_fx)+Math.abs(_ly-_fy);K.tp=_tp;K.dc=_dc;K.str=_pl>0?Math.round(dp/_pl*100):0}b("d="+Math.round(performance.now())+"&"+enc(K))}addEventListener("pagehide",u);addEventListener("visibilitychange",function(){if(document.visibilityState==="hidden")u()})})();</script>';
+    // Read depth: sd = the deepest the bottom of the screen got, % of the page's
+    // height (the first screen counts even without a scroll); ph = that height
+    // (px). The page's scroller is the window, or an element as tall as most of
+    // the screen (builders that scroll the body or a wrapper); a window that
+    // can't scroll measures nothing, so no sd = unknown, never a guess.
+    . 'var _dp=-1,_ph=0,_se=null;function q(t){try{var d=document.scrollingElement||document.documentElement,e=t&&t.nodeType===1&&t.clientHeight>=innerHeight*.6&&t.scrollHeight>t.clientHeight+2?t:null,h,y;'
+    . 'if(e){_se=e;h=e.scrollHeight;y=e.scrollTop+e.clientHeight}else{h=Math.max(d.scrollHeight,document.body?document.body.scrollHeight:0);if(h<=innerHeight+2)return;y=(window.pageYOffset||d.scrollTop||0)+innerHeight}'
+    . 'var p=Math.min(100,Math.round(y/h*100));if(p>_dp){_dp=p;_ph=Math.round(h)}}catch(x){}}'
+    . 'addEventListener("scroll",function(e){if(!e.isTrusted)return;if(K.sc<999)K.sc++;q(e.target)},{capture:true,passive:true});'
+    . 'function u(){if(_fx!==null){var dp=Math.abs(_lx-_fx)+Math.abs(_ly-_fy);K.tp=_tp;K.dc=_dc;K.str=_pl>0?Math.round(dp/_pl*100):0}q(_se);q(null);if(_dp>=0){K.sd=_dp;K.ph=_ph}b("d="+Math.round(performance.now())+"&"+enc(K))}addEventListener("pagehide",u);addEventListener("visibilitychange",function(){if(document.visibilityState==="hidden")u()})})();</script>';
 
 /**
  * Does this route's response carry the notice? Only a funnel's page served by
