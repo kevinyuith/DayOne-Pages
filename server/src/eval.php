@@ -537,17 +537,6 @@ function eval_signals_for_cookie(Request $req): ?array
     return eval_signals_get($key);
 }
 
-/** Stores the checkpoint's signals (1 day); returns the cookie value (the entry's key). */
-function eval_signals_put(string $ip, string $ua, array $signals): string
-{
-    $key = substr(eval_signals_key($ip, $ua), 0, 16);
-    $payload = json_encode(['stored_at' => time(), 'signals' => $signals]);
-    if ($payload !== false) {
-        @atomic_write(eval_signals_file($key), cache_wrap($payload));
-    }
-    return $key;
-}
-
 /** Reads a signals cache entry; null when missing or expired. */
 function eval_signals_get(string $key): ?array
 {
@@ -572,4 +561,28 @@ function eval_cookie(string $value): string
 {
     $ttl = $value === EVAL_COOKIE_OK ? EVAL_OK_TTL : EVAL_SIGNALS_TTL;
     return EVAL_COOKIE . "=$value; Path=/; Max-Age=$ttl; Secure; SameSite=Lax";
+}
+
+/** The route is the checkpoint's interstitial page (not a funnel or safe view). */
+function eval_route_is_checkpoint(?array $route): bool
+{
+    return $route !== null && ($route['_eval'] ?? null) === 'checkpoint';
+}
+
+/**
+ * The response's one checkpoint cookie: "chk" on the interstitial page, "ok"
+ * once a POST passed, none otherwise. Never two: a second dop_ev in the same
+ * response replaces the first in the browser — the signals entry's key used
+ * to follow "ok" and win, so nobody kept "ok", the next request (a funnel's
+ * step switch) got the checkpoint again and landed back on the first step.
+ */
+function eval_response_cookie(?array $route): ?string
+{
+    if (eval_route_is_checkpoint($route)) {
+        return eval_cookie('chk');
+    }
+    if ($route !== null && !empty($route['_eval_ok'])) {
+        return eval_cookie(EVAL_COOKIE_OK);
+    }
+    return null;
 }

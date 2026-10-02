@@ -116,8 +116,10 @@ function dayone_handle(): void
     }
     // A funnel's step switch: the runtime set dop_step and reloaded. The cookie
     // goes (it only carries the switch — a refresh starts over at the first
-    // step) and a served page's hit is marked as the same visit's step.
-    if (funnel_step_cookie($req->cookies) !== null) {
+    // step) and a served page's hit is marked as the same visit's step. The
+    // checkpoint page keeps it: its POST comes back to this URL and must serve
+    // the step the visitor asked for, not the first one again.
+    if (funnel_step_cookie($req->cookies) !== null && !eval_route_is_checkpoint($route)) {
         $clear = funnel_step_cookie_clear($req->rawPath);
         if ($clear !== null) {
             $headers['Set-Cookie'] = [...(array) ($headers['Set-Cookie'] ?? []), $clear];
@@ -138,16 +140,11 @@ function dayone_handle(): void
         }
     }
     // The device checkpoint: the interstitial page marks the visitor as
-    // "checking"; a POST that passed gets the ok cookie (and its signals are
-    // stored for a later checkpoint), a POST a rule caught gets neither.
-    if ($route !== null && ($route['_eval'] ?? null) === 'checkpoint') {
-        $headers['Set-Cookie'] = [...(array) ($headers['Set-Cookie'] ?? []), eval_cookie('chk')];
-    } elseif ($route !== null && !empty($route['_eval_ok'])) {
-        $cookies = [eval_cookie(EVAL_COOKIE_OK)];
-        if (is_array($req->evalSignals) && $req->evalSignals !== []) {
-            $cookies[] = eval_cookie(eval_signals_put($req->ip, $req->userAgent, $req->evalSignals));
-        }
-        $headers['Set-Cookie'] = [...(array) ($headers['Set-Cookie'] ?? []), ...$cookies];
+    // "checking"; a POST that passed gets the ok cookie, a POST a rule caught
+    // gets neither.
+    $evalCookie = eval_response_cookie($route);
+    if ($evalCookie !== null) {
+        $headers['Set-Cookie'] = [...(array) ($headers['Set-Cookie'] ?? []), $evalCookie];
     }
     if ($cfg['debug_headers']) {
         $headers['X-Cache'] = $resolved['xcache'];

@@ -110,6 +110,29 @@ $postOk->evalSignals = ['mtp' => 5, 'ptr' => 'coarse', 'wd' => 0]; // a real pho
 same('passed POST: the funnel', 'GATE', $route['match_type']);
 check('passed POST: the funnel page', str_contains((string) $body, 'F23-A'));
 check('passed POST: marked for the ok cookie', !empty($route['_eval_ok']));
+// ONE dop_ev per response: a second one (the signals entry's key) used to
+// follow "ok" and replace it in the browser, so the next request got the
+// checkpoint again.
+same('passed POST: the one cookie is ok', EVAL_COOKIE . '=' . EVAL_COOKIE_OK . '; Path=/; Max-Age=' . EVAL_OK_TTL . '; Secure; SameSite=Lax', eval_response_cookie($route));
+[, , , , $chkRoute] = decide($root, $click(), $gate);
+same('checkpoint page: the chk cookie', EVAL_COOKIE . '=chk; Path=/; Max-Age=' . EVAL_SIGNALS_TTL . '; Secure; SameSite=Lax', eval_response_cookie($chkRoute));
+check('checkpoint page: is the checkpoint', eval_route_is_checkpoint($chkRoute));
+same('funnel view: no checkpoint cookie', null, eval_response_cookie(['match_type' => 'GATE']));
+check('funnel view: not the checkpoint', !eval_route_is_checkpoint(['match_type' => 'GATE']) && !eval_route_is_checkpoint(null));
+
+// A funnel's step switch that meets the checkpoint: the POST (same URL, the
+// dop_step cookie kept by the checkpoint page) serves the step asked for,
+// not the first one again.
+$stepGate = $gate;
+$stepGate['funnels']['F23']['split'][0]['content_hash'] = '5ce901';
+cache_put_content('5ce901', '<html><body><section data-dop-page="p_pre" data-dop-name="Pre Lander" data-dop-kind="presell" data-dop-start>PRE</section><section data-dop-page="p_vsl" data-dop-name="Lander" data-dop-kind="main" hidden>VSL</section></body></html>');
+[, , $body, , $route] = decide($root, $click('', ['HTTP_COOKIE' => 'dop_step=p_vsl']), $stepGate);
+check('step switch: the checkpoint page', eval_route_is_checkpoint($route) && !str_contains((string) $body, 'PRE'));
+$stepPost = $click('', ['HTTP_COOKIE' => 'dop_step=p_vsl; ' . EVAL_COOKIE . '=chk']);
+$stepPost->evalSignals = ['mtp' => 5, 'ptr' => 'coarse', 'wd' => 0];
+[, , $body, , $route] = decide($root, $stepPost, $stepGate);
+check('step switch POST: the Lander, not the Pre Lander', str_contains((string) $body, 'VSL') && !str_contains((string) $body, 'PRE'));
+check('step switch POST: marked ok', !empty($route['_eval_ok']));
 
 // ── Bot rules walk before Suspicious ones (position doesn't matter) ──
 $walkGate = [...$gate, 'eval_rules' => [], 'rules' => [

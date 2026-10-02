@@ -234,8 +234,7 @@ function gate_pick(array $routes, array $gate, Request $req): ?array
         $route['vsl'] = array_values(array_filter($funnel['vsl'], 'is_array'));
     }
     // A checkpoint POST that passed: the funnel response marks the visitor ok
-    // (and the eval signals get stored, so a later checkpoint can skip the
-    // round trip).
+    // (eval_response_cookie).
     if ($evalPassed) {
         $route['_eval_ok'] = true;
     }
