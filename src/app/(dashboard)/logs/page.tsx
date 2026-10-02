@@ -119,7 +119,7 @@ export default async function LogsPage({
           description="Requests show up here as the delivery server logs them."
         />
       ) : (
-        <Table className="min-w-[3960px] [&_td]:px-6 [&_td]:py-3 [&_th]:whitespace-nowrap [&_th]:px-6 [&_th]:py-3">
+        <Table className="min-w-[4240px] [&_td]:px-6 [&_td]:py-3 [&_th]:whitespace-nowrap [&_th]:px-6 [&_th]:py-3">
           <thead>
             <tr>
               <Th>Date</Th>
@@ -131,6 +131,9 @@ export default async function LogsPage({
               <Th>Result</Th>
               <Th title="The first click with this IP and browser (User-Agent) on this domain in 30 days.">Unique</Th>
               <Th>Rule</Th>
+              <Th title="Every active Bot rule whose conditions matched this click — not just the one that served. The gate bars on the first match, so this shows which rules overlap. Suspicious rules are not evaluated here.">
+                All Bot rules
+              </Th>
               <Th>Flow</Th>
               <Th>Reason</Th>
               <Th title="The browser reported that the page finished loading (load event). Pings, prefetches, link-preview bots and curl don't report. — = not applicable (redirect, 404, file or old record).">
@@ -228,6 +231,26 @@ export default async function LogsPage({
                       <span className="flex flex-col items-start gap-0.5">
                         {h.rule_label ? <Badge tone={h.rule_label.toLowerCase() === "bot" ? "danger" : "warning"}>{h.rule_label}</Badge> : null}
                         {h.rule ? <span className="text-xs font-medium">{h.rule}</span> : null}
+                      </span>
+                    ) : (
+                      <span className="text-muted">—</span>
+                    )}
+                  </Td>
+                  <Td className="min-w-[180px] max-w-[340px]">
+                    {h.rule_matches?.length ? (
+                      <span className="flex flex-col items-start gap-1">
+                        <span className="text-xs text-muted">{h.rule_matches.length} matched</span>
+                        <span className="flex flex-wrap gap-1">
+                          {h.rule_matches.map((m) => (
+                            <span
+                              key={m.name}
+                              title={m.reason || undefined}
+                              className={`rounded px-1.5 py-0.5 text-xs ${m.name === h.rule ? "bg-foreground/[0.06] font-medium ring-1 ring-foreground/25" : "bg-foreground/[0.06]"}`}
+                            >
+                              {m.name}
+                            </span>
+                          ))}
+                        </span>
                       </span>
                     ) : (
                       <span className="text-muted">—</span>

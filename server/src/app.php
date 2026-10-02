@@ -161,7 +161,7 @@ function dayone_handle(): void
     }
 
     $domainId = $resolved['routes'][0]['domain_id'] ?? null;
-    $learned = log_hit($req, $status, $outcome, is_string($domainId) ? $domainId : null, $route, $headers['Location'] ?? null, $visitId, $req->rawQuery);
+    $learned = log_hit($req, $status, $outcome, is_string($domainId) ? $domainId : null, $route, $headers['Location'] ?? null, $visitId, $req->rawQuery, is_array($resolved['gate'] ?? null) ? $resolved['gate'] : null);
 
     // A click with a platform click id (fbclid, gclid, ttclid…) goes to dayone-main's tracker (dot.php).
     dot_click($req, $learned + ['domain_id' => $domainId, 'outcome' => $outcome, 'status' => $status, 'route' => $route, 'visit_id' => $visitId]);

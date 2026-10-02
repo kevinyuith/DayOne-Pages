@@ -226,6 +226,26 @@ same('prefetch rule: the prefetch gets the domain page', ['GATE-SAFE', 'Bot', 'T
 [, , , , $route] = decide($root, make_request(['REQUEST_URI' => $f23]), $gatePrefetch);
 same('prefetch rule: the click itself goes to the funnel', ['GATE', 'F23'], [$route['match_type'], $route['_funnel']]);
 
+// ── gate_bot_rules_matched: the shadow evaluation for the log (EVERY Bot rule that matches, not just the first; Suspicious excluded) ──
+$gateShadow = [
+    'gate_slugs' => ['/'],
+    'rules' => [
+        ['name' => 'UA scraper', 'label' => 'Bot', 'reason' => 'scraper UA', 'tags' => ['scrape'], 'conditions' => ['user_agent' => 'scraperxyz']],
+        ['name' => 'Yahoo sub9', 'label' => 'Bot', 'reason' => 'yahoo', 'tags' => ['Taboola'], 'conditions' => ['param' => ['name' => 'sub9', 'contains' => 'yahoo']]],
+        ['name' => 'One language', 'label' => 'Bot', 'tags' => [], 'conditions' => ['accept_languages' => ['max' => 1]]],
+        ['name' => 'Suspicious device', 'label' => 'Suspicious', 'tags' => [], 'conditions' => ['param' => ['name' => 'sub9', 'contains' => 'yahoo']]],
+    ],
+    'funnels' => [],
+];
+// A click that trips THREE Bot rules at once (scraper UA + yahoo sub9 + single language tag).
+$multi = make_request(['REQUEST_URI' => '/?sub9=yahoo-mail', 'HTTP_USER_AGENT' => 'x ScraperXYZ', 'HTTP_ACCEPT_LANGUAGE' => 'en']);
+$matched = gate_bot_rules_matched($gateShadow, $multi);
+same('shadow: every matching Bot rule, in walk order', ['UA scraper', 'Yahoo sub9', 'One language'], array_map(fn ($r) => $r['name'], $matched));
+same('shadow: each carries label/reason/tags', ['Bot', 'yahoo', ['Taboola']], [$matched[1]['label'], $matched[1]['reason'], $matched[1]['tags']]);
+check('shadow: Suspicious rules are not evaluated', !in_array('Suspicious device', array_map(fn ($r) => $r['name'], $matched), true));
+// A clean click (not yahoo, real browser languages, no scraper UA) trips no Bot rule.
+same('shadow: a clean click matches no Bot rule', [], gate_bot_rules_matched($gateShadow, make_request(['REQUEST_URI' => '/?sub9=wavebrowser-wavebrowser', 'HTTP_ACCEPT_LANGUAGE' => 'en-US,en'])));
+
 // ── helpers ──
 $refs = gate_content_refs($gate);
 sort($refs);

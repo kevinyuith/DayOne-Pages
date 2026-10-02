@@ -28,7 +28,7 @@ defined('DAYONE_ENTRY') || (http_response_code(404) && exit);
  *
  * @return array{hit_id?: ?int, asn?: ?int, as_name?: ?string, hostname?: ?string}
  */
-function log_hit(Request $req, int $status, string $outcome, ?string $domainId, ?array $route = null, ?string $redirectUrl = null, ?string $visitId = null, string $rawQuery = ''): array
+function log_hit(Request $req, int $status, string $outcome, ?string $domainId, ?array $route = null, ?string $redirectUrl = null, ?string $visitId = null, string $rawQuery = '', ?array $gate = null): array
 {
     if (!config()['log_hits'] || !is_logged_path($req->path)) {
         return [];
@@ -83,15 +83,35 @@ function log_hit(Request $req, int $status, string $outcome, ?string $domainId, 
     ]);
 
     $learned = ['hit_id' => $id, 'asn' => $known['asn'], 'as_name' => $known['as_name'], 'hostname' => $known['hostname']];
-    if ($id === null || $known['complete']) {
+    if ($id === null) {
         return $learned;
     }
-    $asn = asn_lookup($req->ip);
-    $hostname = reverse_dns($req->ip);
-    if (($asn['asn'] ?? null) !== $known['asn'] || ($asn['name'] ?? null) !== $known['as_name'] || $hostname !== $known['hostname']) {
-        supabase_log_hit_net($id, $asn['asn'] ?? null, $asn['name'] ?? null, $hostname);
+
+    // The ASN/hostname, resolved now (after the response) when the per-IP cache
+    // didn't already have them. The ASN is a local-table lookup; the hostname a
+    // reverse DNS, cached per IP.
+    $asn = $known['asn'];
+    $asName = $known['as_name'];
+    $hostname = $known['hostname'];
+    if (!$known['complete']) {
+        $look = asn_lookup($req->ip);
+        $asn = $look['asn'] ?? null;
+        $asName = $look['name'] ?? null;
+        $hostname = reverse_dns($req->ip);
     }
-    return ['hit_id' => $id, 'asn' => $asn['asn'] ?? null, 'as_name' => $asn['name'] ?? null, 'hostname' => $hostname];
+
+    // Shadow evaluation: EVERY Bot rule whose conditions match this click, not
+    // just the one gate_pick served on. Run here, with the network lookups
+    // already done, so the two hostname Bot rules reuse the cached PTR and
+    // nothing new goes to the network. Stored as rule_matches, to see which
+    // clicks each rule would catch instead of only the one that won the walk.
+    $matches = $gate !== null ? gate_bot_rules_matched($gate, $req) : [];
+
+    $netChanged = $asn !== $known['asn'] || $asName !== $known['as_name'] || $hostname !== $known['hostname'];
+    if ($netChanged || $matches !== []) {
+        supabase_log_hit_net($id, $asn, $asName, $hostname, $matches !== [] ? $matches : null);
+    }
+    return ['hit_id' => $id, 'asn' => $asn, 'as_name' => $asName, 'hostname' => $hostname];
 }
 
 /**

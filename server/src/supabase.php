@@ -155,10 +155,15 @@ function supabase_log_hit(array $params): ?int
     return is_int($id) || (is_string($id) && ctype_digit($id)) ? (int) $id : null;
 }
 
-/** The network lookups of a hit already written (log_hit_net). */
-function supabase_log_hit_net(int $id, ?int $asn, ?string $asName, ?string $hostname): void
+/**
+ * The network lookups of a hit already written, plus the Bot rules that
+ * matched it (rule_matches, when given — the shadow evaluation of log_hit).
+ *
+ * @param list<array{name:string,label:string,reason:string,tags:list<string>}>|null $ruleMatches
+ */
+function supabase_log_hit_net(int $id, ?int $asn, ?string $asName, ?string $hostname, ?array $ruleMatches = null): void
 {
-    supabase_fire('log_hit_net', ['p_id' => $id, 'p_asn' => $asn, 'p_as_name' => $asName, 'p_hostname' => $hostname]);
+    supabase_fire('log_hit_net', ['p_id' => $id, 'p_asn' => $asn, 'p_as_name' => $asName, 'p_hostname' => $hostname, 'p_rule_matches' => $ruleMatches]);
 }
 
 /** A visit's load notice (beacon.php): true = on its hit, false = no hit yet, null = the call failed. */

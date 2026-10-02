@@ -461,6 +461,41 @@ function rule_conditions_match(array $cond, Request $req): bool
     return true;
 }
 
+/**
+ * Every active BOT rule whose conditions match this request, in walk order —
+ * the FULL set, not just the first. gate_pick serves on the first match (it
+ * bars "by layers"); this is for the log's rule_matches, so you can see which
+ * clicks each rule would catch, not only the one that won the race. Suspicious
+ * rules are left out: their device signals only exist after the checkpoint
+ * (eval.php), so the server can't decide them here.
+ *
+ * Called from log_hit, AFTER the response and AFTER the net lookups, so the
+ * ASN (local table) and the hostname (PTR already cached for this IP) add no
+ * new network — the two hostname Bot rules reuse the reverse DNS log_hit just did.
+ *
+ * @return list<array{name:string,label:string,reason:string,tags:list<string>}>
+ */
+function gate_bot_rules_matched(array $gate, Request $req): array
+{
+    $out = [];
+    foreach (is_array($gate['rules'] ?? null) ? $gate['rules'] : [] as $rule) {
+        if (!is_array($rule) || strcasecmp((string) ($rule['label'] ?? ''), 'Bot') !== 0) {
+            continue;
+        }
+        $cond = is_array($rule['conditions'] ?? null) ? $rule['conditions'] : [];
+        if (!rule_conditions_match($cond, $req)) {
+            continue;
+        }
+        $out[] = [
+            'name' => (string) ($rule['name'] ?? ''),
+            'label' => (string) ($rule['label'] ?? ''),
+            'reason' => (string) ($rule['reason'] ?? ''),
+            'tags' => is_array($rule['tags'] ?? null) ? array_values(array_filter($rule['tags'], 'is_string')) : [],
+        ];
+    }
+    return $out;
+}
+
 /** A route (the domain's page at the requested slug) re-marked for the log with the gate's decision data. */
 function gate_flag_route(?array $route, string $matchType, array $flags): ?array
 {

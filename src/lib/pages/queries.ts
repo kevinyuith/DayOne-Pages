@@ -764,6 +764,12 @@ export type HitLogRow = HitRow & {
   rule: string | null;
   rule_reason: string | null;
   rule_tags: string[] | null;
+  /**
+   * EVERY active Bot rule whose conditions matched this request (shadow evaluation
+   * by the delivery server), not only the one that served (`rule`/`rule_label`) — the
+   * gate bars on the first match, so this shows the overlap. Suspicious rules excluded.
+   */
+  rule_matches: { name: string; label: string; reason: string; tags: string[] }[] | null;
   /** Why a click didn't go to a funnel: by the slug/sub1, or by the domain's status; null otherwise. */
   gate_reason: "slug_not_allowed" | "no_funnel_token" | "funnel_not_live" | "domain_disabled" | "domain_locked" | "domain_unlocked" | null;
   /** The funnel code of the sub1's [F…] token, when there was one. */
@@ -807,7 +813,7 @@ export async function listHits(
     .from("hits")
     .select(
       "id, created_at, domain_id, host, path, outcome, status_code, country, device, is_bot, referrer_host, ip, user_agent, " +
-        "hostname, asn, as_name, cookies, region, route_id, page_id, slug, decision, query, redirect_url, visit_id, rule_label, rule, rule_reason, rule_tags, gate_reason, funnel, " +
+        "hostname, asn, as_name, cookies, region, route_id, page_id, slug, decision, query, redirect_url, visit_id, rule_label, rule, rule_reason, rule_tags, rule_matches, gate_reason, funnel, " +
         "loaded_at, load_ms, accept_language, interaction, interaction_ms, clicked_at, duration_ms, is_unique, signals, domains(domain)",
     )
     .order("id", { ascending: false })
