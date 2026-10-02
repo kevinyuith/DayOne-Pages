@@ -264,10 +264,12 @@ function serve_slug(array $route, Request $req): array
         $headers['Set-Cookie'] = [...(array) ($headers['Set-Cookie'] ?? []), vsl_cookie($vslCookie)];
     }
 
-    // The funnel's tracker (track.php): the served step's dot.js in the <head> — a page with steps
-    // on any route, one without steps (all Lander) when the gate served it —, unless the page has a
-    // tracker tag of its own. The version goes into the ETag.
-    $track = $funnel !== null || $beacon;
+    // The funnel's tracker (track.php): the served step's dot.js in the <head> — ONLY on a funnel
+    // page the gate served (beacon), as the served step's kind (a page with steps) or the Lander
+    // (one without) —, unless the page has a tracker tag of its own. The version goes into the ETag.
+    // A page with steps served outside the gate (a domain/safe page) gets no tracker: a real click
+    // on it, when it's a pre-lander slug, is marked server-side instead (dot.php, origin pre_lander).
+    $track = $beacon;
     $trackOrigin = $track && !track_has_own_tag($body) ? track_origin($funnel['kind'] ?? null) : null;
     $etag = '"' . $hash . $abTag . ($funnel ? '-' . $funnel['step'] : '') . $vslTag . $pidTag . $ptag . $tag . ($track ? track_etag() : '') . '"';
     if ($funnel || $abTag !== '' || $vslTag !== '') {

@@ -28,20 +28,26 @@ same('inject: right after <head>', '<html><head lang="x">' . $dotTag('lander', "
 same('inject: no <head> → before </body>', '<body>x' . $dotTag('pre_lander') . '</body>', track_inject('<body>x</body>', 'pre_lander'));
 same('inject: neither → at the end', '<p>x</p>' . $dotTag('lander'), track_inject('<p>x</p>', 'lander'));
 
-// serve_slug: a page with steps gets the served step's tracker in the <head>, on any route; the version is in the ETag.
+// serve_slug: ONLY a funnel page the gate served (beacon) gets the tracker. Served by the gate, a page with steps gets the served step's dot.js in the <head>, with the page id; the version is in the ETag.
 $fSlug = '77777777-7777-4777-8777-777777777777';
 cache_put_content('facadea1', '<html><head><title>F</title></head><body><section data-dop-page="p_pre" data-dop-kind="presell">Pre</section><section data-dop-page="p_main" data-dop-kind="main" hidden>Lander</section><section data-dop-page="p_br" data-dop-kind="backredirect" data-dop-trigger="back" hidden>Back</section></body></html>');
-$stepRoute = ['slug_id' => $fSlug, 'content_hash' => 'facadea1', 'content_type' => 'text/html', 'funnel' => true];
+$stepRoute = ['slug_id' => $fSlug, 'content_hash' => 'facadea1', 'content_type' => 'text/html', 'funnel' => true, 'match_type' => 'GATE', 'page_id' => $tPid];
 [$status, $headers, $body] = serve_slug($stepRoute, make_request());
-same('serve steps: 200', 200, $status);
-check('serve steps, Pre Lander: dot.js as pre_lander right after <head>', str_contains((string) $body, '<head>' . $dotTag('pre_lander') . '<title>'), (string) $body);
+same('serve gate steps: 200', 200, $status);
+check('serve gate steps, Pre Lander: dot.js as pre_lander right after <head>, with the page id', str_contains((string) $body, '<head>' . $dotTag('pre_lander', "&page_id=$tPid") . '<title>'), (string) $body);
 check('… one tracker, no loader', substr_count((string) $body, 'data-dop-track') === 1 && !str_contains((string) $body, 'dop:pageshow'));
 check('… the ETag has the tracker version', str_ends_with((string) $headers['ETag'], track_etag() . '"'), (string) $headers['ETag']);
 same('… 304 keeps it', 304, serve_slug($stepRoute, make_request(['HTTP_IF_NONE_MATCH' => $headers['ETag']]))[0]);
 [, , $body] = serve_slug($stepRoute, make_request(['HTTP_COOKIE' => 'dop_step=p_main']));
-check('serve steps, Lander: dot.js as lander', str_contains((string) $body, $dotTag('lander')) && str_contains((string) $body, 'Lander') && !str_contains((string) $body, 'pre_lander'), (string) $body);
+check('serve gate steps, Lander: dot.js as lander', str_contains((string) $body, $dotTag('lander', "&page_id=$tPid")) && str_contains((string) $body, 'Lander') && !str_contains((string) $body, 'pre_lander'), (string) $body);
 [, , $body] = serve_slug($stepRoute, make_request(['HTTP_COOKIE' => 'dop_step=p_br']));
-check('serve steps, Backredirect: no tracker', str_contains((string) $body, 'Back') && !str_contains((string) $body, 'data-dop-track'), (string) $body);
+check('serve gate steps, Backredirect: no tracker', str_contains((string) $body, 'Back') && !str_contains((string) $body, 'data-dop-track'), (string) $body);
+
+// The SAME page with steps served OUTSIDE the gate (a domain/safe page that happens to be a funnel): the step is served, but no tracker and no page id.
+$offGate = ['slug_id' => $fSlug, 'content_hash' => 'facadea1', 'content_type' => 'text/html', 'funnel' => true];
+[, $oh, $obody] = serve_slug($offGate, make_request());
+check('steps outside the gate: the step is served but no tracker', str_contains((string) $obody, 'Pre') && !str_contains((string) $obody, 'data-dop-track'), (string) $obody);
+check('steps outside the gate: ETag without the tracker version, no page id', !str_contains((string) $oh['ETag'], TRACK_ETAG) && !str_contains((string) $obody, 'page_id'), (string) $oh['ETag']);
 
 cache_put_content('facadea2', '<html><body><h1>Plain domain page</h1></body></html>');
 [, $ph, $pbody] = serve_slug(['slug_id' => $fSlug, 'content_hash' => 'facadea2', 'content_type' => 'text/html', 'funnel' => false], make_request());
@@ -49,10 +55,9 @@ check('serve plain page: no tracker', !str_contains((string) $pbody, 'data-dop-t
 check('serve plain page: ETag without the tracker version', !str_contains((string) $ph['ETag'], TRACK_ETAG), (string) $ph['ETag']);
 
 // A funnel served by the gate carries BOTH the load notice (beacon) and the tracker, with the page id.
-[, $bh, $both] = serve_slug(['match_type' => 'GATE', 'page_id' => $tPid] + $stepRoute, make_request());
+[, $bh, $both] = serve_slug($stepRoute, make_request());
 check('gate funnel: beacon notice and tracker together', str_contains((string) $both, 'data-dop-beacon') && str_contains((string) $both, $dotTag('pre_lander', "&page_id=$tPid")), (string) $both);
 check('gate funnel: the ETag has the page id', str_contains((string) $bh['ETag'], '-i' . substr($tPid, 0, 8)), (string) $bh['ETag']);
-check('funnel page outside the gate: no id', !str_contains((string) $body, 'page_id'));
 
 // A funnel page whose Lander drew a VSL video: dot.js's URL carries it (the same video the player got).
 $tv1 = 'aaaaaaaaaaaaaaaaaaaaaaa1';

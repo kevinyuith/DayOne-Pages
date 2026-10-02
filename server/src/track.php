@@ -14,8 +14,11 @@
  *   Lander (main)        → <script async src="/_dop/dot.js?origin=lander…">
  *   Backredirect         → none
  *
- * A page with steps gets it on any route; a funnel page WITHOUT steps is all
- * Lander and gets it when the gate serves it. A page that already has a dot.js
+ * ONLY a funnel page the gate served gets it (respond.php, beacon): a page with
+ * steps as the served step's kind, a funnel page WITHOUT steps as the Lander.
+ * A page with steps served outside the gate (a domain/safe page) gets no tracker
+ * — a real click on it is marked server-side instead when it's a pre-lander slug
+ * (dot.php, origin pre_lander). A page that already has a dot.js
  * or pre_dot.js tag of its own (any host, relative included) gets nothing —
  * the tracker would run twice. It's injected ONLY here, on the real delivery —
  * never in the dashboard preview (which serves the stored HTML without the
