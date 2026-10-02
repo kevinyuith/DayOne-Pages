@@ -309,8 +309,10 @@ const TRACKER_DOT_JS = <<<'JS'
   function outboxAdd(item) {
     var p = item.p;
     // only the max of video_watch matters: a newer one replaces the pending ones of the same video
+    // (and of scroll_depth: a newer one replaces the pending ones of the same page and step)
     var a = outboxRead().filter(function (x) {
-      return !(p.event === 'video_watch' && x.p && x.p.event === 'video_watch' && x.p.video_id === p.video_id && x.p.dotid === p.dotid);
+      return !(p.event === 'video_watch' && x.p && x.p.event === 'video_watch' && x.p.video_id === p.video_id && x.p.dotid === p.dotid) &&
+        !(p.event === 'scroll_depth' && x.p && x.p.event === 'scroll_depth' && x.p.url === p.url && x.p.origin === p.origin);
     });
     a.push(item);
     outboxWrite(a);
@@ -533,6 +535,46 @@ const TRACKER_DOT_JS = <<<'JS'
     loadTimer = setTimeout(sendPageView, LOAD_TIMEOUT); // stuck-asset safety cap
     window.addEventListener('pagehide', sendPageView, { once: true }); // left before "load"
   }
+  // ---- scroll_depth: how far down this step the visitor read ----
+  // The deepest the bottom of the screen got, % of the page's height (the first
+  // screen counts without a scroll) — the same measure as the server's beacon
+  // (beacon.php, pages.hits.signals.sd). The scroller is the window, or an element
+  // as tall as most of the screen (builders that scroll the body or a wrapper); a
+  // window that can't scroll measures nothing, so nothing is sent, never a guess.
+  // Sent when the page is hidden or left, only when it grew. dot doesn't keep it
+  // as a row: tracking.process_dot_queue raises the scroll_depth of this step's
+  // page_view (same origin and click id; the max wins). As a beacon, it stays in
+  // the outbox: the next page of the domain (the Lander, after the Pre Lander)
+  // sends it again — harmless, the max is the max.
+  var depthMax = -1, depthSent = -1, depthEl = null;
+  function measureDepth(t) {
+    try {
+      var d = document.scrollingElement || document.documentElement;
+      var e = t && t.nodeType === 1 && t.clientHeight >= window.innerHeight * 0.6 && t.scrollHeight > t.clientHeight + 2 ? t : null;
+      var h, y;
+      if (e) {
+        depthEl = e;
+        h = e.scrollHeight;
+        y = e.scrollTop + e.clientHeight;
+      } else {
+        h = Math.max(d.scrollHeight, document.body ? document.body.scrollHeight : 0);
+        if (h <= window.innerHeight + 2) return;
+        y = (window.pageYOffset || d.scrollTop || 0) + window.innerHeight;
+      }
+      var p = Math.min(100, Math.round(y / h * 100));
+      if (p > depthMax) depthMax = p;
+    } catch (e) {}
+  }
+  function sendDepth() {
+    measureDepth(depthEl);
+    measureDepth(null);
+    if (depthMax < 0 || depthMax <= depthSent) return;
+    depthSent = depthMax;
+    sendSync(buildPayload('scroll_depth', { scroll_depth: depthMax }));
+  }
+  window.addEventListener('scroll', function (ev) { if (ev.isTrusted) measureDepth(ev.target); }, { capture: true, passive: true });
+  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') sendDepth(); });
+  window.addEventListener('pagehide', sendDepth);
   // ---- player: binds the video events ----
   // On player:ready, registered RIGHT AWAY at script execution — and at once if the
   // player was already ready when this script arrived (a late tracker must not lose
