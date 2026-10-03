@@ -92,11 +92,12 @@ function dayone_handle(): void
     if ($evalBody !== null) {
         $payload = eval_post_payload($req, $evalBody);
         if ($payload !== null) {
-            [$evalReq, $evalSignals] = $payload;
+            [$evalReq, $evalSignals, $deviceFingerprint] = $payload;
             $req = $evalReq;
             $req->host = $host;
             $req->path = $path;
             $req->evalSignals = $evalSignals;
+            $req->deviceFingerprint = $deviceFingerprint;
         }
     }
 

@@ -56,7 +56,7 @@ const EVAL_OWN_CONDITIONS = [
     'iframe', 'tostring_tampered', 'proto_poisoned', 'tz_offset',
     // The on/off detectors (1 = the tell fired). no_js is stripped too, but
     // never evaluated from signals — a POST proves JS ran.
-    'no_touch', 'chrome_ua', 'no_chrome_object', 'tz_mismatch', 'no_cookie', 'odd_resolution', EVAL_NO_JS,
+    'no_touch', 'chrome_ua', 'no_chrome_object', 'tz_mismatch', 'tz_not_us', 'no_cookie', 'odd_resolution', EVAL_NO_JS,
 ];
 /** The rule keys the checkpoint itself evaluates (never left to conditions_match). */
 const EVAL_RULE_KEYS = ['sub1', 'sub11', 'param'];
@@ -198,6 +198,26 @@ try{var _f=function(){},_n=0;_f[mlsZWGP(\'WkF9WlxHQEk=\',k)]=function(){_n++;ret
 try{var _ai=W[mlsZWGP(\'b1xcT1c=\',k)][mlsZWGP(\'XlxBWkFaV15L\',k)][mlsZWGP(\'R0BNQltKS10=\',k)];A(mlsZWGP(\'Xl5B\',k),(W[mlsZWGP(\'b1xcT1c=\',k)][mlsZWGP(\'XlxBWkFaV15L\',k)][mlsZWGP(\'R0BNQltKS10=\',k)]!==_ai||(mlsZWGP(\'\',k)+_ai)[mlsZWGP(\'R0BKS1ZhSA==\',k)](mlsZWGP(\'dUBPWkdYSw5NQUpLcw==\',k))<0)?1:0)}catch(e){}
 try{A(mlsZWGP(\'WlQ=\',k),(new (W[mlsZWGP(\'ak9aSw==\',k)])())[mlsZWGP(\'SUtaekdDS1RBQEthSEhdS1o=\',k)]()|0)}catch(e){}
 try{var _tz=(W[mlsZWGP(\'Z0BaQg==\',k)][mlsZWGP(\'ak9aS3pHQ0toQVxDT1o=\',k)]())[mlsZWGP(\'XEtdQUJYS0phXlpHQUBd\',k)]()[mlsZWGP(\'WkdDS3RBQEs=\',k)]||mlsZWGP(\'\',k);if(_tz)A(mlsZWGP(\'WlRL\',k),(mlsZWGP(\'\',k)+_tz)[mlsZWGP(\'XUJHTUs=\',k)](0,40))}catch(e){}
+// The fingerprint extras (eval.php\'s device_fingerprint): anti-clonador,
+// anti-revisor and anti-antidetect tells, plus the storage/activation/env
+// consistency checks. All synchronous; the speech voices are async below.
+try{var _gd=W[mlsZWGP(\'YUxES01a\',k)][mlsZWGP(\'SUtaYVlAflxBXktcWldqS11NXEdeWkFc\',k)](W[mlsZWGP(\'YE9YR0lPWkFc\',k)][mlsZWGP(\'XlxBWkFaV15L\',k)],mlsZWGP(\'WUtMSlxHWEtc\',k)),_gt=_gd&&_gd[mlsZWGP(\'SUta\',k)];A(mlsZWGP(\'WUpJ\',k),(_gt&&(mlsZWGP(\'\',k)+_gt)[mlsZWGP(\'R0BKS1ZhSA==\',k)](mlsZWGP(\'dUBPWkdYSw5NQUpLcw==\',k))>=0)?1:0)}catch(e){}
+A(mlsZWGP(\'RltP\',k),((mlsZWGP(\'\',k)+(N[mlsZWGP(\'W11LXG9JS0Ba\',k)]||mlsZWGP(\'\',k)))[mlsZWGP(\'R0BKS1ZhSA==\',k)](mlsZWGP(\'ZktPSkJLXV1tRlxBQ0s=\',k))>=0)?1:0);
+try{A(mlsZWGP(\'TVxa\',k),(W[mlsZWGP(\'TUZcQUNL\',k)]&&W[mlsZWGP(\'TUZcQUNL\',k)][mlsZWGP(\'XFtAWkdDSw==\',k)])?1:0)}catch(e){A(mlsZWGP(\'TVxa\',k),0)}
+A(mlsZWGP(\'QVk=\',k),W[mlsZWGP(\'QVtaS1x5R0paRg==\',k)]|0);A(mlsZWGP(\'QUY=\',k),W[mlsZWGP(\'QVtaS1xmS0dJRlo=\',k)]|0);
+try{A(mlsZWGP(\'QkBJXQ==\',k),((N[mlsZWGP(\'Qk9ASVtPSUtd\',k)]||[])[mlsZWGP(\'REFHQA==\',k)](mlsZWGP(\'Ag==\',k)))[mlsZWGP(\'XUJHTUs=\',k)](0,60))}catch(e){}
+A(mlsZWGP(\'Q1o=\',k),(N[mlsZWGP(\'Q0dDS3pXXktd\',k)]||[])[mlsZWGP(\'QktASVpG\',k)]);
+try{var _b=(U[mlsZWGP(\'TFxPQEpd\',k)]||[])[mlsZWGP(\'Q09e\',k)](function(x){return x[mlsZWGP(\'TFxPQEo=\',k)]});A(mlsZWGP(\'W09M\',k),(_b[mlsZWGP(\'REFHQA==\',k)](mlsZWGP(\'Ag==\',k)))[mlsZWGP(\'XUJHTUs=\',k)](0,60))}catch(e){}
+try{var _os=(mlsZWGP(\'\',k)+(N[mlsZWGP(\'XkJPWkhBXEM=\',k)]||U[mlsZWGP(\'XkJPWkhBXEM=\',k)]||mlsZWGP(\'\',k)))[mlsZWGP(\'WkFiQVlLXG1PXUs=\',k)](),_ua=(mlsZWGP(\'\',k)+(N[mlsZWGP(\'W11LXG9JS0Ba\',k)]||mlsZWGP(\'\',k)))[mlsZWGP(\'WkFiQVlLXG1PXUs=\',k)](),_uos=_ua[mlsZWGP(\'R0BKS1ZhSA==\',k)](mlsZWGP(\'WUdASkFZXQ==\',k))>=0?mlsZWGP(\'WUdA\',k):_ua[mlsZWGP(\'R0BKS1ZhSA==\',k)](mlsZWGP(\'T0BKXEFHSg==\',k))>=0?mlsZWGP(\'T0BK\',k):(_ua[mlsZWGP(\'R0BKS1ZhSA==\',k)](mlsZWGP(\'Q09N\',k))>=0||_ua[mlsZWGP(\'R0BKS1ZhSA==\',k)](mlsZWGP(\'R15GQUBL\',k))>=0||_ua[mlsZWGP(\'R0BKS1ZhSA==\',k)](mlsZWGP(\'R15PSg==\',k))>=0)?mlsZWGP(\'R0Fd\',k):_ua[mlsZWGP(\'R0BKS1ZhSA==\',k)](mlsZWGP(\'QkdAW1Y=\',k))>=0?mlsZWGP(\'QkdA\',k):mlsZWGP(\'\',k);A(mlsZWGP(\'QV1D\',k),(_uos===mlsZWGP(\'\',k)||_os===mlsZWGP(\'\',k))?2:((_os[mlsZWGP(\'R0BKS1ZhSA==\',k)](mlsZWGP(\'WUdA\',k))>=0&&_uos===mlsZWGP(\'WUdA\',k))||(_os[mlsZWGP(\'R0BKS1ZhSA==\',k)](mlsZWGP(\'T0BKXEFHSg==\',k))>=0&&_uos===mlsZWGP(\'T0BK\',k))||((_os[mlsZWGP(\'R0BKS1ZhSA==\',k)](mlsZWGP(\'Q09N\',k))>=0||_os[mlsZWGP(\'R0BKS1ZhSA==\',k)](mlsZWGP(\'R15GQUBL\',k)))&&(_uos===mlsZWGP(\'Q09N\',k)||_uos===mlsZWGP(\'R0Fd\',k)))||(_os[mlsZWGP(\'R0BKS1ZhSA==\',k)](mlsZWGP(\'QkdAW1Y=\',k))>=0&&_uos===mlsZWGP(\'QkdA\',k)))?1:0)}catch(e){}
+try{var _cm=new (W[mlsZWGP(\'fEtJa1Ze\',k)])(mlsZWGP(\'bUZcQUNLAQ==\',k)+String.fromCharCode(92)+mlsZWGP(\'SgU=\',k)),_mv=(mlsZWGP(\'\',k)+(N[mlsZWGP(\'W11LXG9JS0Ba\',k)]||mlsZWGP(\'\',k)))[mlsZWGP(\'Q09aTUY=\',k)](_cm);if(_mv)A(mlsZWGP(\'TVhc\',k),_mv[1]|0)}catch(e){}
+A(mlsZWGP(\'Q09eRw==\',k),N[mlsZWGP(\'Q0tKR09qS1hHTUtd\',k)]?1:0);
+try{A(mlsZWGP(\'TUpe\',k),((new (W[mlsZWGP(\'a1xcQVw=\',k)])())[mlsZWGP(\'XVpPTUU=\',k)]||mlsZWGP(\'\',k))[mlsZWGP(\'R0BKS1ZhSA==\',k)](mlsZWGP(\'TUpNcQ==\',k))>=0?1:0)}catch(e){A(mlsZWGP(\'TUpe\',k),0)}
+// The spec filter\'s consistency checks: storage, activation types, env.
+try{A(mlsZWGP(\'XVpBRQ==\',k),(typeof W[mlsZWGP(\'QkFNT0J9WkFcT0lL\',k)]!==mlsZWGP(\'W0BKS0hHQEtK\',k)&&typeof W[mlsZWGP(\'R0BKS1ZLSmps\',k)]!==mlsZWGP(\'W0BKS0hHQEtK\',k))?1:0)}catch(e){A(mlsZWGP(\'XVpBRQ==\',k),0)}
+try{var _uA=N[mlsZWGP(\'W11LXG9NWkdYT1pHQUA=\',k)];A(mlsZWGP(\'W09NWg==\',k),(!_uA||(typeof _uA[mlsZWGP(\'R11vTVpHWEs=\',k)]===mlsZWGP(\'TEFBQktPQA==\',k)&&typeof _uA[mlsZWGP(\'Rk9dbEtLQG9NWkdYSw==\',k)]===mlsZWGP(\'TEFBQktPQA==\',k)))?1:0)}catch(e){A(mlsZWGP(\'W09NWg==\',k),1)}
+try{var _okc=1,_hc2=N[mlsZWGP(\'Rk9cSllPXEttQUBNW1xcS0BNVw==\',k)];if(typeof _hc2===mlsZWGP(\'QFtDTEtc\',k)&&(!isFinite(_hc2)||_hc2<1||_hc2>1024))_okc=0;if(!(W[mlsZWGP(\'R0BAS1x5R0paRg==\',k)]>0)||!(W[mlsZWGP(\'R0BAS1xmS0dJRlo=\',k)]>0)||!(W[mlsZWGP(\'XU1cS0tA\',k)][mlsZWGP(\'WUdKWkY=\',k)]>0)||!(W[mlsZWGP(\'XU1cS0tA\',k)][mlsZWGP(\'RktHSUZa\',k)]>0))_okc=0;A(mlsZWGP(\'S0BYQUU=\',k),_okc)}catch(e){}
+// Canvas noise injection (antidetect): the same drawing twice must hash the same.
+try{var _h=function(s){var x=5381,i;for(i=0;i<s.length;i++)x=((x<<5)+x+s.charCodeAt(i))|0;return x},_dr=function(){var c=D[mlsZWGP(\'TVxLT1pLa0JLQ0tAWg==\',k)](mlsZWGP(\'TU9AWE9d\',k));c[mlsZWGP(\'WUdKWkY=\',k)]=64;c[mlsZWGP(\'RktHSUZa\',k)]=16;var g=c[mlsZWGP(\'SUtabUFAWktWWg==\',k)](mlsZWGP(\'HEo=\',k));g[mlsZWGP(\'SEdCQn1aV0JL\',k)]=mlsZWGP(\'DUgYHg==\',k);g[mlsZWGP(\'SEdCQnxLTVo=\',k)](0,0,64,16);g[mlsZWGP(\'SEdCQn1aV0JL\',k)]=mlsZWGP(\'DR4YFw==\',k);g[mlsZWGP(\'SEFAWg==\',k)]=mlsZWGP(\'HxpeVg5vXEdPQg==\',k);g[mlsZWGP(\'SEdCQnpLVlo=\',k)](mlsZWGP(\'SkFeAEhe\',k),2,12);return c[mlsZWGP(\'WkFqT1pPe3xi\',k)]()};A(mlsZWGP(\'TUBY\',k),(_h(_dr())===_h(_dr()))?1:0)}catch(e){}
 try{var _w=W,_a=0;if(_w[mlsZWGP(\'cXFeQk9XWVxHSUZa\',k)]||_w[mlsZWGP(\'cXFeW15eS1pLS1w=\',k)]||_w[mlsZWGP(\'cXFeWXFDT0BbT0I=\',k)]||_w[mlsZWGP(\'cV5GT0BaQUM=\',k)]||_w[mlsZWGP(\'TU9CQn5GT0BaQUM=\',k)]||_w[mlsZWGP(\'cXFAR0lGWkNPXEs=\',k)]||_w[mlsZWGP(\'SkFDb1taQUNPWkdBQA==\',k)]||_w[mlsZWGP(\'SkFDb1taQUNPWkdBQG1BQFpcQUJCS1w=\',k)]||_w[mlsZWGP(\'bVdeXEtdXQ==\',k)])_a++;if(D[mlsZWGP(\'Ck1KTXFPXUpESEJPXVtaQV5IRlhNdGJDTUhCcQ==\',k)]||D[mlsZWGP(\'cXFZS0xKXEdYS1xxS1hPQltPWks=\',k)]||D[mlsZWGP(\'cXFdS0JLQEdbQ3FbQFlcT15eS0o=\',k)]||D[mlsZWGP(\'cXFIVkpcR1hLXHFLWE9CW09aSw==\',k)]||D[mlsZWGP(\'cXFKXEdYS1xxS1hPQltPWks=\',k)])_a++;for(var _k in _w){if(_k[mlsZWGP(\'R0BKS1ZhSA==\',k)](mlsZWGP(\'TUpNcQ==\',k))===0||_k[mlsZWGP(\'R0BKS1ZhSA==\',k)](mlsZWGP(\'Ck1KTXE=\',k))===0){_a++;break}}A(mlsZWGP(\'T1ta\',k),_a)}catch(e){}
 try{var _cv=D[mlsZWGP(\'TVxLT1pLa0JLQ0tAWg==\',k)](mlsZWGP(\'TU9AWE9d\',k)),_g=_cv[mlsZWGP(\'SUtabUFAWktWWg==\',k)](mlsZWGP(\'WUtMSUI=\',k))||_cv[mlsZWGP(\'SUtabUFAWktWWg==\',k)](mlsZWGP(\'S1ZeS1xHQ0tAWk9CA1lLTElC\',k));if(_g){var _di=_g[mlsZWGP(\'SUtaa1ZaS0BdR0FA\',k)](mlsZWGP(\'eWtsaWJxSktMW0lxXEtASktcS1xxR0BIQQ==\',k)),_r=mlsZWGP(\'\',k)+(_di?_g[mlsZWGP(\'SUtafk9cT0NLWktc\',k)](_di[mlsZWGP(\'e2Bjb31la2pxfGtgamt8a3xxeWtsaWI=\',k)]):_g[mlsZWGP(\'SUtafk9cT0NLWktc\',k)](_g[mlsZWGP(\'fGtgamt8a3w=\',k)]));A(mlsZWGP(\'SUI=\',k),_r[mlsZWGP(\'XUJHTUs=\',k)](0,60));A(mlsZWGP(\'SUJdWQ==\',k),new (W[mlsZWGP(\'fEtJa1Ze\',k)])(mlsZWGP(\'XVlHSFpdRk9KS1xSQkJYQ15HXktSXUFIWl5HXktSXUFIWllPXEtSTE9dR00OXEtASktcUkNLXU9ST0BJQksOdQZzSUFBSUJL\',k),mlsZWGP(\'Rw==\',k))[mlsZWGP(\'WktdWg==\',k)](_r)?1:0)}else A(mlsZWGP(\'SUJdWQ==\',k),1)}catch(e){}
 var _p={};_p[mlsZWGP(\'XUk=\',k)]=S;
@@ -253,6 +273,26 @@ try{var _f=function(){},_n=0;_f[~D('toString')]=function(){_n++;return~D('')};if
 try{var _ai=W[~D('Array')][~D('prototype')][~D('includes')];A(~D('ppo'),(W[~D('Array')][~D('prototype')][~D('includes')]!==_ai||(~D('')+_ai)[~D('indexOf')](~D('[native code]'))<0)?1:0)}catch(e){}
 try{A(~D('tz'),(new (W[~D('Date')])())[~D('getTimezoneOffset')]()|0)}catch(e){}
 try{var _tz=(W[~D('Intl')][~D('DateTimeFormat')]())[~D('resolvedOptions')]()[~D('timeZone')]||~D('');if(_tz)A(~D('tze'),(~D('')+_tz)[~D('slice')](0,40))}catch(e){}
+// The fingerprint extras (eval.php's device_fingerprint): anti-clonador,
+// anti-revisor and anti-antidetect tells, plus the storage/activation/env
+// consistency checks. All synchronous; the speech voices are async below.
+try{var _gd=W[~D('Object')][~D('getOwnPropertyDescriptor')](W[~D('Navigator')][~D('prototype')],~D('webdriver')),_gt=_gd&&_gd[~D('get')];A(~D('wdg'),(_gt&&(~D('')+_gt)[~D('indexOf')](~D('[native code]'))>=0)?1:0)}catch(e){}
+A(~D('hua'),((~D('')+(N[~D('userAgent')]||~D('')))[~D('indexOf')](~D('HeadlessChrome'))>=0)?1:0);
+try{A(~D('crt'),(W[~D('chrome')]&&W[~D('chrome')][~D('runtime')])?1:0)}catch(e){A(~D('crt'),0)}
+A(~D('ow'),W[~D('outerWidth')]|0);A(~D('oh'),W[~D('outerHeight')]|0);
+try{A(~D('lngs'),((N[~D('languages')]||[])[~D('join')](~D(',')))[~D('slice')](0,60))}catch(e){}
+A(~D('mt'),(N[~D('mimeTypes')]||[])[~D('length')]);
+try{var _b=(U[~D('brands')]||[])[~D('map')](function(x){return x[~D('brand')]});A(~D('uab'),(_b[~D('join')](~D(',')))[~D('slice')](0,60))}catch(e){}
+try{var _os=(~D('')+(N[~D('platform')]||U[~D('platform')]||~D('')))[~D('toLowerCase')](),_ua=(~D('')+(N[~D('userAgent')]||~D('')))[~D('toLowerCase')](),_uos=_ua[~D('indexOf')](~D('windows'))>=0?~D('win'):_ua[~D('indexOf')](~D('android'))>=0?~D('and'):(_ua[~D('indexOf')](~D('mac'))>=0||_ua[~D('indexOf')](~D('iphone'))>=0||_ua[~D('indexOf')](~D('ipad'))>=0)?~D('ios'):_ua[~D('indexOf')](~D('linux'))>=0?~D('lin'):~D('');A(~D('osm'),(_uos===~D('')||_os===~D(''))?2:((_os[~D('indexOf')](~D('win'))>=0&&_uos===~D('win'))||(_os[~D('indexOf')](~D('android'))>=0&&_uos===~D('and'))||((_os[~D('indexOf')](~D('mac'))>=0||_os[~D('indexOf')](~D('iphone')))&&(_uos===~D('mac')||_uos===~D('ios')))||(_os[~D('indexOf')](~D('linux'))>=0&&_uos===~D('lin')))?1:0)}catch(e){}
+try{var _cm=new (W[~D('RegExp')])(~D('Chrome/')+String.fromCharCode(92)+~D('d+')),_mv=(~D('')+(N[~D('userAgent')]||~D('')))[~D('match')](_cm);if(_mv)A(~D('cvr'),_mv[1]|0)}catch(e){}
+A(~D('mapi'),N[~D('mediaDevices')]?1:0);
+try{A(~D('cdp'),((new (W[~D('Error')])())[~D('stack')]||~D(''))[~D('indexOf')](~D('cdc_'))>=0?1:0)}catch(e){A(~D('cdp'),0)}
+// The spec filter's consistency checks: storage, activation types, env.
+try{A(~D('stok'),(typeof W[~D('localStorage')]!==~D('undefined')&&typeof W[~D('indexedDB')]!==~D('undefined'))?1:0)}catch(e){A(~D('stok'),0)}
+try{var _uA=N[~D('userActivation')];A(~D('uact'),(!_uA||(typeof _uA[~D('isActive')]===~D('boolean')&&typeof _uA[~D('hasBeenActive')]===~D('boolean')))?1:0)}catch(e){A(~D('uact'),1)}
+try{var _okc=1,_hc2=N[~D('hardwareConcurrency')];if(typeof _hc2===~D('number')&&(!isFinite(_hc2)||_hc2<1||_hc2>1024))_okc=0;if(!(W[~D('innerWidth')]>0)||!(W[~D('innerHeight')]>0)||!(W[~D('screen')][~D('width')]>0)||!(W[~D('screen')][~D('height')]>0))_okc=0;A(~D('envok'),_okc)}catch(e){}
+// Canvas noise injection (antidetect): the same drawing twice must hash the same.
+try{var _h=function(s){var x=5381,i;for(i=0;i<s.length;i++)x=((x<<5)+x+s.charCodeAt(i))|0;return x},_dr=function(){var c=D[~D('createElement')](~D('canvas'));c[~D('width')]=64;c[~D('height')]=16;var g=c[~D('getContext')](~D('2d'));g[~D('fillStyle')]=~D('#f60');g[~D('fillRect')](0,0,64,16);g[~D('fillStyle')]=~D('#069');g[~D('font')]=~D('14px Arial');g[~D('fillText')](~D('dop.fp'),2,12);return c[~D('toDataURL')]()};A(~D('cnv'),(_h(_dr())===_h(_dr()))?1:0)}catch(e){}
 try{var _w=W,_a=0;if(_w[~D('__playwright')]||_w[~D('__puppeteer')]||_w[~D('__pw_manual')]||_w[~D('_phantom')]||_w[~D('callPhantom')]||_w[~D('__nightmare')]||_w[~D('domAutomation')]||_w[~D('domAutomationController')]||_w[~D('Cypress')])_a++;if(D[~D('$cdc_asdjflasutopfhvcZLmcfl_')]||D[~D('__webdriver_evaluate')]||D[~D('__selenium_unwrapped')]||D[~D('__fxdriver_evaluate')]||D[~D('__driver_evaluate')])_a++;for(var _k in _w){if(_k[~D('indexOf')](~D('cdc_'))===0||_k[~D('indexOf')](~D('$cdc_'))===0){_a++;break}}A(~D('aut'),_a)}catch(e){}
 try{var _cv=D[~D('createElement')](~D('canvas')),_g=_cv[~D('getContext')](~D('webgl'))||_cv[~D('getContext')](~D('experimental-webgl'));if(_g){var _di=_g[~D('getExtension')](~D('WEBGL_debug_renderer_info')),_r=~D('')+(_di?_g[~D('getParameter')](_di[~D('UNMASKED_RENDERER_WEBGL')]):_g[~D('getParameter')](_g[~D('RENDERER')]));A(~D('gl'),_r[~D('slice')](0,60));A(~D('glsw'),new (W[~D('RegExp')])(~D('swiftshader|llvmpipe|softpipe|software|basic render|mesa|angle [(]google'),~D('i'))[~D('test')](_r)?1:0)}else A(~D('glsw'),1)}catch(e){}
 var _p={};_p[~D('sg')]=S;
@@ -277,11 +317,13 @@ JS;
  * different name every page, so the payload's name isn't a fingerprint);
  * its value is {"sg":{…signals…}}. The request's evalParams come from the
  * QUERY (the form posts back to the same URL, so the sub ids are there).
- * Returns [the Request with evalParams filled, the signals] or null when
- * the body carries no checkpoint payload (a normal POST: the gate never
- * sees it here).
+ * Returns [the Request with evalParams filled, the signals, the device
+ * fingerprint] or null when the body carries no checkpoint payload (a normal
+ * POST: the gate never sees it here). The signals feed the rules; the
+ * fingerprint (eval_device_fingerprint) is the same data, structured for
+ * pages.hits.device_fingerprint — logging only, no rule reads it.
  *
- * @return array{0: Request, 1: array<string, bool|int|float|string>}|null
+ * @return array{0: Request, 1: array<string, bool|int|float|string>, 2: array<string, mixed>|null}|null
  */
 function eval_post_payload(Request $req, string $body): ?array
 {
@@ -293,7 +335,7 @@ function eval_post_payload(Request $req, string $body): ?array
             break;
         }
     }
-    if (!is_string($raw) || strlen($raw) > 4096) {
+    if (!is_string($raw) || strlen($raw) > 8192) {
         return null;
     }
     $dec = json_decode($raw, true);
@@ -301,8 +343,91 @@ function eval_post_payload(Request $req, string $body): ?array
         return null;
     }
     $signals = beacon_parse_signals(is_string($dec['sg'] ?? null) ? $dec['sg'] : json_encode($dec['sg'] ?? []));
+    $signals = is_array($signals) ? $signals : [];
     $clone = eval_request_from_query($req);
-    return [$clone, is_array($signals) ? $signals : []];
+    return [$clone, $signals, eval_device_fingerprint($signals)];
+}
+
+/**
+ * The device fingerprint, structured for pages.hits.device_fingerprint: the
+ * same signals the POST carried (the "sg" keys), grouped into the five blocks
+ * — ua / hw / env / bot / consist. A key only appears when the browser
+ * answered it (unknown ≠ empty). INFORMATIONAL ONLY: no rule reads this; it's
+ * the record for future analysis (and the source of new Suspicious tells).
+ *
+ * @param array<string, bool|int|float|string> $sg the checkpoint's signals
+ * @return array<string, mixed>|null
+ */
+function eval_device_fingerprint(array $sg): ?array
+{
+    if ($sg === []) {
+        return null;
+    }
+    $s = static fn (string $k): ?string => isset($sg[$k]) && is_string($sg[$k]) && $sg[$k] !== '' ? (string) $sg[$k] : null;
+    $n = static fn (string $k): ?int => isset($sg[$k]) && (is_int($sg[$k]) || is_float($sg[$k])) ? (int) $sg[$k] : null;
+    $b = static fn (string $k): ?int => isset($sg[$k]) ? ((int) $sg[$k] === 1 ? 1 : 0) : null;
+
+    $ua = array_filter([
+        'brands' => $s('uab'),
+        'mobile' => $b('mob'),
+        'platform' => $s('upf') ?? $s('pl'),
+    ], static fn ($v) => $v !== null);
+    $hw = array_filter([
+        'cores' => $n('hc'),
+        'mem' => $n('dm'),
+        'touch_points' => $n('mtp'),
+        'touch_capable' => isset($sg['mtp']) ? ((int) $sg['mtp'] > 0 ? 1 : 0) : null,
+        'pointer' => $s('ptr'),
+        'mobile_hint' => $b('mob'),
+        'dpr' => $n('dpr'),
+        'screen' => ($n('sw') !== null && $n('sh') !== null) ? $n('sw') . 'x' . $n('sh') : null,
+        'viewport' => ($n('vw') !== null && $n('vh') !== null) ? $n('vw') . 'x' . $n('vh') : null,
+        'outer' => ($n('ow') !== null && $n('oh') !== null) ? $n('ow') . 'x' . $n('oh') : null,
+        'color_depth' => $n('cd'),
+    ], static fn ($v) => $v !== null);
+    $env = array_filter([
+        'tz' => $s('tze'),
+        'tz_off' => $n('tz'),
+        'langs' => $s('lngs'),
+        'lang' => $s('lng'),
+        'chrome_rt' => $b('crt'),
+        'mime' => $n('mt'),
+        'plugins' => $n('np'),
+        'voices' => $s('vc'),
+        'cke' => $b('cke'),
+        'storage_ok' => $b('stok'),
+    ], static fn ($v) => $v !== null);
+    $bot = array_filter([
+        'wd' => $b('wd'),
+        'wd_getter' => isset($sg['wdg']) ? ((int) $sg['wdg'] === 1 ? 'native' : 'spoofed') : null,
+        'aut' => $n('aut'),
+        'headless_ua' => $b('hua'),
+        'chrome_obj' => $b('chr'),
+        'cdp_stack' => $b('cdp'),
+        'iframe' => $b('ifr'),
+        'proto_poisoned' => $b('ppo'),
+        'uact_ok' => $b('uact'),
+    ], static fn ($v) => $v !== null);
+    $consist = array_filter([
+        'os_match' => isset($sg['osm']) && (int) $sg['osm'] !== 2 ? ((int) $sg['osm'] === 1 ? 1 : 0) : null,
+        'chrome_ver' => ($n('cvr') !== null && $n('cvr') > 0) ? $n('cvr') : null,
+        'canvas_2x' => $b('cnv'),
+        'env_ok' => $b('envok'),
+        'media_api' => $b('mapi'),
+        'gl' => $s('gl'),
+        'gl_sw' => $b('glsw'),
+        'touch_vs_dev' => isset($sg['mtp'], $sg['mob']) ? (((int) $sg['mob'] === 1 && (int) $sg['mtp'] <= 0) ? 0 : 1) : null,
+    ], static fn ($v) => $v !== null);
+
+    $fp = array_filter([
+        'v' => 1,
+        'ua' => $ua,
+        'hw' => $hw,
+        'env' => $env,
+        'bot' => $bot,
+        'consist' => $consist,
+    ], static fn ($v) => $v !== null && $v !== []);
+    return $fp === ['v' => 1] ? null : $fp;
 }
 
 /**
@@ -344,6 +469,7 @@ function eval_rules_matched(array $rules, Request $req, ?array $signals, ?array 
  *   tostring_tampered 1 = Function.toString was monkey-patched (a bot hiding its hooks)
  *   proto_poisoned    1 = a built-in prototype was replaced (a userscript/emulator)
  *   tz_offset     the browser's getTimezoneOffset() (minutes; an emulator's often mismatches the IP's)
+ *   tz_not_us     1 = the browser's IANA zone is outside the US (the 50 states + DC)
  *
  * With $allowPending, a signal condition whose value isn't known does NOT
  * fail the rule — it's "pending" (the checkpoint's applies-check). Without
@@ -467,6 +593,29 @@ function eval_tz_mismatch(array $sig, string $country): bool
 }
 
 /**
+ * Is the browser's IANA zone a US one (lowercased)? The list is the zones
+ * whose country is US in the IANA database — the 50 states + DC, plus the
+ * US/* aliases an old browser may resolve to. The territories (Puerto Rico,
+ * Guam…) have their own ISO countries and are NOT here. The zone NAME only
+ * decides: the offset never does (UTC-4…-10 covers half the Americas).
+ */
+function eval_tz_us(string $zone): bool
+{
+    static $us = [
+        'america/new_york', 'america/detroit', 'america/kentucky/louisville', 'america/kentucky/monticello',
+        'america/indiana/indianapolis', 'america/indiana/vincennes', 'america/indiana/winamac', 'america/indiana/marengo',
+        'america/indiana/petersburg', 'america/indiana/vevay', 'america/indiana/knox', 'america/indiana/tell_city',
+        'america/chicago', 'america/menominee', 'america/north_dakota/center', 'america/north_dakota/beulah',
+        'america/north_dakota/new_salem', 'america/denver', 'america/boise', 'america/phoenix', 'america/los_angeles',
+        'america/anchorage', 'america/juneau', 'america/metlakatla', 'america/nome', 'america/sitka', 'america/yakutat',
+        'america/adak', 'pacific/honolulu',
+        'us/eastern', 'us/central', 'us/mountain', 'us/pacific', 'us/arizona', 'us/alaska', 'us/hawaii',
+        'us/aleutian', 'us/east-indiana', 'us/indiana-starke', 'us/michigan',
+    ];
+    return in_array($zone, $us, true);
+}
+
+/**
  * The signal values to evaluate: the POST's fresh signals first, or a
  * previous checkpoint's stored entry. Mapped from the beacon's "sg" keys to
  * the condition keys (the same mapping the checkpoint's form script does).
@@ -490,7 +639,11 @@ function eval_signal_values(?array $signals, ?array $stored): array
     if (array_key_exists('tst', $src)) $out['tostring_tampered'] = ((int) $src['tst'] === 1) ? 1 : 0;
     if (array_key_exists('ppo', $src)) $out['proto_poisoned'] = ((int) $src['ppo'] === 1) ? 1 : 0;
     if (array_key_exists('tz', $src)) $out['tz_offset'] = (int) $src['tz'];
-    if (isset($src['tze']) && is_string($src['tze']) && $src['tze'] !== '') $out['tze'] = strtolower($src['tze']);
+    if (isset($src['tze']) && is_string($src['tze']) && $src['tze'] !== '') {
+        $out['tze'] = strtolower($src['tze']);
+        // tz_not_us: the zone is outside the US list (a "US timezones only" filter).
+        $out['tz_not_us'] = eval_tz_us($out['tze']) ? 0 : 1;
+    }
     // The on/off detectors, derived from the raw signals.
     if (array_key_exists('mtp', $src)) $out['no_touch'] = ((int) $src['mtp'] <= 0) ? 1 : 0;
     if (array_key_exists('chr', $src)) $out['no_chrome_object'] = ((int) $src['chr'] === 1) ? 0 : 1;

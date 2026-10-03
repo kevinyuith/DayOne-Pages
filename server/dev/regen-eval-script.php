@@ -29,7 +29,10 @@ $script = eval_checkpoint_build();
 // the source readable: "const EVAL_SCRIPT =\n    '<blob>';\n".
 $block = "const EVAL_SCRIPT =\n    " . var_export($script, true) . ";";
 
-$replaced = preg_replace('/const EVAL_SCRIPT =\n    \'(?:[^\'\\\\]|\\\\.)*\';/', $block, $src, 1, $n);
+// The blob is a single-quoted var_export literal spanning lines (its \n are
+// literal), ending in "})();';" — match up to that marker, /s for the newlines.
+// A callback returns the block verbatim (no $/\ interpretation in the replacement).
+$replaced = preg_replace_callback("/const EVAL_SCRIPT =\n    '.+?\\)\\(\\);';/s", static fn () => $block, $src, 1, $n);
 if ($n === 0) {
     // First time: no constant yet — insert before the generator's docblock.
     $marker = "/**\n * Builds the checkpoint's script, OBFUSCATED.";

@@ -51,7 +51,9 @@ same('checkpoint: decision marker', 'SERVE · GATE · EVAL', hit_decision($route
 
 // The script is obfuscated: nothing readable about what it measures or where
 // the POST goes (no field name, no property names, no globals in the clear).
-foreach (['dop_ev', 'webdriver', 'maxTouchPoints', 'cookieEnabled', 'userAgentData', 'navigator', 'matchMedia', 'createElement', 'submit', 'playwright', 'swiftshader', 'timezone', 'WEBGL'] as $word) {
+foreach (['dop_ev', 'webdriver', 'maxTouchPoints', 'cookieEnabled', 'userAgentData', 'navigator', 'matchMedia', 'createElement', 'submit', 'playwright', 'swiftshader', 'timezone', 'WEBGL',
+    // The fingerprint extras (the device_fingerprint signals): nothing readable either.
+    'userActivation', 'speechSynthesis', 'getVoices', 'localStorage', 'indexedDB', 'mediaDevices', 'runtime', 'outerWidth', 'mimeTypes', 'toDataURL', 'fillText', 'HeadlessChrome', 'hasBeenActive', 'voiceschanged', 'brands'] as $word) {
     check("obfuscated: no readable \"$word\"", !str_contains((string) $body, $word));
 }
 // It's a fixed blob (zero work per response): the same every time, and it
@@ -205,6 +207,24 @@ check('tz_mismatch: BR + offset 180 does not', !eval_conditions_match(['tz_misma
 $usReq = new Request(method: 'POST', rawHost: 'example.com', rawPath: '/', rawQuery: '', userAgent: 'x', referer: '', country: 'US', acceptLanguage: '', ip: '1.2.3.4', ifNoneMatch: null, purgeToken: null, viaCloudflare: true, cookies: []);
 $usReq->evalParams = [];
 check('tz_mismatch: unlisted country never fires', !eval_conditions_match(['tz_mismatch' => 1], $usReq, ['tze' => 'UTC'], null));
+// Non-US timezone: the browser's zone outside the US list fires tz_not_us
+// (the "US timezones only" filter), whatever the IP's country is.
+check('tz_not_us: New York does not fire', !eval_conditions_match(['tz_not_us' => 1], $usReq, ['tze' => 'America/New_York'], null));
+check('tz_not_us: Honolulu does not fire', !eval_conditions_match(['tz_not_us' => 1], $usReq, ['tze' => 'Pacific/Honolulu'], null));
+check('tz_not_us: an Indiana zone does not fire', !eval_conditions_match(['tz_not_us' => 1], $usReq, ['tze' => 'America/Indiana/Knox'], null));
+check('tz_not_us: a US/* alias does not fire', !eval_conditions_match(['tz_not_us' => 1], $usReq, ['tze' => 'US/Eastern'], null));
+check('tz_not_us: São Paulo fires (a US IP does not matter)', eval_conditions_match(['tz_not_us' => 1], $usReq, ['tze' => 'America/Sao_Paulo'], null));
+check('tz_not_us: UTC fires', eval_conditions_match(['tz_not_us' => 1], $usReq, ['tze' => 'UTC'], null));
+check('tz_not_us: Lisbon fires', eval_conditions_match(['tz_not_us' => 1], $usReq, ['tze' => 'Europe/Lisbon'], null));
+check('tz_not_us: Puerto Rico fires (a territory, not a state)', eval_conditions_match(['tz_not_us' => 1], $usReq, ['tze' => 'America/Puerto_Rico'], null));
+check('tz_not_us: Guam fires (a territory, not a state)', eval_conditions_match(['tz_not_us' => 1], $usReq, ['tze' => 'Pacific/Guam'], null));
+check('tz_not_us: 0 matches a US zone', eval_conditions_match(['tz_not_us' => 0], $usReq, ['tze' => 'America/Chicago'], null));
+check('tz_not_us: 0 does not match a non-US zone', !eval_conditions_match(['tz_not_us' => 0], $usReq, ['tze' => 'America/Sao_Paulo'], null));
+// The offset never decides (UTC-4…-10 covers half the Americas): without the
+// zone NAME the tell is undecidable — no match, but the rule stays pending.
+check('tz_not_us: offset alone is undecidable', !eval_conditions_match(['tz_not_us' => 1], $usReq, ['tz' => 300], null));
+check('tz_not_us: unknown stays pending for the checkpoint', eval_conditions_match(['tz_not_us' => 1], $usReq, [], null, true));
+same('tz_not_us: the zone list helper', [true, true, false, false], [eval_tz_us('america/new_york'), eval_tz_us('us/pacific'), eval_tz_us('europe/madrid'), eval_tz_us('america/argentina/buenos_aires')]);
 // Cookies disabled: cke=0 fires no_cookie.
 check('no_cookie: cke=0 fires', eval_conditions_match(['no_cookie' => 1], $req, ['cke' => 0], null));
 check('no_cookie: cke=1 does not', !eval_conditions_match(['no_cookie' => 1], $req, ['cke' => 1], null));
@@ -245,6 +265,51 @@ same('payload: bad json → null', null, eval_post_payload($payloadReq, EVAL_FIE
 $suffixed = eval_post_payload($payloadReq, EVAL_FIELD . 'a9f3c1=' . rawurlencode(json_encode(['sg' => ['mtp' => 5]])));
 assert(is_array($suffixed));
 same('payload: a suffixed field name parses', ['mtp' => 5], $suffixed[1]);
+
+// ── The device fingerprint: the same signals, structured for pages.hits.device_fingerprint ──
+$fp = eval_device_fingerprint([
+    'uab' => 'Chromium,Google Chrome', 'mob' => 0, 'upf' => 'macOS',
+    'hc' => 18, 'dm' => 32, 'mtp' => 0, 'ptr' => 'fine', 'dpr' => 2,
+    'sw' => 1800, 'sh' => 1169, 'vw' => 1793, 'vh' => 930, 'ow' => 1793, 'oh' => 1051,
+    'tze' => 'America/Sao_Paulo', 'tz' => 180, 'lngs' => 'pt-BR,pt,en-US', 'lng' => 'pt-BR',
+    'crt' => 1, 'mt' => 2, 'np' => 5, 'vc' => 'pt-BR,en-US', 'cke' => 1, 'stok' => 1,
+    'wd' => 0, 'wdg' => 1, 'aut' => 0, 'hua' => 0, 'chr' => 1, 'cdp' => 0, 'ifr' => 0, 'tst' => 0, 'ppo' => 0, 'uact' => 1,
+    'osm' => 1, 'cvr' => 152, 'cnv' => 1, 'envok' => 1, 'mapi' => 1, 'gl' => 'ANGLE Apple', 'glsw' => 0,
+]);
+check('fingerprint: versioned', ($fp['v'] ?? null) === 1);
+same('fingerprint: touch not capable', 0, $fp['hw']['touch_capable'] ?? null);
+same('fingerprint: touch points', 0, $fp['hw']['touch_points'] ?? null);
+same('fingerprint: screen', '1800x1169', $fp['hw']['screen'] ?? null);
+same('fingerprint: viewport', '1793x930', $fp['hw']['viewport'] ?? null);
+same('fingerprint: outer', '1793x1051', $fp['hw']['outer'] ?? null);
+same('fingerprint: timezone', 'America/Sao_Paulo', $fp['env']['tz'] ?? null);
+same('fingerprint: langs', 'pt-BR,pt,en-US', $fp['env']['langs'] ?? null);
+same('fingerprint: voices', 'pt-BR,en-US', $fp['env']['voices'] ?? null);
+same('fingerprint: wd_getter native', 'native', $fp['bot']['wd_getter'] ?? null);
+same('fingerprint: uact ok', 1, $fp['bot']['uact_ok'] ?? null);
+same('fingerprint: os match', 1, $fp['consist']['os_match'] ?? null);
+same('fingerprint: canvas 2x consistent', 1, $fp['consist']['canvas_2x'] ?? null);
+same('fingerprint: storage ok', 1, $fp['env']['storage_ok'] ?? null);
+// touch_vs_dev: a mobile UA with no touch is inconsistent (0).
+$fpMob = eval_device_fingerprint(['mob' => 1, 'mtp' => 0]);
+same('fingerprint: mobile UA + no touch = inconsistent', 0, $fpMob['consist']['touch_vs_dev'] ?? null);
+$fpMobOk = eval_device_fingerprint(['mob' => 1, 'mtp' => 5]);
+same('fingerprint: mobile UA + touch = consistent', 1, $fpMobOk['consist']['touch_vs_dev'] ?? null);
+$fpMobOk2 = eval_device_fingerprint(['mob' => 0, 'mtp' => 5]);
+same('fingerprint: touch capable', 1, $fpMobOk2['hw']['touch_capable'] ?? null);
+// os_match 2 (undecidable) is dropped.
+$fpOs = eval_device_fingerprint(['osm' => 2]);
+check('fingerprint: undecidable os_match dropped', !isset($fpOs['consist']['os_match']));
+// wd_getter spoofed.
+$fpWd = eval_device_fingerprint(['wdg' => 0]);
+same('fingerprint: wd_getter spoofed', 'spoofed', $fpWd['bot']['wd_getter'] ?? null);
+// Unknown signals don't appear (unknown ≠ empty), and an empty set is no fingerprint.
+check('fingerprint: missing keys absent', !isset($fp['hw']['color_depth']) && !isset($fp['env']['conn']));
+same('fingerprint: empty signals → null', null, eval_device_fingerprint([]));
+// The payload returns it as the third element.
+$parsedFp = eval_post_payload($payloadReq, EVAL_FIELD . '=' . rawurlencode(json_encode(['sg' => ['mtp' => 0, 'mob' => 1]])));
+assert(is_array($parsedFp));
+same('payload: the fingerprint', 0, $parsedFp[2]['consist']['touch_vs_dev'] ?? null);
 
 // ── eval_rules_matched: the rules whose conditions all match, in order ──
 $mrules = [

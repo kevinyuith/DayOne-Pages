@@ -122,7 +122,7 @@ function FormBody({ rule, onDone }: { rule?: Rule; onDone: () => void }) {
 function DeviceSignals({ initial, disabled }: { initial: ReturnType<typeof ruleConditionsToForm>; disabled: boolean }) {
   const bit = (name: string, legend: string, value: "" | "0" | "1") => {
     const capable = legend === "Touchscreen" || legend === "Mobile hint";
-    const tell = name.startsWith("no_") || name === "tz_mismatch" || name === "odd_resolution";
+    const tell = name.startsWith("no_") || name === "tz_mismatch" || name === "tz_not_us" || name === "odd_resolution";
     return (
       <Field label={legend} key={name}>
         <select name={name} defaultValue={value} className={SELECT_CLASS} disabled={disabled}>
@@ -169,6 +169,7 @@ function DeviceSignals({ initial, disabled }: { initial: ReturnType<typeof ruleC
         {bit("chrome_ua", "Chrome UA", initial.chromeUa)}
         {bit("no_chrome_object", "No window.chrome", initial.noChromeObject)}
         {bit("tz_mismatch", "TZ ≠ IP country", initial.tzMismatch)}
+        {bit("tz_not_us", "Non-US timezone", initial.tzNotUs)}
         {bit("no_js", "No JavaScript", initial.noJs)}
         {bit("no_cookie", "Cookies disabled", initial.noCookie)}
         {bit("odd_resolution", "Odd resolution", initial.oddResolution)}

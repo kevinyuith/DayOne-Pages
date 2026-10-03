@@ -37,6 +37,8 @@ final class Request
         public array $evalParams = [],
         /** The device signals the checkpoint's form POSTed (eval.php); null on any other request. */
         public ?array $evalSignals = null,
+        /** The device fingerprint the checkpoint's form POSTed (eval.php), for pages.hits.device_fingerprint. */
+        public ?array $deviceFingerprint = null,
     ) {
     }
 

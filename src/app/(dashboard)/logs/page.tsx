@@ -19,6 +19,7 @@ import { FUNNEL_DECISIONS, hitPlatforms, listDomains, listHits, unregisteredHost
 import { listRules } from "@/lib/pages/rules";
 import { APP_TZ } from "@/lib/time-zone";
 import { registerSeenDomain } from "../domains/actions";
+import { DeviceFingerprint } from "./device-fingerprint";
 
 export const metadata: Metadata = {
   title: "Logs",
@@ -142,6 +143,9 @@ export default async function LogsPage({
               <Th>Interaction</Th>
               <Th title="What JavaScript could tell about the device on the funnel page (the beacon; informational only): webdriver, pointer, touch, and the session's event counts. Hover for the full JSON.">
                 Signals
+              </Th>
+              <Th title="The device fingerprint the checkpoint collected (informational only): hardware, environment, bot tells and consistency. View opens the full record.">
+                Fingerprint
               </Th>
               <Th>Time on page</Th>
               <Th title="How far down the page the visitor got: the deepest the bottom of the screen reached, % of the page's height (the first screen counts without a scroll). — = not measured (no scroll on a page that scrolls inside an element, or no report).">
@@ -291,6 +295,9 @@ export default async function LogsPage({
                   </Td>
                   <Td className="min-w-[120px] max-w-[200px]">
                     <Signals hit={h} />
+                  </Td>
+                  <Td className="whitespace-nowrap">
+                    <DeviceFingerprint fp={h.device_fingerprint} />
                   </Td>
                   <Td className="whitespace-nowrap tabular-nums">{h.duration_ms !== null ? formatDuration(h.duration_ms) : <span className="text-muted">—</span>}</Td>
                   <Td className="whitespace-nowrap">

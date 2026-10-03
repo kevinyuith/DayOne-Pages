@@ -253,11 +253,11 @@ function handle_beacon(Request $req, string $body): array
  */
 function beacon_parse_signals(mixed $raw): ?array
 {
-    if (!is_string($raw) || strlen($raw) > 1800) {
+    if (!is_string($raw) || strlen($raw) > 4000) {
         return null;
     }
     $dec = json_decode($raw, true);
-    if (!is_array($dec) || $dec === [] || count($dec) > 48) {
+    if (!is_array($dec) || $dec === [] || count($dec) > 80) {
         return null;
     }
     $clean = [];

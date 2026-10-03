@@ -81,6 +81,8 @@ function log_hit(Request $req, int $status, string $outcome, ?string $domainId, 
         'p_funnel'        => is_string($route['_funnel'] ?? null) ? $route['_funnel'] : null,
         // Why a clean click got the domain's page instead of the funnel (rules.php, GATE_REASONS).
         'p_gate_reason'   => in_array($route['_gate_reason'] ?? null, GATE_REASONS, true) ? $route['_gate_reason'] : null,
+        // The device fingerprint (eval.php): the checkpoint POST's signals, structured. Only the POST's hit has it.
+        'p_device_fingerprint' => is_array($req->deviceFingerprint ?? null) ? $req->deviceFingerprint : null,
     ]);
 
     $learned = ['hit_id' => $id, 'asn' => $known['asn'], 'as_name' => $known['as_name'], 'hostname' => $known['hostname']];

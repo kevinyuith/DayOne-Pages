@@ -144,6 +144,8 @@ export const ruleConditionsSchema = conditionsSchema
     chrome_ua: z.union([z.literal(0), z.literal(1)]).optional(),
     no_chrome_object: z.union([z.literal(0), z.literal(1)]).optional(),
     tz_mismatch: z.union([z.literal(0), z.literal(1)]).optional(),
+    // tz_not_us: the browser's IANA zone is outside the US (a "US timezones only" filter).
+    tz_not_us: z.union([z.literal(0), z.literal(1)]).optional(),
     no_js: z.union([z.literal(0), z.literal(1)]).optional(),
     no_cookie: z.union([z.literal(0), z.literal(1)]).optional(),
     odd_resolution: z.union([z.literal(0), z.literal(1)]).optional(),
@@ -406,6 +408,8 @@ export function parseRuleConditionsForm(fd: FormData): { ok: true; value: RuleCo
   if (noChromeObject !== undefined) raw.no_chrome_object = noChromeObject;
   const tzMismatch = bit("tz_mismatch");
   if (tzMismatch !== undefined) raw.tz_mismatch = tzMismatch;
+  const tzNotUs = bit("tz_not_us");
+  if (tzNotUs !== undefined) raw.tz_not_us = tzNotUs;
   const noJs = bit("no_js");
   if (noJs !== undefined) raw.no_js = noJs;
   const noCookie = bit("no_cookie");
@@ -455,6 +459,7 @@ export function ruleConditionsToForm(c: RuleConditions | null | undefined): Retu
   chromeUa: "" | "0" | "1";
   noChromeObject: "" | "0" | "1";
   tzMismatch: "" | "0" | "1";
+  tzNotUs: "" | "0" | "1";
   noJs: "" | "0" | "1";
   noCookie: "" | "0" | "1";
   oddResolution: "" | "0" | "1";
@@ -496,6 +501,7 @@ export function ruleConditionsToForm(c: RuleConditions | null | undefined): Retu
     chromeUa: bit(c?.chrome_ua),
     noChromeObject: bit(c?.no_chrome_object),
     tzMismatch: bit(c?.tz_mismatch),
+    tzNotUs: bit(c?.tz_not_us),
     noJs: bit(c?.no_js),
     noCookie: bit(c?.no_cookie),
     oddResolution: bit(c?.odd_resolution),
@@ -554,6 +560,7 @@ export function summarizeRuleConditions(c: RuleConditions | null | undefined): s
     onOff(c.chrome_ua, "Chrome UA", "Not Chrome UA"),
     onOff(c.no_chrome_object, "No window.chrome", ""),
     onOff(c.tz_mismatch, "TZ mismatch", ""),
+    onOff(c.tz_not_us, "Non-US timezone", ""),
     onOff(c.no_js, "No JS", ""),
     onOff(c.no_cookie, "Cookies off", ""),
     onOff(c.odd_resolution, "Odd resolution", ""),
