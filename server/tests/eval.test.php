@@ -227,7 +227,50 @@ check('tz_mismatch: BR + offset 0 (UTC) fires', eval_conditions_match(['tz_misma
 check('tz_mismatch: BR + offset 180 does not', !eval_conditions_match(['tz_mismatch' => 1], $brReq, ['tz' => 180], null));
 $usReq = new Request(method: 'POST', rawHost: 'example.com', rawPath: '/', rawQuery: '', userAgent: 'x', referer: '', country: 'US', acceptLanguage: '', ip: '1.2.3.4', ifNoneMatch: null, purgeToken: null, viaCloudflare: true, cookies: []);
 $usReq->evalParams = [];
-check('tz_mismatch: unlisted country never fires', !eval_conditions_match(['tz_mismatch' => 1], $usReq, ['tze' => 'UTC'], null));
+// By the IP's country: a US IP takes the US + territories, the Caribbean and
+// Canada; a Canadian IP, Canada + the US and its territories; an IP in Europe,
+// any European zone; any other IP, only its own country's zones.
+$ccReq = static function (string $cc): Request {
+    $r = new Request(method: 'POST', rawHost: 'example.com', rawPath: '/', rawQuery: '', userAgent: 'x', referer: '', country: $cc, acceptLanguage: '', ip: '1.2.3.4', ifNoneMatch: null, purgeToken: null, viaCloudflare: true, cookies: []);
+    $r->evalParams = [];
+    return $r;
+};
+$tzm = static fn (string $cc, string $zone): bool => eval_conditions_match(['tz_mismatch' => 1], $ccReq($cc), ['tze' => $zone], null);
+check('tz_mismatch: US + Chicago does not fire', !$tzm('US', 'America/Chicago'));
+check('tz_mismatch: US + the Indianapolis alias does not fire', !$tzm('US', 'America/Indianapolis'));
+check('tz_mismatch: US + US/Eastern does not fire', !$tzm('US', 'US/Eastern'));
+check('tz_mismatch: US + Puerto Rico does not fire (a territory)', !$tzm('US', 'America/Puerto_Rico'));
+check('tz_mismatch: US + Guam does not fire (a territory)', !$tzm('US', 'Pacific/Guam'));
+check('tz_mismatch: US + Nassau does not fire (the Caribbean)', !$tzm('US', 'America/Nassau'));
+check('tz_mismatch: US + Santo Domingo does not fire (the Caribbean)', !$tzm('US', 'America/Santo_Domingo'));
+check('tz_mismatch: US + Toronto does not fire (Canada)', !$tzm('US', 'America/Toronto'));
+check('tz_mismatch: US + Mexico City fires (Mexico is not in the US list)', $tzm('US', 'America/Mexico_City'));
+check('tz_mismatch: US + Manila fires', $tzm('US', 'Asia/Manila'));
+check('tz_mismatch: US + UTC fires (no country)', $tzm('US', 'UTC'));
+check('tz_mismatch: US + Etc/GMT+5 fires (no country)', $tzm('US', 'Etc/GMT+5'));
+check('tz_mismatch: US + an unknown zone name is inconclusive', !$tzm('US', 'Mars/Olympus_Mons'));
+check('tz_mismatch: Puerto Rico IP + New York does not fire (a territory is the US)', !$tzm('PR', 'America/New_York'));
+check('tz_mismatch: CA + Vancouver does not fire', !$tzm('CA', 'America/Vancouver'));
+check('tz_mismatch: CA + New York does not fire', !$tzm('CA', 'America/New_York'));
+check('tz_mismatch: CA + Puerto Rico does not fire (a US territory)', !$tzm('CA', 'America/Puerto_Rico'));
+check('tz_mismatch: CA + Nassau fires (the Caribbean is only for US IPs)', $tzm('CA', 'America/Nassau'));
+check('tz_mismatch: FR + Paris does not fire', !$tzm('FR', 'Europe/Paris'));
+check('tz_mismatch: FR + Brussels does not fire (Europe)', !$tzm('FR', 'Europe/Brussels'));
+check('tz_mismatch: CH + London does not fire (Europe)', !$tzm('CH', 'Europe/London'));
+check('tz_mismatch: BE + Nicosia (Asia/) does not fire (Cyprus is in the EU)', !$tzm('BE', 'Asia/Nicosia'));
+check('tz_mismatch: FR + New York fires', $tzm('FR', 'America/New_York'));
+check('tz_mismatch: FR + Kyiv fires (not in the list)', $tzm('FR', 'Europe/Kiev'));
+check('tz_mismatch: JP + Tokyo does not fire', !$tzm('JP', 'Asia/Tokyo'));
+check('tz_mismatch: JP + Seoul fires (only its own country)', $tzm('JP', 'Asia/Seoul'));
+check('tz_mismatch: IN + the Calcutta alias does not fire', !$tzm('IN', 'Asia/Calcutta'));
+check('tz_mismatch: no country (XX) is inconclusive', !$tzm('XX', 'UTC'));
+check('tz_mismatch: Tor (T1) is inconclusive', !$tzm('T1', 'UTC'));
+check('tz_mismatch: a zone not yet known is pending in the checkpoint check', eval_conditions_match(['tz_mismatch' => 1], $usReq, null, null, true));
+check('tz_mismatch: … so a rule with only it sends the click to the checkpoint', eval_checkpoint_applies([['conditions' => ['tz_mismatch' => 1]]], $usReq));
+check('tz_mismatch: undecidable after the POST never confirms', !eval_conditions_match(['tz_mismatch' => 1], $usReq, ['mtp' => 5], null));
+check('tz_country: the alias table fixes a merged zone (america/virgin is VI)', tz_country('America/Virgin') === 'VI');
+$tzNoCountry = array_values(array_filter(DateTimeZone::listIdentifiers(), static fn (string $z): bool => $z !== 'UTC' && tz_country($z) === null));
+check('tz_country: every tzdata zone but UTC has a country', $tzNoCountry === [], implode(', ', $tzNoCountry));
 // Non-US timezone: the browser's zone outside the home list fires tz_not_us
 // (US + territories, Canada, Mexico and the nearby Caribbean), whatever the
 // IP's country is.

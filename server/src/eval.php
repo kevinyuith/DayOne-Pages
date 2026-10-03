@@ -539,6 +539,14 @@ function eval_conditions_match(array $cond, Request $req, ?array $signals, ?arra
         } elseif ($key === 'chrome_ua') {
             $ok = ((int) $want === 1) === eval_is_chrome_ua($req->userAgent);
         } elseif ($key === 'tz_mismatch') {
+            // The zone comes with the POST: before it, pending (or the rule
+            // could never send a click to the checkpoint); after, decided.
+            if (!isset($sig['tze']) && !isset($sig['tz_offset'])) {
+                if ($allowPending) {
+                    continue;
+                }
+                return false; // Undecidable never confirms a bot.
+            }
             $ok = ((int) $want === 1) === eval_tz_mismatch($sig, $req->country);
         } else {
             if (!array_key_exists($key, $sig)) {
@@ -568,28 +576,72 @@ function eval_is_chrome_ua(string $ua): bool
     return preg_match('~(?:Chrome|Chromium|Edg|OPR|Brave)/\d~i', $ua) === 1;
 }
 
+/** The US and its territories (Cloudflare gives the territories their own ISO codes). */
+const TZ_US_HOME = ['US', 'PR', 'VI', 'GU', 'AS', 'MP', 'UM'];
+/** The Caribbean islands (Bermuda included). */
+const TZ_CARIBBEAN = [
+    'AG', 'AI', 'AW', 'BB', 'BL', 'BM', 'BQ', 'BS', 'CU', 'CW', 'DM', 'DO', 'GD', 'GP', 'HT', 'JM', 'KN', 'KY',
+    'LC', 'MF', 'MQ', 'MS', 'PR', 'SX', 'TC', 'TT', 'VC', 'VG', 'VI',
+];
+/** Europe's main countries: the EU, the EEA, Switzerland, the UK, the microstates and the crown dependencies. */
+const TZ_EUROPE = [
+    'AT', 'BE', 'BG', 'HR', 'CY', 'CZ', 'DK', 'EE', 'FI', 'FR', 'DE', 'GR', 'HU', 'IE', 'IT', 'LV', 'LT', 'LU',
+    'MT', 'NL', 'PL', 'PT', 'RO', 'SK', 'SI', 'ES', 'SE',
+    'IS', 'LI', 'NO', 'CH', 'GB', 'MC', 'AD', 'SM', 'VA', 'GI', 'IM', 'JE', 'GG', 'FO', 'AX',
+];
+
+/**
+ * The countries whose time zones a browser behind an IP of $cc may report:
+ * a US IP (or a US territory's) takes the US, its territories, the Caribbean
+ * and Canada; a Canadian IP, Canada, the US and its territories; an IP in
+ * Europe's main countries, any of them; any other IP only its own country.
+ */
+function eval_tz_allowed(string $cc): array
+{
+    if (in_array($cc, TZ_US_HOME, true)) {
+        return array_merge(TZ_US_HOME, TZ_CARIBBEAN, ['CA']);
+    }
+    if ($cc === 'CA') {
+        return array_merge(['CA'], TZ_US_HOME);
+    }
+    if (in_array($cc, TZ_EUROPE, true)) {
+        return TZ_EUROPE;
+    }
+    return [$cc];
+}
+
 /**
  * The browser's time zone against the request's country (CF-IPCountry). A
- * mismatch is a bot tell: an emulator in UTC behind a Brazilian IP. Only the
- * countries below are checked — the rest are inconclusive (no mismatch).
- * The zone NAME wins (America/Sao_Paulo vs America/Noronha); without it, the
- * offset (Brazil spans UTC-2…-5, so only 120–300 is plausible).
+ * mismatch is a bot tell: an emulator in UTC behind a US IP, a phone abroad
+ * behind a proxy. The zone's country (tz_country) must be one the IP's
+ * country allows (eval_tz_allowed); a zone with no country (UTC, Etc/GMT+5)
+ * is a mismatch. Inconclusive (no mismatch): no country on the request (or
+ * Tor's T1 / XX), an unknown zone name, no zone at all — except Brazil, where
+ * the offset still decides (it spans UTC-2…-5, so only 120–300 is plausible).
  */
 function eval_tz_mismatch(array $sig, string $country): bool
 {
-    $cc = strtoupper($country);
-    if ($cc === 'BR') {
-        // $sig['tze'] is the zone name, lowercased (eval_signal_values).
-        if (isset($sig['tze']) && is_string($sig['tze']) && $sig['tze'] !== '') {
-            static $br = ['america/sao_paulo', 'america/noronha', 'america/belem', 'america/fortaleza', 'america/recife', 'america/bahia', 'america/maceio', 'america/araguaina', 'america/cuiaba', 'america/campo_grande', 'america/manaus', 'america/boa_vista', 'america/porto_velho', 'america/rio_branco', 'america/santarem'];
-            return !in_array($sig['tze'], $br, true);
-        }
-        if (isset($sig['tz_offset'])) {
+    $cc = strtoupper(trim($country));
+    if (preg_match('/^[A-Z]{2}$/', $cc) !== 1 || $cc === 'XX' || $cc === 'T1') {
+        return false;
+    }
+    // $sig['tze'] is the zone name, lowercased (eval_signal_values).
+    $zone = isset($sig['tze']) && is_string($sig['tze']) ? $sig['tze'] : '';
+    if ($zone === '') {
+        if ($cc === 'BR' && isset($sig['tz_offset'])) {
             $off = (int) $sig['tz_offset'];
             return $off < 120 || $off > 300;
         }
+        return false;
     }
-    return false;
+    $zc = tz_country($zone);
+    if ($zc === null) {
+        // No country: UTC and Etc/* say nothing about where the device is (a
+        // tell); any other unknown name is inconclusive.
+        return in_array($zone, ['utc', 'uct', 'gmt', 'gmt0', 'gmt+0', 'gmt-0', 'greenwich', 'universal', 'zulu'], true)
+            || str_starts_with($zone, 'etc/');
+    }
+    return !in_array($zc, eval_tz_allowed($cc), true);
 }
 
 /**
