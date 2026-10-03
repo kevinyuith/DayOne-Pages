@@ -651,8 +651,16 @@ function eval_signal_values(?array $signals, ?array $stored): array
     if (array_key_exists('mtp', $src)) $out['no_touch'] = ((int) $src['mtp'] <= 0) ? 1 : 0;
     if (array_key_exists('chr', $src)) $out['no_chrome_object'] = ((int) $src['chr'] === 1) ? 0 : 1;
     if (array_key_exists('cke', $src)) $out['no_cookie'] = ((int) $src['cke'] === 1) ? 0 : 1;
+    // odd_resolution: the viewport doesn't fit the screen in either orientation.
+    // iOS reports screen.width/height in portrait even with the device turned,
+    // so a landscape iPad (1080x653 in a 810x1080 screen) only fits rotated.
     if (isset($src['sw'], $src['vw']) && (int) $src['sw'] > 0 && (int) $src['vw'] > 0) {
-        $out['odd_resolution'] = ((int) $src['vw'] > (int) $src['sw'] || (int) $src['vh'] > (int) $src['sh']) ? 1 : 0;
+        $sw = (int) $src['sw'];
+        $sh = (int) ($src['sh'] ?? 0);
+        $vw = (int) $src['vw'];
+        $vh = (int) ($src['vh'] ?? 0);
+        $fits = ($vw <= $sw && $vh <= $sh) || ($vw <= $sh && $vh <= $sw);
+        $out['odd_resolution'] = $fits ? 0 : 1;
     }
     return $out;
 }

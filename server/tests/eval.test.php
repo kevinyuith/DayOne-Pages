@@ -253,6 +253,10 @@ check('no_cookie: cke=1 does not', !eval_conditions_match(['no_cookie' => 1], $r
 // Odd resolution: the viewport bigger than the screen.
 check('odd_resolution: vw>sw fires', eval_conditions_match(['odd_resolution' => 1], $req, ['sw' => 360, 'sh' => 800, 'vw' => 1200, 'vh' => 700], null));
 check('odd_resolution: a normal viewport does not', !eval_conditions_match(['odd_resolution' => 1], $req, ['sw' => 390, 'sh' => 844, 'vw' => 390, 'vh' => 700], null));
+check('odd_resolution: a landscape iPad (screen reported in portrait) does not', !eval_conditions_match(['odd_resolution' => 1], $req, ['sw' => 810, 'sh' => 1080, 'vw' => 1080, 'vh' => 653], null));
+check('odd_resolution: a landscape iPad 9.7" does not', !eval_conditions_match(['odd_resolution' => 1], $req, ['sw' => 768, 'sh' => 1024, 'vw' => 1024, 'vh' => 665], null));
+check('odd_resolution: a window that fits neither orientation fires', eval_conditions_match(['odd_resolution' => 1], $req, ['sw' => 390, 'sh' => 844, 'vw' => 800, 'vh' => 600], null));
+check('odd_resolution: a zoomed-out desktop (wider than the screen) still fires', eval_conditions_match(['odd_resolution' => 1], $req, ['sw' => 1280, 'sh' => 800, 'vw' => 1310, 'vh' => 575], null));
 // no_js is never decided by signals (the GET-side walk handles it).
 check('no_js: not a signal condition', !eval_conditions_match(['no_js' => 1], $req, ['mtp' => 0], null));
 
