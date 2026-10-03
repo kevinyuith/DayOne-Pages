@@ -166,7 +166,13 @@ function gate_pick(array $routes, array $gate, Request $req): ?array
     $evalCookie = (string) ($req->cookies[EVAL_COOKIE] ?? '');
     $evalRules = is_array($gate['eval_rules'] ?? null) ? $gate['eval_rules'] : [];
     $evalPassed = $evalPost !== null; // a checkpoint POST, no eval rule matched
-    if ($status !== 'UNLOCKED' && $evalRules !== [] && !$evalPassed && $evalCookie !== EVAL_COOKIE_OK && eval_checkpoint_applies($evalRules, eval_request_from_query($req))) {
+    // A www. entry never sees the checkpoint: this request always becomes the
+    // www → bare redirect (www_entry_redirect, app.php), so a mid page here
+    // would only mark the visitor (chk cookie) for a judgment that belongs to
+    // the bare host — every www hit logged "no js" and the click passed the
+    // checkpoint twice, once per host.
+    $evalWww = str_starts_with(visited_host($req), 'www.');
+    if ($status !== 'UNLOCKED' && !$evalWww && $evalRules !== [] && !$evalPassed && $evalCookie !== EVAL_COOKIE_OK && eval_checkpoint_applies($evalRules, eval_request_from_query($req))) {
         if ($req->prefetch) {
             return gate_flag_route($domainPage, GATE_SAFE_MATCH, ['_funnel' => $code, '_gate_reason' => 'no_funnel_token', '_eval' => 'prefetch']);
         }

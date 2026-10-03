@@ -119,8 +119,29 @@ same('passed POST: the one cookie is ok', EVAL_COOKIE . '=' . EVAL_COOKIE_OK . '
 [, , , , $chkRoute] = decide($root, $click(), $gate);
 same('checkpoint page: the chk cookie', EVAL_COOKIE . '=chk; Path=/; Max-Age=' . EVAL_SIGNALS_TTL . '; Secure; SameSite=Lax', eval_response_cookie($chkRoute));
 check('checkpoint page: is the checkpoint', eval_route_is_checkpoint($chkRoute));
-same('funnel view: no checkpoint cookie', null, eval_response_cookie(['match_type' => 'GATE']));
-check('funnel view: not the checkpoint', !eval_route_is_checkpoint(['match_type' => 'GATE']) && !eval_route_is_checkpoint(null));
+
+// ── A www. entry never sees the checkpoint ──
+// The request always becomes the www → bare redirect (www_entry_redirect): a
+// mid page here would only mark the visitor (chk) for a judgment that belongs
+// to the bare host — every www hit logged "no js" and the click passed the
+// checkpoint twice. On the www the gate pretends the checkpoint doesn't exist.
+$wwwNoJs = $gate;
+$wwwNoJs['eval_rules'][] = ['name' => 'Taboola no js', 'label' => 'Suspicious', 'reason' => 'No JavaScript', 'tags' => [], 'conditions' => ['sub11' => 'taboola', 'no_js' => 1]];
+$wwwClick = fn (array $over = []) => $click('', array_merge(['HTTP_HOST' => 'www.example.com'], $over));
+[, , $body, , $route] = decide($root, $wwwClick(), $wwwNoJs);
+same('www: no checkpoint, straight to the funnel', ['GATE', 'F23'], [$route['match_type'], $route['_funnel']]);
+check('www: the funnel page, not the interstitial', str_contains((string) $body, 'F23-A') && !eval_route_is_checkpoint($route));
+// … even with the chk cookie from a previous visit (the old "no js" verdict).
+[, , $body, , $route] = decide($root, $wwwClick(['HTTP_COOKIE' => EVAL_COOKIE . '=chk']), $wwwNoJs);
+same('www + chk cookie: the funnel, no rule', ['GATE', null], [$route['match_type'], $route['_rule'] ?? null]);
+check('www + chk cookie: the funnel page', str_contains((string) $body, 'F23-A'));
+// The bare host with the same cookie still judges: the no_js rule flags it.
+$noJsGate = [...$gate, 'eval_rules' => [$wwwNoJs['eval_rules'][1]]];
+[, , $body, , $route] = decide($root, $click('', ['HTTP_COOKIE' => EVAL_COOKIE . '=chk']), $noJsGate);
+same('bare + chk cookie: the no_js rule flags', ['GATE-SAFE', 'Taboola no js', 'home01'], [$route['match_type'], $route['_rule'], $route['content_hash']]);
+// The www redirect takes over the served funnel route (app.php's part).
+$wwwRoute = www_entry_redirect($wwwClick(), 'served', $route);
+same('www: the redirect happens after', 302, $wwwRoute[0] ?? null);
 
 // A funnel's step switch that meets the checkpoint: the POST (same URL, the
 // dop_step cookie kept by the checkpoint page) serves the step asked for,
