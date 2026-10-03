@@ -228,25 +228,38 @@ check('tz_mismatch: BR + offset 180 does not', !eval_conditions_match(['tz_misma
 $usReq = new Request(method: 'POST', rawHost: 'example.com', rawPath: '/', rawQuery: '', userAgent: 'x', referer: '', country: 'US', acceptLanguage: '', ip: '1.2.3.4', ifNoneMatch: null, purgeToken: null, viaCloudflare: true, cookies: []);
 $usReq->evalParams = [];
 check('tz_mismatch: unlisted country never fires', !eval_conditions_match(['tz_mismatch' => 1], $usReq, ['tze' => 'UTC'], null));
-// Non-US timezone: the browser's zone outside the US list fires tz_not_us
-// (the "US timezones only" filter), whatever the IP's country is.
+// Non-US timezone: the browser's zone outside the home list fires tz_not_us
+// (US + territories, Canada, Mexico and the nearby Caribbean), whatever the
+// IP's country is.
 check('tz_not_us: New York does not fire', !eval_conditions_match(['tz_not_us' => 1], $usReq, ['tze' => 'America/New_York'], null));
 check('tz_not_us: Honolulu does not fire', !eval_conditions_match(['tz_not_us' => 1], $usReq, ['tze' => 'Pacific/Honolulu'], null));
 check('tz_not_us: an Indiana zone does not fire', !eval_conditions_match(['tz_not_us' => 1], $usReq, ['tze' => 'America/Indiana/Knox'], null));
 check('tz_not_us: the Indianapolis alias does not fire', !eval_conditions_match(['tz_not_us' => 1], $usReq, ['tze' => 'America/Indianapolis'], null));
 check('tz_not_us: a US/* alias does not fire', !eval_conditions_match(['tz_not_us' => 1], $usReq, ['tze' => 'US/Eastern'], null));
+check('tz_not_us: Puerto Rico does not fire (a US territory)', !eval_conditions_match(['tz_not_us' => 1], $usReq, ['tze' => 'America/Puerto_Rico'], null));
+check('tz_not_us: Guam does not fire (a US territory)', !eval_conditions_match(['tz_not_us' => 1], $usReq, ['tze' => 'Pacific/Guam'], null));
+check('tz_not_us: St Thomas does not fire (a US territory)', !eval_conditions_match(['tz_not_us' => 1], $usReq, ['tze' => 'America/St_Thomas'], null));
+check('tz_not_us: Canada does not fire', !eval_conditions_match(['tz_not_us' => 1], $usReq, ['tze' => 'America/Toronto'], null));
+check('tz_not_us: a Canada/* alias does not fire', !eval_conditions_match(['tz_not_us' => 1], $usReq, ['tze' => 'Canada/Eastern'], null));
+check('tz_not_us: Regina (no DST) does not fire', !eval_conditions_match(['tz_not_us' => 1], $usReq, ['tze' => 'America/Regina'], null));
+check('tz_not_us: Mexico City does not fire', !eval_conditions_match(['tz_not_us' => 1], $usReq, ['tze' => 'America/Mexico_City'], null));
+check('tz_not_us: Tijuana does not fire', !eval_conditions_match(['tz_not_us' => 1], $usReq, ['tze' => 'America/Tijuana'], null));
+check('tz_not_us: Nassau does not fire', !eval_conditions_match(['tz_not_us' => 1], $usReq, ['tze' => 'America/Nassau'], null));
+check('tz_not_us: Grand Turk does not fire', !eval_conditions_match(['tz_not_us' => 1], $usReq, ['tze' => 'America/Grand_Turk'], null));
+check('tz_not_us: Havana does not fire', !eval_conditions_match(['tz_not_us' => 1], $usReq, ['tze' => 'America/Havana'], null));
+check('tz_not_us: Jamaica does not fire', !eval_conditions_match(['tz_not_us' => 1], $usReq, ['tze' => 'America/Jamaica'], null));
 check('tz_not_us: São Paulo fires (a US IP does not matter)', eval_conditions_match(['tz_not_us' => 1], $usReq, ['tze' => 'America/Sao_Paulo'], null));
 check('tz_not_us: UTC fires', eval_conditions_match(['tz_not_us' => 1], $usReq, ['tze' => 'UTC'], null));
 check('tz_not_us: Lisbon fires', eval_conditions_match(['tz_not_us' => 1], $usReq, ['tze' => 'Europe/Lisbon'], null));
-check('tz_not_us: Puerto Rico fires (a territory, not a state)', eval_conditions_match(['tz_not_us' => 1], $usReq, ['tze' => 'America/Puerto_Rico'], null));
-check('tz_not_us: Guam fires (a territory, not a state)', eval_conditions_match(['tz_not_us' => 1], $usReq, ['tze' => 'Pacific/Guam'], null));
+check('tz_not_us: Santo Domingo fires (the Caribbean beyond the list)', eval_conditions_match(['tz_not_us' => 1], $usReq, ['tze' => 'America/Santo_Domingo'], null));
+check('tz_not_us: Panama fires (Central America is not in the list)', eval_conditions_match(['tz_not_us' => 1], $usReq, ['tze' => 'America/Panama'], null));
 check('tz_not_us: 0 matches a US zone', eval_conditions_match(['tz_not_us' => 0], $usReq, ['tze' => 'America/Chicago'], null));
 check('tz_not_us: 0 does not match a non-US zone', !eval_conditions_match(['tz_not_us' => 0], $usReq, ['tze' => 'America/Sao_Paulo'], null));
 // The offset never decides (UTC-4…-10 covers half the Americas): without the
 // zone NAME the tell is undecidable — no match, but the rule stays pending.
 check('tz_not_us: offset alone is undecidable', !eval_conditions_match(['tz_not_us' => 1], $usReq, ['tz' => 300], null));
 check('tz_not_us: unknown stays pending for the checkpoint', eval_conditions_match(['tz_not_us' => 1], $usReq, [], null, true));
-same('tz_not_us: the zone list helper', [true, true, false, false], [eval_tz_us('america/new_york'), eval_tz_us('us/pacific'), eval_tz_us('europe/madrid'), eval_tz_us('america/argentina/buenos_aires')]);
+same('tz_not_us: the zone list helper', [true, true, true, true, false, false], [eval_tz_us('america/new_york'), eval_tz_us('us/pacific'), eval_tz_us('america/toronto'), eval_tz_us('america/nassau'), eval_tz_us('europe/madrid'), eval_tz_us('america/argentina/buenos_aires')]);
 // Cookies disabled: cke=0 fires no_cookie.
 check('no_cookie: cke=0 fires', eval_conditions_match(['no_cookie' => 1], $req, ['cke' => 0], null));
 check('no_cookie: cke=1 does not', !eval_conditions_match(['no_cookie' => 1], $req, ['cke' => 1], null));

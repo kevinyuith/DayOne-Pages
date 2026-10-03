@@ -469,7 +469,7 @@ function eval_rules_matched(array $rules, Request $req, ?array $signals, ?array 
  *   tostring_tampered 1 = Function.toString was monkey-patched (a bot hiding its hooks)
  *   proto_poisoned    1 = a built-in prototype was replaced (a userscript/emulator)
  *   tz_offset     the browser's getTimezoneOffset() (minutes; an emulator's often mismatches the IP's)
- *   tz_not_us     1 = the browser's IANA zone is outside the US (the 50 states + DC)
+ *   tz_not_us     1 = the browser's IANA zone is outside the home list (US + territories, CA, MX, nearby Caribbean)
  *
  * With $allowPending, a signal condition whose value isn't known does NOT
  * fail the rule — it's "pending" (the checkpoint's applies-check). Without
@@ -593,15 +593,20 @@ function eval_tz_mismatch(array $sig, string $country): bool
 }
 
 /**
- * Is the browser's IANA zone a US one (lowercased)? The list is the zones
- * whose country is US in the IANA database — the 50 states + DC, plus the
- * US/* aliases an old browser may resolve to. The territories (Puerto Rico,
- * Guam…) have their own ISO countries and are NOT here. The zone NAME only
- * decides: the offset never does (UTC-4…-10 covers half the Americas).
+ * Is the browser's IANA zone in the "home traffic" list (lowercased)? The
+ * zones of the US — the 50 states + DC AND the territories (Puerto Rico,
+ * Guam, Saipan, Pago Pago, St Thomas, Wake/Midway) — plus Canada, Mexico
+ * and the Caribbean on a US offset (Bahamas, Turks & Caicos, Cuba,
+ * Jamaica), with every US/*, Canada/* and Mexico/* alias an old browser
+ * may resolve to. The rest of the Americas (the Dominican Republic, Haiti,
+ * Central and South America) is NOT here. The condition key stays
+ * `tz_not_us` for the rules already stored. The zone NAME only decides:
+ * the offset never does (UTC-4…-10 covers half the Americas).
  */
 function eval_tz_us(string $zone): bool
 {
     static $us = [
+        // The 50 states + DC (and the Indianapolis alias real browsers resolve to).
         'america/new_york', 'america/detroit', 'america/kentucky/louisville', 'america/kentucky/monticello',
         'america/indiana/indianapolis', 'america/indiana/vincennes', 'america/indiana/winamac', 'america/indiana/marengo',
         'america/indiana/petersburg', 'america/indiana/vevay', 'america/indiana/knox', 'america/indiana/tell_city',
@@ -614,6 +619,27 @@ function eval_tz_us(string $zone): bool
         'america/adak', 'pacific/honolulu',
         'us/eastern', 'us/central', 'us/mountain', 'us/pacific', 'us/arizona', 'us/alaska', 'us/hawaii',
         'us/aleutian', 'us/east-indiana', 'us/indiana-starke', 'us/michigan',
+        // The US territories.
+        'america/puerto_rico', 'america/st_thomas', 'america/virgin',
+        'pacific/guam', 'pacific/saipan', 'pacific/pago_pago', 'pacific/samoa', 'us/samoa',
+        'pacific/wake', 'pacific/midway',
+        // Canada (the CA zones + the city and Canada/* aliases).
+        'america/toronto', 'america/montreal', 'america/nipigon', 'america/thunder_bay',
+        'america/winnipeg', 'america/rainy_river', 'america/regina', 'america/swift_current',
+        'america/edmonton', 'america/yellowknife', 'america/fort_nelson', 'america/dawson_creek', 'america/creston',
+        'america/vancouver', 'america/dawson', 'america/whitehorse', 'america/inuvik', 'america/cambridge_bay',
+        'america/iqaluit', 'america/pangnirtung', 'america/rankin_inlet', 'america/resolute',
+        'america/atikokan', 'america/coral_harbour', 'america/blanc-sablon',
+        'america/halifax', 'america/glace_bay', 'america/moncton', 'america/goose_bay', 'america/st_johns',
+        'canada/eastern', 'canada/central', 'canada/mountain', 'canada/pacific', 'canada/atlantic',
+        'canada/newfoundland', 'canada/saskatchewan', 'canada/east-saskatchewan', 'canada/yukon',
+        // Mexico (the MX zones + the Mexico/* and city aliases).
+        'america/mexico_city', 'america/cancun', 'america/merida', 'america/monterrey', 'america/matamoros',
+        'america/mazatlan', 'america/chihuahua', 'america/ojinaga', 'america/hermosillo', 'america/tijuana',
+        'america/bahia_banderas', 'america/ensenada', 'america/santa_isabel',
+        'mexico/general', 'mexico/bajanorte', 'mexico/bajasur',
+        // The Caribbean on a US offset: Bahamas, Turks & Caicos, Cuba, Jamaica.
+        'america/nassau', 'america/grand_turk', 'america/havana', 'cuba', 'america/jamaica', 'jamaica',
     ];
     return in_array($zone, $us, true);
 }
@@ -644,7 +670,7 @@ function eval_signal_values(?array $signals, ?array $stored): array
     if (array_key_exists('tz', $src)) $out['tz_offset'] = (int) $src['tz'];
     if (isset($src['tze']) && is_string($src['tze']) && $src['tze'] !== '') {
         $out['tze'] = strtolower($src['tze']);
-        // tz_not_us: the zone is outside the US list (a "US timezones only" filter).
+        // tz_not_us: the zone is outside the home list (US + territories, CA, MX, nearby Caribbean).
         $out['tz_not_us'] = eval_tz_us($out['tze']) ? 0 : 1;
     }
     // The on/off detectors, derived from the raw signals.

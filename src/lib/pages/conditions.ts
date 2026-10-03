@@ -144,7 +144,7 @@ export const ruleConditionsSchema = conditionsSchema
     chrome_ua: z.union([z.literal(0), z.literal(1)]).optional(),
     no_chrome_object: z.union([z.literal(0), z.literal(1)]).optional(),
     tz_mismatch: z.union([z.literal(0), z.literal(1)]).optional(),
-    // tz_not_us: the browser's IANA zone is outside the US (a "US timezones only" filter).
+    // tz_not_us: the browser's IANA zone is outside the home list (US + territories, Canada, Mexico, nearby Caribbean).
     tz_not_us: z.union([z.literal(0), z.literal(1)]).optional(),
     no_js: z.union([z.literal(0), z.literal(1)]).optional(),
     no_cookie: z.union([z.literal(0), z.literal(1)]).optional(),
@@ -560,7 +560,7 @@ export function summarizeRuleConditions(c: RuleConditions | null | undefined): s
     onOff(c.chrome_ua, "Chrome UA", "Not Chrome UA"),
     onOff(c.no_chrome_object, "No window.chrome", ""),
     onOff(c.tz_mismatch, "TZ mismatch", ""),
-    onOff(c.tz_not_us, "Non-US timezone", ""),
+    onOff(c.tz_not_us, "Non-US/CA/MX timezone", ""),
     onOff(c.no_js, "No JS", ""),
     onOff(c.no_cookie, "Cookies off", ""),
     onOff(c.odd_resolution, "Odd resolution", ""),
