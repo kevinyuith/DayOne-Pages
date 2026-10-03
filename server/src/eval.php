@@ -605,6 +605,9 @@ function eval_tz_us(string $zone): bool
         'america/new_york', 'america/detroit', 'america/kentucky/louisville', 'america/kentucky/monticello',
         'america/indiana/indianapolis', 'america/indiana/vincennes', 'america/indiana/winamac', 'america/indiana/marengo',
         'america/indiana/petersburg', 'america/indiana/vevay', 'america/indiana/knox', 'america/indiana/tell_city',
+        // america/indianapolis: the pre-IANA alias (a link to america/indiana/indianapolis) is what most
+        // browsers resolve to (Intl.DateTimeFormat gives the canonical name's SHORTEST alias).
+        'america/indianapolis',
         'america/chicago', 'america/menominee', 'america/north_dakota/center', 'america/north_dakota/beulah',
         'america/north_dakota/new_salem', 'america/denver', 'america/boise', 'america/phoenix', 'america/los_angeles',
         'america/anchorage', 'america/juneau', 'america/metlakatla', 'america/nome', 'america/sitka', 'america/yakutat',

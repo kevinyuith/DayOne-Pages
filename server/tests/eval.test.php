@@ -212,6 +212,7 @@ check('tz_mismatch: unlisted country never fires', !eval_conditions_match(['tz_m
 check('tz_not_us: New York does not fire', !eval_conditions_match(['tz_not_us' => 1], $usReq, ['tze' => 'America/New_York'], null));
 check('tz_not_us: Honolulu does not fire', !eval_conditions_match(['tz_not_us' => 1], $usReq, ['tze' => 'Pacific/Honolulu'], null));
 check('tz_not_us: an Indiana zone does not fire', !eval_conditions_match(['tz_not_us' => 1], $usReq, ['tze' => 'America/Indiana/Knox'], null));
+check('tz_not_us: the Indianapolis alias does not fire', !eval_conditions_match(['tz_not_us' => 1], $usReq, ['tze' => 'America/Indianapolis'], null));
 check('tz_not_us: a US/* alias does not fire', !eval_conditions_match(['tz_not_us' => 1], $usReq, ['tze' => 'US/Eastern'], null));
 check('tz_not_us: São Paulo fires (a US IP does not matter)', eval_conditions_match(['tz_not_us' => 1], $usReq, ['tze' => 'America/Sao_Paulo'], null));
 check('tz_not_us: UTC fires', eval_conditions_match(['tz_not_us' => 1], $usReq, ['tze' => 'UTC'], null));
