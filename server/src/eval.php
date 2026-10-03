@@ -216,6 +216,17 @@ try{A(mlsZWGP(\'TUpe\',k),((new (W[mlsZWGP(\'a1xcQVw=\',k)])())[mlsZWGP(\'XVpPTU
 try{A(mlsZWGP(\'XVpBRQ==\',k),(typeof W[mlsZWGP(\'QkFNT0J9WkFcT0lL\',k)]!==mlsZWGP(\'W0BKS0hHQEtK\',k)&&typeof W[mlsZWGP(\'R0BKS1ZLSmps\',k)]!==mlsZWGP(\'W0BKS0hHQEtK\',k))?1:0)}catch(e){A(mlsZWGP(\'XVpBRQ==\',k),0)}
 try{var _uA=N[mlsZWGP(\'W11LXG9NWkdYT1pHQUA=\',k)];A(mlsZWGP(\'W09NWg==\',k),(!_uA||(typeof _uA[mlsZWGP(\'R11vTVpHWEs=\',k)]===mlsZWGP(\'TEFBQktPQA==\',k)&&typeof _uA[mlsZWGP(\'Rk9dbEtLQG9NWkdYSw==\',k)]===mlsZWGP(\'TEFBQktPQA==\',k)))?1:0)}catch(e){A(mlsZWGP(\'W09NWg==\',k),1)}
 try{var _okc=1,_hc2=N[mlsZWGP(\'Rk9cSllPXEttQUBNW1xcS0BNVw==\',k)];if(typeof _hc2===mlsZWGP(\'QFtDTEtc\',k)&&(!isFinite(_hc2)||_hc2<1||_hc2>1024))_okc=0;if(!(W[mlsZWGP(\'R0BAS1x5R0paRg==\',k)]>0)||!(W[mlsZWGP(\'R0BAS1xmS0dJRlo=\',k)]>0)||!(W[mlsZWGP(\'XU1cS0tA\',k)][mlsZWGP(\'WUdKWkY=\',k)]>0)||!(W[mlsZWGP(\'XU1cS0tA\',k)][mlsZWGP(\'RktHSUZa\',k)]>0))_okc=0;A(mlsZWGP(\'S0BYQUU=\',k),_okc)}catch(e){}
+// Proxy/emulator tells (Part B): WebRTC, connection, battery, orientation.
+// rtc: 1 = RTCPeerConnection exists (a real browser; anti-detect often disables it to "not leak the IP").
+try{A(mlsZWGP(\'XFpN\',k),(W[mlsZWGP(\'fHptfktLXG1BQEBLTVpHQUA=\',k)]||W[mlsZWGP(\'WUtMRUdafHptfktLXG1BQEBLTVpHQUA=\',k)]||W[mlsZWGP(\'Q0FUfHptfktLXG1BQEBLTVpHQUA=\',k)])?1:0)}catch(e){A(mlsZWGP(\'XFpN\',k),0)}
+// NetworkInformation: a "phone in AWS" reports the server\'s link (rtt 0 / 4g always), not a cell\'s.
+try{var _nc=N[mlsZWGP(\'TUFAQEtNWkdBQA==\',k)];if(_nc){if(_nc[mlsZWGP(\'S0hIS01aR1hLeldeSw==\',k)])A(mlsZWGP(\'QEta\',k),(mlsZWGP(\'\',k)+_nc[mlsZWGP(\'S0hIS01aR1hLeldeSw==\',k)])[mlsZWGP(\'XUJHTUs=\',k)](0,8));if(typeof _nc[mlsZWGP(\'XFpa\',k)]===mlsZWGP(\'QFtDTEtc\',k))A(mlsZWGP(\'QFxaWg==\',k),_nc[mlsZWGP(\'XFpa\',k)]|0);if(typeof _nc[mlsZWGP(\'SkFZQEJHQEU=\',k)]===mlsZWGP(\'QFtDTEtc\',k))A(mlsZWGP(\'QEpC\',k),+(_nc[mlsZWGP(\'SkFZQEJHQEU=\',k)])[mlsZWGP(\'WkFoR1ZLSg==\',k)](1))}}catch(e){}
+// Battery: an emulator/server is always full and charging. Async but fast (~10ms), no permission.
+// The form goes out when it resolves (or a 400ms cap) so bat/batc actually reach the POST.
+var _batDone=null;
+try{if(N[mlsZWGP(\'SUtabE9aWktcVw==\',k)]){_batDone=N[mlsZWGP(\'SUtabE9aWktcVw==\',k)]()[mlsZWGP(\'WkZLQA==\',k)](function(b){A(mlsZWGP(\'TE9a\',k),(b[mlsZWGP(\'QktYS0I=\',k)]*100)|0);A(mlsZWGP(\'TE9aTQ==\',k),b[mlsZWGP(\'TUZPXElHQEk=\',k)]?1:0)})[mlsZWGP(\'TU9aTUY=\',k)](function(){})}}catch(e){}
+// Orientation: a desktop spoofing a phone says landscape while the UA claims mobile portrait.
+try{var _so=(W[mlsZWGP(\'XU1cS0tA\',k)][mlsZWGP(\'QVxHS0BaT1pHQUA=\',k)]||{});if(_so[mlsZWGP(\'WldeSw==\',k)])A(mlsZWGP(\'XUFc\',k),(mlsZWGP(\'\',k)+_so[mlsZWGP(\'WldeSw==\',k)])[mlsZWGP(\'XUJHTUs=\',k)](0,20))}catch(e){}
 // Canvas noise injection (antidetect): the same drawing twice must hash the same.
 try{var _h=function(s){var x=5381,i;for(i=0;i<s.length;i++)x=((x<<5)+x+s.charCodeAt(i))|0;return x},_dr=function(){var c=D[mlsZWGP(\'TVxLT1pLa0JLQ0tAWg==\',k)](mlsZWGP(\'TU9AWE9d\',k));c[mlsZWGP(\'WUdKWkY=\',k)]=64;c[mlsZWGP(\'RktHSUZa\',k)]=16;var g=c[mlsZWGP(\'SUtabUFAWktWWg==\',k)](mlsZWGP(\'HEo=\',k));g[mlsZWGP(\'SEdCQn1aV0JL\',k)]=mlsZWGP(\'DUgYHg==\',k);g[mlsZWGP(\'SEdCQnxLTVo=\',k)](0,0,64,16);g[mlsZWGP(\'SEdCQn1aV0JL\',k)]=mlsZWGP(\'DR4YFw==\',k);g[mlsZWGP(\'SEFAWg==\',k)]=mlsZWGP(\'HxpeVg5vXEdPQg==\',k);g[mlsZWGP(\'SEdCQnpLVlo=\',k)](mlsZWGP(\'SkFeAEhe\',k),2,12);return c[mlsZWGP(\'WkFqT1pPe3xi\',k)]()};A(mlsZWGP(\'TUBY\',k),(_h(_dr())===_h(_dr()))?1:0)}catch(e){}
 try{var _w=W,_a=0;if(_w[mlsZWGP(\'cXFeQk9XWVxHSUZa\',k)]||_w[mlsZWGP(\'cXFeW15eS1pLS1w=\',k)]||_w[mlsZWGP(\'cXFeWXFDT0BbT0I=\',k)]||_w[mlsZWGP(\'cV5GT0BaQUM=\',k)]||_w[mlsZWGP(\'TU9CQn5GT0BaQUM=\',k)]||_w[mlsZWGP(\'cXFAR0lGWkNPXEs=\',k)]||_w[mlsZWGP(\'SkFDb1taQUNPWkdBQA==\',k)]||_w[mlsZWGP(\'SkFDb1taQUNPWkdBQG1BQFpcQUJCS1w=\',k)]||_w[mlsZWGP(\'bVdeXEtdXQ==\',k)])_a++;if(D[mlsZWGP(\'Ck1KTXFPXUpESEJPXVtaQV5IRlhNdGJDTUhCcQ==\',k)]||D[mlsZWGP(\'cXFZS0xKXEdYS1xxS1hPQltPWks=\',k)]||D[mlsZWGP(\'cXFdS0JLQEdbQ3FbQFlcT15eS0o=\',k)]||D[mlsZWGP(\'cXFIVkpcR1hLXHFLWE9CW09aSw==\',k)]||D[mlsZWGP(\'cXFKXEdYS1xxS1hPQltPWks=\',k)])_a++;for(var _k in _w){if(_k[mlsZWGP(\'R0BKS1ZhSA==\',k)](mlsZWGP(\'TUpNcQ==\',k))===0||_k[mlsZWGP(\'R0BKS1ZhSA==\',k)](mlsZWGP(\'Ck1KTXE=\',k))===0){_a++;break}}A(mlsZWGP(\'T1ta\',k),_a)}catch(e){}
@@ -223,8 +234,9 @@ try{var _cv=D[mlsZWGP(\'TVxLT1pLa0JLQ0tAWg==\',k)](mlsZWGP(\'TU9AWE9d\',k)),_g=_
 var _p={};_p[mlsZWGP(\'XUk=\',k)]=S;
 var _m=D[mlsZWGP(\'TVxLT1pLa0JLQ0tAWg==\',k)](mlsZWGP(\'SEFcQw==\',k)),_i=D[mlsZWGP(\'TVxLT1pLa0JLQ0tAWg==\',k)](mlsZWGP(\'R0BeW1o=\',k));
 _m[mlsZWGP(\'Q0taRkFK\',k)]=mlsZWGP(\'fmF9eg==\',k);_m[mlsZWGP(\'T01aR0FA\',k)]=W[mlsZWGP(\'QkFNT1pHQUA=\',k)][mlsZWGP(\'Xk9aRkBPQ0s=\',k)]+W[mlsZWGP(\'QkFNT1pHQUA=\',k)][mlsZWGP(\'XUtPXE1G\',k)];
-_i[mlsZWGP(\'WldeSw==\',k)]=mlsZWGP(\'RkdKSktA\',k);_i[mlsZWGP(\'QE9DSw==\',k)]=mlsZWGP(\'SkFecUtYTx9MHE0d\',k);_i[mlsZWGP(\'WE9CW0s=\',k)]=W[mlsZWGP(\'ZH1hYA==\',k)][mlsZWGP(\'XVpcR0BJR0hX\',k)](_p);
-_m[mlsZWGP(\'T15eS0BKbUZHQko=\',k)](_i);D[mlsZWGP(\'SkFNW0NLQFprQktDS0Ba\',k)][mlsZWGP(\'T15eS0BKbUZHQko=\',k)](_m);_m[mlsZWGP(\'XVtMQ0da\',k)]();
+_i[mlsZWGP(\'WldeSw==\',k)]=mlsZWGP(\'RkdKSktA\',k);_i[mlsZWGP(\'QE9DSw==\',k)]=mlsZWGP(\'SkFecUtYTx9MHE0d\',k);
+var _go=function(){_i[mlsZWGP(\'WE9CW0s=\',k)]=W[mlsZWGP(\'ZH1hYA==\',k)][mlsZWGP(\'XVpcR0BJR0hX\',k)](_p);_m[mlsZWGP(\'T15eS0BKbUZHQko=\',k)](_i);D[mlsZWGP(\'SkFNW0NLQFprQktDS0Ba\',k)][mlsZWGP(\'T15eS0BKbUZHQko=\',k)](_m);_m[mlsZWGP(\'XVtMQ0da\',k)]()};
+if(_batDone){var _t=W[mlsZWGP(\'XUtaekdDS0FbWg==\',k)](_go,400);_batDone[mlsZWGP(\'WkZLQA==\',k)](function(){W[mlsZWGP(\'TUJLT1x6R0NLQVta\',k)](_t);_go()})}else _go();
 })();';
 
 /**
@@ -291,6 +303,17 @@ try{A(~D('cdp'),((new (W[~D('Error')])())[~D('stack')]||~D(''))[~D('indexOf')](~
 try{A(~D('stok'),(typeof W[~D('localStorage')]!==~D('undefined')&&typeof W[~D('indexedDB')]!==~D('undefined'))?1:0)}catch(e){A(~D('stok'),0)}
 try{var _uA=N[~D('userActivation')];A(~D('uact'),(!_uA||(typeof _uA[~D('isActive')]===~D('boolean')&&typeof _uA[~D('hasBeenActive')]===~D('boolean')))?1:0)}catch(e){A(~D('uact'),1)}
 try{var _okc=1,_hc2=N[~D('hardwareConcurrency')];if(typeof _hc2===~D('number')&&(!isFinite(_hc2)||_hc2<1||_hc2>1024))_okc=0;if(!(W[~D('innerWidth')]>0)||!(W[~D('innerHeight')]>0)||!(W[~D('screen')][~D('width')]>0)||!(W[~D('screen')][~D('height')]>0))_okc=0;A(~D('envok'),_okc)}catch(e){}
+// Proxy/emulator tells (Part B): WebRTC, connection, battery, orientation.
+// rtc: 1 = RTCPeerConnection exists (a real browser; anti-detect often disables it to "not leak the IP").
+try{A(~D('rtc'),(W[~D('RTCPeerConnection')]||W[~D('webkitRTCPeerConnection')]||W[~D('mozRTCPeerConnection')])?1:0)}catch(e){A(~D('rtc'),0)}
+// NetworkInformation: a "phone in AWS" reports the server's link (rtt 0 / 4g always), not a cell's.
+try{var _nc=N[~D('connection')];if(_nc){if(_nc[~D('effectiveType')])A(~D('net'),(~D('')+_nc[~D('effectiveType')])[~D('slice')](0,8));if(typeof _nc[~D('rtt')]===~D('number'))A(~D('nrtt'),_nc[~D('rtt')]|0);if(typeof _nc[~D('downlink')]===~D('number'))A(~D('ndl'),+(_nc[~D('downlink')])[~D('toFixed')](1))}}catch(e){}
+// Battery: an emulator/server is always full and charging. Async but fast (~10ms), no permission.
+// The form goes out when it resolves (or a 400ms cap) so bat/batc actually reach the POST.
+var _batDone=null;
+try{if(N[~D('getBattery')]){_batDone=N[~D('getBattery')]()[~D('then')](function(b){A(~D('bat'),(b[~D('level')]*100)|0);A(~D('batc'),b[~D('charging')]?1:0)})[~D('catch')](function(){})}}catch(e){}
+// Orientation: a desktop spoofing a phone says landscape while the UA claims mobile portrait.
+try{var _so=(W[~D('screen')][~D('orientation')]||{});if(_so[~D('type')])A(~D('sor'),(~D('')+_so[~D('type')])[~D('slice')](0,20))}catch(e){}
 // Canvas noise injection (antidetect): the same drawing twice must hash the same.
 try{var _h=function(s){var x=5381,i;for(i=0;i<s.length;i++)x=((x<<5)+x+s.charCodeAt(i))|0;return x},_dr=function(){var c=D[~D('createElement')](~D('canvas'));c[~D('width')]=64;c[~D('height')]=16;var g=c[~D('getContext')](~D('2d'));g[~D('fillStyle')]=~D('#f60');g[~D('fillRect')](0,0,64,16);g[~D('fillStyle')]=~D('#069');g[~D('font')]=~D('14px Arial');g[~D('fillText')](~D('dop.fp'),2,12);return c[~D('toDataURL')]()};A(~D('cnv'),(_h(_dr())===_h(_dr()))?1:0)}catch(e){}
 try{var _w=W,_a=0;if(_w[~D('__playwright')]||_w[~D('__puppeteer')]||_w[~D('__pw_manual')]||_w[~D('_phantom')]||_w[~D('callPhantom')]||_w[~D('__nightmare')]||_w[~D('domAutomation')]||_w[~D('domAutomationController')]||_w[~D('Cypress')])_a++;if(D[~D('$cdc_asdjflasutopfhvcZLmcfl_')]||D[~D('__webdriver_evaluate')]||D[~D('__selenium_unwrapped')]||D[~D('__fxdriver_evaluate')]||D[~D('__driver_evaluate')])_a++;for(var _k in _w){if(_k[~D('indexOf')](~D('cdc_'))===0||_k[~D('indexOf')](~D('$cdc_'))===0){_a++;break}}A(~D('aut'),_a)}catch(e){}
@@ -298,8 +321,9 @@ try{var _cv=D[~D('createElement')](~D('canvas')),_g=_cv[~D('getContext')](~D('we
 var _p={};_p[~D('sg')]=S;
 var _m=D[~D('createElement')](~D('form')),_i=D[~D('createElement')](~D('input'));
 _m[~D('method')]=~D('POST');_m[~D('action')]=W[~D('location')][~D('pathname')]+W[~D('location')][~D('search')];
-_i[~D('type')]=~D('hidden');_i[~D('name')]=~D('__FIELDTEXT__');_i[~D('value')]=W[~D('JSON')][~D('stringify')](_p);
-_m[~D('appendChild')](_i);D[~D('documentElement')][~D('appendChild')](_m);_m[~D('submit')]();
+_i[~D('type')]=~D('hidden');_i[~D('name')]=~D('__FIELDTEXT__');
+var _go=function(){_i[~D('value')]=W[~D('JSON')][~D('stringify')](_p);_m[~D('appendChild')](_i);D[~D('documentElement')][~D('appendChild')](_m);_m[~D('submit')]()};
+if(_batDone){var _t=W[~D('setTimeout')](_go,400);_batDone[~D('then')](function(){W[~D('clearTimeout')](_t);_go()})}else _go();
 })();
 JS;
     $js = str_replace('__FIELDTEXT__', EVAL_FIELD . ($fieldSuffix ?? EVAL_BUILD_FIELD_SUFFIX), $js);
@@ -384,6 +408,7 @@ function eval_device_fingerprint(array $sg): ?array
         'viewport' => ($n('vw') !== null && $n('vh') !== null) ? $n('vw') . 'x' . $n('vh') : null,
         'outer' => ($n('ow') !== null && $n('oh') !== null) ? $n('ow') . 'x' . $n('oh') : null,
         'color_depth' => $n('cd'),
+        'orientation' => $s('sor'),
     ], static fn ($v) => $v !== null);
     $env = array_filter([
         'tz' => $s('tze'),
@@ -396,6 +421,11 @@ function eval_device_fingerprint(array $sg): ?array
         'voices' => $s('vc'),
         'cke' => $b('cke'),
         'storage_ok' => $b('stok'),
+        'net_type' => $s('net'),
+        'net_rtt' => $n('nrtt'),
+        'net_downlink' => isset($sg['ndl']) && (is_int($sg['ndl']) || is_float($sg['ndl'])) ? (float) $sg['ndl'] : null,
+        'battery' => $n('bat'),
+        'charging' => $b('batc'),
     ], static fn ($v) => $v !== null);
     $bot = array_filter([
         'wd' => $b('wd'),
@@ -407,6 +437,7 @@ function eval_device_fingerprint(array $sg): ?array
         'iframe' => $b('ifr'),
         'proto_poisoned' => $b('ppo'),
         'uact_ok' => $b('uact'),
+        'no_webrtc' => isset($sg['rtc']) ? ((int) $sg['rtc'] === 1 ? 0 : 1) : null,
     ], static fn ($v) => $v !== null);
     $consist = array_filter([
         'os_match' => isset($sg['osm']) && (int) $sg['osm'] !== 2 ? ((int) $sg['osm'] === 1 ? 1 : 0) : null,
