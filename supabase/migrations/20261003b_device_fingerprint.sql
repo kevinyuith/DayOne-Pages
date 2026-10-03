@@ -17,6 +17,11 @@ ALTER TABLE pages.hits
 COMMENT ON COLUMN pages.hits.device_fingerprint IS
   'The device checkpoint''s signals, structured (eval_device_fingerprint): ua/hw/env/bot/consist. Informational only — the record for future analysis. NULL on any hit that isn''t a checkpoint POST.';
 
+-- The parameter list gains p_device_fingerprint, so drop the previous overload
+-- first — CREATE OR REPLACE alone would leave it behind, and two overloads
+-- that differ only by a defaulted parameter are ambiguous to PostgREST.
+DROP FUNCTION IF EXISTS pages.log_hit(text, uuid, text, text, text, integer, text, text, boolean, text, text, text, text, integer, text, text, text, uuid, uuid, text, text, text, text, text, text, text, jsonb, text, text, text, text);
+
 CREATE OR REPLACE FUNCTION pages.log_hit(p_key text, p_domain uuid, p_host text, p_path text, p_outcome text, p_status integer, p_country text, p_device text, p_is_bot boolean, p_referrer_host text, p_ip text, p_user_agent text, p_hostname text DEFAULT NULL::text, p_asn integer DEFAULT NULL::integer, p_as_name text DEFAULT NULL::text, p_cookies text DEFAULT NULL::text, p_region text DEFAULT NULL::text, p_route_id uuid DEFAULT NULL::uuid, p_page_id uuid DEFAULT NULL::uuid, p_slug text DEFAULT NULL::text, p_decision text DEFAULT NULL::text, p_query text DEFAULT NULL::text, p_redirect_url text DEFAULT NULL::text, p_visit_id text DEFAULT NULL::text, p_rule_label text DEFAULT NULL::text, p_rule text DEFAULT NULL::text, p_rule_tags jsonb DEFAULT NULL::jsonb, p_funnel text DEFAULT NULL::text, p_rule_reason text DEFAULT NULL::text, p_accept_language text DEFAULT NULL::text, p_gate_reason text DEFAULT NULL::text, p_device_fingerprint jsonb DEFAULT NULL::jsonb)
  RETURNS bigint
  LANGUAGE plpgsql
