@@ -138,6 +138,8 @@ export const ruleConditionsSchema = conditionsSchema
     tostring_tampered: z.union([z.literal(0), z.literal(1)]).optional(),
     proto_poisoned: z.union([z.literal(0), z.literal(1)]).optional(),
     tz_offset: z.number().int().min(-840).max(840).optional(),
+    // net_rtt_min: Chrome's RTT estimate (navigator.connection.rtt, ms) is at least this; no measurement never matches.
+    net_rtt_min: z.number().int().min(1).max(10000).optional(),
     // The on/off detectors (1 = the tell fired). no_js is decided on the GET
     // (the page served, no POST back), the rest from the browser's signals.
     no_touch: z.union([z.literal(0), z.literal(1)]).optional(),
@@ -398,6 +400,11 @@ export function parseRuleConditionsForm(fd: FormData): { ok: true; value: RuleCo
   if (protoPoisoned !== undefined) raw.proto_poisoned = protoPoisoned;
   const tzOffset = String(fd.get("tz_offset") ?? "").trim();
   if (tzOffset !== "" && /^-?\d{1,4}$/.test(tzOffset)) raw.tz_offset = Number(tzOffset);
+  const netRttMin = String(fd.get("net_rtt_min") ?? "").trim();
+  if (netRttMin !== "") {
+    if (!/^\d{1,5}$/.test(netRttMin) || Number(netRttMin) < 1 || Number(netRttMin) > 10000) return { ok: false, reason: "Chrome RTT must be whole milliseconds, 1–10000." };
+    raw.net_rtt_min = Number(netRttMin);
+  }
   if (fd.get("eval_cookie") === "absent") raw.eval_cookie = "absent";
   // The on/off detectors.
   const noTouch = bit("no_touch");
@@ -455,6 +462,7 @@ export function ruleConditionsToForm(c: RuleConditions | null | undefined): Retu
   tostringTampered: "" | "0" | "1";
   protoPoisoned: "" | "0" | "1";
   tzOffset: string;
+  netRttMin: string;
   noTouch: "" | "0" | "1";
   chromeUa: "" | "0" | "1";
   noChromeObject: "" | "0" | "1";
@@ -497,6 +505,7 @@ export function ruleConditionsToForm(c: RuleConditions | null | undefined): Retu
     tostringTampered: bit(c?.tostring_tampered),
     protoPoisoned: bit(c?.proto_poisoned),
     tzOffset: c?.tz_offset !== undefined ? String(c.tz_offset) : "",
+    netRttMin: c?.net_rtt_min !== undefined ? String(c.net_rtt_min) : "",
     noTouch: bit(c?.no_touch),
     chromeUa: bit(c?.chrome_ua),
     noChromeObject: bit(c?.no_chrome_object),
@@ -556,6 +565,7 @@ export function summarizeRuleConditions(c: RuleConditions | null | undefined): s
     onOff(c.tostring_tampered, "toString tampered", ""),
     onOff(c.proto_poisoned, "Proto poisoned", ""),
     c.tz_offset !== undefined ? `TZ offset ${c.tz_offset}` : "",
+    c.net_rtt_min !== undefined ? `Chrome RTT ≥ ${c.net_rtt_min} ms` : "",
     onOff(c.no_touch, "No touch", "Has touch"),
     onOff(c.chrome_ua, "Chrome UA", "Not Chrome UA"),
     onOff(c.no_chrome_object, "No window.chrome", ""),

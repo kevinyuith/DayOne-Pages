@@ -53,7 +53,7 @@ const EVAL_NO_JS = 'no_js';
 /** The eval rules' own condition keys (decided here or in the browser; never by conditions_match). */
 const EVAL_OWN_CONDITIONS = [
     'eval_cookie', 'touch', 'mobile_hint', 'pointer', 'webdriver', 'automation', 'gl_software', 'platform',
-    'iframe', 'tostring_tampered', 'proto_poisoned', 'tz_offset',
+    'iframe', 'tostring_tampered', 'proto_poisoned', 'tz_offset', 'net_rtt_min',
     // The on/off detectors (1 = the tell fired). no_js is stripped too, but
     // never evaluated from signals — a POST proves JS ran.
     'no_touch', 'chrome_ua', 'no_chrome_object', 'tz_mismatch', 'tz_not_us', 'no_cookie', 'odd_resolution', EVAL_NO_JS,
@@ -501,6 +501,13 @@ function eval_rules_matched(array $rules, Request $req, ?array $signals, ?array 
  *   proto_poisoned    1 = a built-in prototype was replaced (a userscript/emulator)
  *   tz_offset     the browser's getTimezoneOffset() (minutes; an emulator's often mismatches the IP's)
  *   tz_not_us     1 = the browser's IANA zone is outside the home list (US + territories, CA, MX, nearby Caribbean)
+ *   net_rtt_min   ms: Chrome's round-trip estimate (navigator.connection.rtt, steps of 50) is at least this —
+ *                 a proxy chain adds its hops to every request. 0 or absent (Safari, Firefox, iOS, in-app
+ *                 WebViews) = no measurement: undecidable.
+ *
+ * The rest of the rule (IPs, ASNs, hostname, User-Agent…) goes through the
+ * request walk's own evaluator (rule_conditions_match), so a Suspicious rule
+ * takes the same network conditions a Bot rule does.
  *
  * With $allowPending, a signal condition whose value isn't known does NOT
  * fail the rule — it's "pending" (the checkpoint's applies-check). Without
@@ -508,16 +515,10 @@ function eval_rules_matched(array $rules, Request $req, ?array $signals, ?array 
  */
 function eval_conditions_match(array $cond, Request $req, ?array $signals, ?array $stored, bool $allowPending = false): bool
 {
-    $base = $cond;
-    foreach (array_merge(EVAL_OWN_CONDITIONS, EVAL_RULE_KEYS) as $k) {
-        unset($base[$k]);
-    }
-    if (!conditions_match($base, $req)) {
-        return false;
-    }
     // The sub ids (exact, case-insensitive) and the generic URL parameter —
     // from the request's query (evalParams), the same contract as
-    // rule_conditions_match.
+    // rule_conditions_match. First: they're free, and a click on another
+    // platform never pays for this rule's ASN/hostname lookup.
     foreach (['sub1', 'sub11'] as $key) {
         if (!isset($cond[$key])) {
             continue;
@@ -544,6 +545,16 @@ function eval_conditions_match(array $cond, Request $req, ?array $signals, ?arra
         } else {
             return false;
         }
+    }
+
+    // The rest of the request's side (countries, devices, IPs, ASNs, hostname,
+    // User-Agent…): the request walk's evaluator, network lookups last.
+    $base = $cond;
+    foreach (array_merge(EVAL_OWN_CONDITIONS, EVAL_RULE_KEYS) as $k) {
+        unset($base[$k]);
+    }
+    if (!rule_conditions_match($base, $req)) {
+        return false;
     }
 
     // "absent" = never passed and no stored signals: no cookie, or only the
@@ -579,6 +590,14 @@ function eval_conditions_match(array $cond, Request $req, ?array $signals, ?arra
                 return false; // Undecidable never confirms a bot.
             }
             $ok = ((int) $want === 1) === eval_tz_mismatch($sig, $req->country);
+        } elseif ($key === 'net_rtt_min') {
+            if (!isset($sig['net_rtt'])) {
+                if ($allowPending) {
+                    continue;
+                }
+                return false; // No measurement never confirms a bot.
+            }
+            $ok = (int) $sig['net_rtt'] >= (int) $want;
         } else {
             if (!array_key_exists($key, $sig)) {
                 if ($allowPending) {
@@ -751,6 +770,8 @@ function eval_signal_values(?array $signals, ?array $stored): array
     if (array_key_exists('tst', $src)) $out['tostring_tampered'] = ((int) $src['tst'] === 1) ? 1 : 0;
     if (array_key_exists('ppo', $src)) $out['proto_poisoned'] = ((int) $src['ppo'] === 1) ? 1 : 0;
     if (array_key_exists('tz', $src)) $out['tz_offset'] = (int) $src['tz'];
+    // Chrome's RTT estimate; 0 = it hasn't measured (an in-app WebView always says 0).
+    if (isset($src['nrtt']) && (int) $src['nrtt'] > 0) $out['net_rtt'] = (int) $src['nrtt'];
     if (isset($src['tze']) && is_string($src['tze']) && $src['tze'] !== '') {
         $out['tze'] = strtolower($src['tze']);
         // tz_not_us: the zone is outside the home list (US + territories, CA, MX, nearby Caribbean).

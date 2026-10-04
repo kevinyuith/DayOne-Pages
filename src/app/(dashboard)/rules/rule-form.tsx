@@ -162,6 +162,9 @@ function DeviceSignals({ initial, disabled }: { initial: ReturnType<typeof ruleC
         <Field label="TZ offset (min)" hint="getTimezoneOffset: São Paulo = 180, UTC = 0.">
           <input name="tz_offset" defaultValue={initial.tzOffset} inputMode="numeric" placeholder="180" className={INPUT_CLASS} disabled={disabled} />
         </Field>
+        <Field label="Chrome RTT at least (ms)" hint="navigator.connection.rtt, steps of 50. No measurement never matches.">
+          <input name="net_rtt_min" defaultValue={initial.netRttMin} inputMode="numeric" placeholder="150" className={INPUT_CLASS} disabled={disabled} />
+        </Field>
       </div>
       <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-muted">Bot tells</p>
       <div className="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

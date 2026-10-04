@@ -313,6 +313,61 @@ check('odd_resolution: a landscape iPad (screen reported in portrait) does not',
 check('odd_resolution: a landscape iPad 9.7" does not', !eval_conditions_match(['odd_resolution' => 1], $req, ['sw' => 768, 'sh' => 1024, 'vw' => 1024, 'vh' => 665], null));
 check('odd_resolution: a window that fits neither orientation fires', eval_conditions_match(['odd_resolution' => 1], $req, ['sw' => 390, 'sh' => 844, 'vw' => 800, 'vh' => 600], null));
 check('odd_resolution: a zoomed-out desktop (wider than the screen) still fires', eval_conditions_match(['odd_resolution' => 1], $req, ['sw' => 1280, 'sh' => 800, 'vw' => 1310, 'vh' => 575], null));
+// Chrome's RTT estimate (nrtt) at or above net_rtt_min. 0 = Chrome hasn't
+// measured (an in-app WebView always says 0): undecidable, like no signal.
+check('net_rtt_min: 200 ≥ 150 fires', eval_conditions_match(['net_rtt_min' => 150], $req, ['nrtt' => 200], null));
+check('net_rtt_min: exactly 150 fires (at least)', eval_conditions_match(['net_rtt_min' => 150], $req, ['nrtt' => 150], null));
+check('net_rtt_min: 100 does not', !eval_conditions_match(['net_rtt_min' => 150], $req, ['nrtt' => 100], null));
+check('net_rtt_min: 0 (no measurement) is undecidable', !eval_conditions_match(['net_rtt_min' => 150], $req, ['nrtt' => 0], null));
+check('net_rtt_min: no nrtt (Safari, Firefox, iOS) is undecidable', !eval_conditions_match(['net_rtt_min' => 150], $req, ['mtp' => 0], null));
+check('net_rtt_min: unknown stays pending for the checkpoint', eval_conditions_match(['net_rtt_min' => 150], $req, null, null, true));
+check('net_rtt_min: from a stored entry', eval_conditions_match(['net_rtt_min' => 150], $req, null, ['nrtt' => 250]));
+
+// A Suspicious rule takes the request walk's network conditions too: the
+// cable-desktop rule (Taboola + desktop + cable ASN + Chrome RTT ≥ 150).
+$rttMemo = &netinfo_memo();
+$rttMemo['198.51.100.21'] = ['asn' => 22773, 'asn_at' => time()];
+$rttMemo['198.51.100.22'] = ['asn' => 16509, 'asn_at' => time()];
+$rttMemo['198.51.100.23'] = ['asn' => null, 'asn_at' => time(), 'asn_wait' => 3000];
+$deskUA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36';
+$rttReq = static function (string $ip, string $ua = '') use ($deskUA): Request {
+    $r = make_request(['HTTP_CF_CONNECTING_IP' => $ip, 'REMOTE_ADDR' => $ip, 'HTTP_USER_AGENT' => $ua !== '' ? $ua : $deskUA]);
+    $r->evalParams = ['sub11' => 'Taboola'];
+    return $r;
+};
+$cableRule = ['sub11' => 'taboola', 'devices' => ['desktop'], 'asns' => [7922, 22773], 'net_rtt_min' => 150];
+check('cable rule: cable ASN + desktop + 150 ms fires', eval_conditions_match($cableRule, $rttReq('198.51.100.21'), ['nrtt' => 150], null));
+check('cable rule: 100 ms does not', !eval_conditions_match($cableRule, $rttReq('198.51.100.21'), ['nrtt' => 100], null));
+check('cable rule: an ASN outside the list does not', !eval_conditions_match($cableRule, $rttReq('198.51.100.22'), ['nrtt' => 300], null));
+check('cable rule: a failed ASN lookup never flags', !eval_conditions_match($cableRule, $rttReq('198.51.100.23'), ['nrtt' => 300], null));
+check('cable rule: a phone does not', !eval_conditions_match($cableRule, $rttReq('198.51.100.21', $mobileUA), ['nrtt' => 300], null));
+check('cable rule: the checkpoint applies to a cable desktop (RTT still unknown)', eval_conditions_match($cableRule, $rttReq('198.51.100.21'), null, null, true));
+check('cable rule: not to another ASN — no checkpoint for it', !eval_conditions_match($cableRule, $rttReq('198.51.100.22'), null, null, true));
+$fbReq = $rttReq('198.51.100.24');
+$fbReq->evalParams = ['sub11' => 'facebook'];
+check('cable rule: another platform fails before the ASN lookup', !eval_conditions_match($cableRule, $fbReq, ['nrtt' => 300], null) && !isset(netinfo_memo()['198.51.100.24']));
+// The request walk never decides it (the RTT only exists after the checkpoint).
+check('cable rule: the request walk skips it quietly', !rule_conditions_match($cableRule, $rttReq('198.51.100.21')));
+// Through the gate: the checkpoint page, then the POST's verdict.
+$cableGate = array_merge($gate, ['eval_rules' => [['name' => 'Taboola cable slow RTT', 'label' => 'Suspicious', 'reason' => 'RTT', 'tags' => ['Taboola'], 'conditions' => $cableRule]]]);
+$cableClick = static fn (string $ip): Request => make_request(['REQUEST_URI' => '/?sub1=' . rawurlencode('x[F23]') . '&sub11=Taboola', 'HTTP_CF_CONNECTING_IP' => $ip, 'REMOTE_ADDR' => $ip, 'HTTP_USER_AGENT' => $deskUA]);
+[, , , , $route] = decide($root, $cableClick('198.51.100.21'), $cableGate);
+same('cable gate: a cable desktop gets the checkpoint', 'checkpoint', $route['_eval'] ?? null);
+[, , , , $route] = decide($root, $cableClick('198.51.100.22'), $cableGate);
+same('cable gate: another ASN goes straight to the funnel', ['GATE', null], [$route['match_type'], $route['_eval'] ?? null]);
+$slow = $cableClick('198.51.100.21');
+$slow->evalSignals = ['nrtt' => 200, 'mtp' => 0];
+[, , , , $route] = decide($root, $slow, $cableGate);
+same('cable gate: 200 ms → the safe page, flagged', ['GATE-SAFE', 'Taboola cable slow RTT'], [$route['match_type'], $route['_rule'] ?? null]);
+$fast = $cableClick('198.51.100.21');
+$fast->evalSignals = ['nrtt' => 50, 'mtp' => 0];
+[, , , , $route] = decide($root, $fast, $cableGate);
+same('cable gate: 50 ms → the funnel', 'GATE', $route['match_type']);
+$unmeasured = $cableClick('198.51.100.21');
+$unmeasured->evalSignals = ['nrtt' => 0, 'mtp' => 0];
+[, , , , $route] = decide($root, $unmeasured, $cableGate);
+same('cable gate: no measurement → the funnel (never a guess)', 'GATE', $route['match_type']);
+
 // no_js is never decided by signals (the GET-side walk handles it).
 check('no_js: not a signal condition', !eval_conditions_match(['no_js' => 1], $req, ['mtp' => 0], null));
 
