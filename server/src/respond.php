@@ -100,6 +100,12 @@ function decide_route(array $route, Request $req, ?array $cond = null): ?array
         [$eStatus, $eHeaders, $eBody] = eval_checkpoint_response();
         return [$eStatus, $eHeaders, $eBody, 'served', $route];
     }
+    // An UNLOCKED domain's funnel picker (picker.php): a select of the live
+    // funnels + Open, a GET form back to this URL with ?dop_funnel=.
+    if (picker_route_is($route)) {
+        [$pStatus, $pHeaders, $pBody] = picker_response(is_array($route['_pick'] ?? null) ? $route['_pick'] : [], $req, is_string($route['_funnel'] ?? null) ? $route['_funnel'] : null);
+        return [$pStatus, $pHeaders, $pBody, 'served', $route];
+    }
     switch ((string) ($route['action'] ?? '')) {
         case 'SERVE':
             // A/B test between the pages of a funnel: the route becomes the drawn page.

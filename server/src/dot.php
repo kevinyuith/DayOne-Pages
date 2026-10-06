@@ -113,6 +113,9 @@ function dot_pre_lander_origin(string $path, int $status, array $route): ?string
     if (($route['match_type'] ?? '') === GATE_MATCH) {
         return null; // a funnel page the gate served: it already has dot.js (origin lander)
     }
+    if (picker_route_is($route)) {
+        return null; // an UNLOCKED domain's funnel picker: not a page of the site
+    }
     if (in_array($path, PRE_LANDER_STANDARD_SLUGS, true)) {
         return null; // the home or a legal page: not a pre-lander
     }

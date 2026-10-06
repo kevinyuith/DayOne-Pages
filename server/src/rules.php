@@ -14,8 +14,9 @@
  * runs the rules but no slug is allowed — a clean click always gets the
  * domain's page, never the funnel; UNLOCKED ignores the rules and the
  * gate_slugs — every slug goes straight to the sub1's [F…] funnel (404 when
- * the token is missing or the funnel has no live page). ACTIVE is the
- * behavior below.
+ * it has no live page); a page request whose sub1 names no funnel gets the
+ * funnel picker (picker.php) and goes to the one picked (?dop_funnel=).
+ * ACTIVE is the behavior below.
  *
  * The rules walk: the first one whose conditions ALL match marks the click
  * with the rule's LABEL and it gets the domain's page at the requested slug.
@@ -142,13 +143,24 @@ function gate_pick(array $routes, array $gate, Request $req): ?array
     parse_str($req->rawQuery, $params);
     $sub1 = is_scalar($params['sub1'] ?? null) ? (string) $params['sub1'] : '';
     $code = gate_funnel_code($sub1);
+    // An UNLOCKED domain whose sub1 names no funnel takes the visitor's choice
+    // in the funnel picker (?dop_funnel=). The sub1's token always wins, and
+    // any other status ignores the parameter.
+    $sub1Code = $code;
+    if ($status === 'UNLOCKED' && $code === null) {
+        $code = picker_choice($params);
+    }
     $funnel = $code !== null && is_array($gate['funnels'] ?? null) ? ($gate['funnels'][$code] ?? null) : null;
     $split = is_array($funnel['split'] ?? null) ? array_values(array_filter($funnel['split'], 'is_array')) : [];
     if ($split === []) {
-        // An UNLOCKED domain serves funnels only: no token, or a funnel without
-        // a live split (the data only has funnels with a live page) → 404.
+        // An UNLOCKED domain serves funnels only. A sub1 without a funnel gets
+        // the funnel picker on a page request (picked one not live: the picker
+        // again); a sub1 [F…] without a live split (the data only has funnels
+        // with a live page), or anything but a page (robots.txt, assets) → 404.
         if ($status === 'UNLOCKED') {
-            return gate_always_404($domainId, $req->path, 'domain_unlocked', $code);
+            return $sub1Code === null && picker_applies($req)
+                ? picker_route($domainId, $req->path, $gate, $code)
+                : gate_always_404($domainId, $req->path, 'domain_unlocked', $code);
         }
         // No token, or a funnel without a live split: the domain's page at "/".
         return gate_flag_route($domainPage, GATE_SAFE_MATCH, ['_funnel' => $code, '_gate_reason' => $code === null ? 'no_funnel_token' : 'funnel_not_live']);
@@ -285,7 +297,8 @@ function gate_domain_status(array $gate): string
 
 /**
  * A route that always 404s (a SERVE without a slug): a DISABLED domain serves
- * nothing, and an UNLOCKED one serves funnels only. The status goes to the log
+ * nothing, and an UNLOCKED one serves funnels only (and the funnel picker on a
+ * page request — picker.php). The status goes to the log
  * as the gate reason (and the [F…] code, when there was one, as the funnel).
  */
 function gate_always_404(string $domainId, string $path, string $reason, ?string $code = null): array

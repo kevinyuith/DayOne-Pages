@@ -146,6 +146,7 @@ require __DIR__ . '/conditions.php';
 require __DIR__ . '/funnel.php';
 require __DIR__ . '/vsl.php';
 require __DIR__ . '/rules.php';
+require __DIR__ . '/picker.php';
 require __DIR__ . '/tzcountry.php';
 require __DIR__ . '/eval.php';
 require __DIR__ . '/resolver.php';

@@ -149,15 +149,78 @@ check('unlocked: one of F23 pages', in_array($route['content_hash'], ['fade01', 
 [, , , , $route] = decide($oferta, make_request(['REQUEST_URI' => '/oferta?sub1=x[F23]']), [...$unlocked, 'gate_slugs' => []]);
 same('unlocked: any slug goes to the funnel', 'GATE', $route['match_type']);
 check('unlocked: funnel page at any slug', in_array($route['content_hash'], ['fade01', 'fade02'], true));
-// No token → 404 (the domain only serves funnels).
-[$st, , , $outcome, $route] = decide($root, make_request(['REQUEST_URI' => '/?sub1=plain']), $unlocked);
-same('unlocked, no token: 404', [404, 'notfound'], [$st, $outcome]);
+// No token → the funnel picker (the domain only serves funnels): a select of
+// the live funnels + Open, a GET form back to this URL that adds ?dop_funnel=
+// and keeps the query (hidden fields).
+$unlockedNamed = [...$unlocked, 'funnels' => [
+    ...$gate['funnels'],
+    'F7' => ['name' => 'Gelatin <Trick>', 'split' => [['page_id' => $pgA, 'content_type' => 'text/html; charset=utf-8', 'content_hash' => 'fade01', 'weight' => 100]]],
+    'F30' => ['name' => 'No split', 'split' => []],
+]];
+[$st, $hd, $body, $outcome, $route] = decide($root, make_request(['REQUEST_URI' => '/?sub1=plain&ttclid=abc&dop_funnel=F99']), $unlockedNamed);
+same('unlocked, no token: the picker', [200, 'served', 'PICK', 'SERVE · PICK'], [$st, $outcome, $route['match_type'], hit_decision($route)]);
 same('unlocked, no token: gate reason', 'domain_unlocked', $route['_gate_reason'] ?? null);
-// A funnel that isn't live → 404, the code is logged.
+same('unlocked picker: no-store, noindex', ['no-store', 'noindex, nofollow'], [$hd['Cache-Control'] ?? null, $hd['X-Robots-Tag'] ?? null]);
+check('unlocked picker: no cookies', !isset($hd['Set-Cookie']));
+same('unlocked picker: live funnels in code order', ['F7', 'F23'], array_column($route['_pick'], 'code'));
+check('unlocked picker: a GET form to this URL', str_contains((string) $body, '<form method="get">'));
+check('unlocked picker: the query kept as hidden fields', str_contains((string) $body, '<input type="hidden" name="sub1" value="plain"><input type="hidden" name="ttclid" value="abc">'));
+check('unlocked picker: an earlier choice is not a hidden field', !str_contains((string) $body, 'type="hidden" name="dop_funnel"'));
+check('unlocked picker: the select gives dop_funnel, required', str_contains((string) $body, '<select id="f" name="dop_funnel" required>'));
+check('unlocked picker: F7 option, the name escaped', str_contains((string) $body, '<option value="F7">F7 · Gelatin &lt;Trick&gt;</option>'));
+check('unlocked picker: F23 option, without a name', str_contains((string) $body, '<option value="F23">F23</option>'));
+check('unlocked picker: the Open button', str_contains((string) $body, '<button type="submit">Open</button>'));
+check('unlocked picker: a funnel without a live split is left out', !str_contains((string) $body, 'F30'));
+check('unlocked picker: the choice that is not live', str_contains((string) $body, 'F99 has no live page.'));
+check('unlocked picker: not a funnel page (no beacon)', !beacon_applies($route, make_request(['REQUEST_URI' => '/?sub1=plain'])));
+same('unlocked picker: no pre-lander page_view', null, dot_pre_lander_origin('/pre', 200, $route));
+// The picker at any page slug; robots.txt and assets keep the 404.
+[$st, , , , $route] = decide($oferta, make_request(['REQUEST_URI' => '/oferta']), $unlocked);
+same('unlocked picker: at any page slug', [200, 'PICK'], [$st, $route['match_type']]);
+[$st, , $body, $outcome] = decide($root, make_request(['REQUEST_URI' => '/robots.txt']), $unlocked);
+same('unlocked: robots.txt is not the picker', [200, 'served'], [$st, $outcome]);
+check('unlocked: robots.txt body', str_contains((string) $body, 'User-agent'));
+[$st, , , $outcome, $route] = decide($root, make_request(['REQUEST_URI' => '/app.js']), $unlocked);
+same('unlocked: an asset is a 404', [404, 'notfound', 'domain_unlocked'], [$st, $outcome, $route['_gate_reason'] ?? null]);
+// A sub1 funnel that isn't live → 404 (the sub1 named a funnel: no picker), the code is logged.
 [$st, , , $outcome, $route] = decide($root, make_request(['REQUEST_URI' => '/?sub1=x[F99]']), $unlocked);
 same('unlocked, not live: 404', [404, 'notfound'], [$st, $outcome]);
 same('unlocked, not live: code logged', 'F99', $route['_funnel'] ?? null);
 same('unlocked, not live: gate reason', 'domain_unlocked', $route['_gate_reason'] ?? null);
+// No live funnel at all: the picker says so.
+[, , $body, , $route] = decide($root, make_request(), [...$unlocked, 'funnels' => []]);
+same('unlocked, nothing live: the picker', 'PICK', $route['match_type']);
+check('unlocked, nothing live: empty state', str_contains((string) $body, 'No funnel is live.'));
+check('unlocked, nothing live: no form', !str_contains((string) $body, '<form'));
+[, , , , $route] = decide($root, make_request(['REQUEST_URI' => '/?sub1=plain']), $unlocked);
+check('unlocked picker: no funnel logged', !isset($route['_funnel']));
+
+// The picker's choice (?dop_funnel=) serves that funnel, over the sub1's token.
+[$st, , , $outcome, $route] = decide($root, make_request(['REQUEST_URI' => '/?sub1=plain&dop_funnel=f23']), $unlocked);
+same('unlocked, picked: the funnel', [200, 'served', 'GATE', 'F23'], [$st, $outcome, $route['match_type'], $route['_funnel'] ?? null]);
+check('unlocked, picked: one of F23 pages', in_array($route['content_hash'], ['fade01', 'fade02'], true));
+check('unlocked, picked: no gate reason', !isset($route['_gate_reason']));
+[, , , , $route] = decide($root, make_request(['REQUEST_URI' => '/?sub1=x[F23]&dop_funnel=F7']), $unlockedNamed);
+same('unlocked, picked: the sub1 token wins over the choice', ['GATE', 'F23'], [$route['match_type'], $route['_funnel'] ?? null]);
+[$st, , , , $route] = decide($root, make_request(['REQUEST_URI' => '/?sub1=x[F99]&dop_funnel=F7']), $unlockedNamed);
+same('unlocked, sub1 not live + a choice: still the 404', [404, 'F99'], [$st, $route['_funnel'] ?? null]);
+[, , $body, , $route] = decide($root, make_request(['REQUEST_URI' => '/?dop_funnel=F99']), $unlocked);
+same('unlocked, picked not live: the picker again', ['PICK', 'F99'], [$route['match_type'], $route['_funnel'] ?? null]);
+check('unlocked, picked not live: the notice', str_contains((string) $body, 'F99 has no live page.'));
+[, , , , $route] = decide($root, make_request(['REQUEST_URI' => '/?dop_funnel=nope&sub1=x[F23]']), $unlocked);
+same('unlocked, invalid choice: the sub1 token', ['GATE', 'F23'], [$route['match_type'], $route['_funnel'] ?? null]);
+// Only UNLOCKED reads dop_funnel: on ACTIVE it opens nothing past the gate.
+[, , , , $route] = decide($root, make_request(['REQUEST_URI' => '/?dop_funnel=F23']), $gate);
+same('active: dop_funnel is ignored', ['GATE-SAFE', 'home01', 'no_funnel_token'], [$route['match_type'], $route['content_hash'], $route['_gate_reason'] ?? null]);
+[, , , , $route] = decide($root, make_request(['REQUEST_URI' => '/?dop_funnel=F23']), $locked);
+same('locked: dop_funnel is ignored', ['GATE-SAFE', 'domain_locked'], [$route['match_type'], $route['_gate_reason'] ?? null]);
+
+// picker_choice / picker_href
+same('picker choice: F23', 'F23', picker_choice(['dop_funnel' => ' f23 ']));
+same('picker choice: not a code', null, picker_choice(['dop_funnel' => 'F23x']));
+same('picker choice: none', null, picker_choice([]));
+same('picker fields: decoded, in order, dop_funnel left out', [['sub1', '[F] x y'], ['a[]', '1'], ['flag', '']], picker_hidden_fields('sub1=%5BF%5D+x%20y&dop_funnel=F23&a%5B%5D=1&flag&&'));
+same('picker fields: no query', [], picker_hidden_fields(''));
 
 // The old names (a cache from before the rename) are read as the new ones.
 [, , , , $route] = decide($root, make_request(['REQUEST_URI' => '/?sub1=x[F23]']), [...$gate, 'status' => 'BLOCKED']);

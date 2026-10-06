@@ -437,6 +437,8 @@ function gateReason(hit: HitLogRow): string {
     case "domain_locked":
       return "Domain: locked";
     case "domain_unlocked":
+      // An UNLOCKED domain shows its funnel picker to a page request whose sub1 names no funnel.
+      if (hit.decision === "SERVE · PICK") return hit.funnel ? `${hit.funnel}: no live page (funnel picker)` : "Domain: unlocked, funnel picker";
       return hit.funnel ? `${hit.funnel}: no live page (domain: unlocked)` : "Domain: unlocked, no [F…] in sub1";
     default:
       return "";
