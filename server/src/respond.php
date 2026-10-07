@@ -184,6 +184,10 @@ function serve_slug(array $route, Request $req): array
         'Cache-Control' => PRIVATE_NO_CACHE,
         'Vary' => 'CF-IPCountry, User-Agent, Accept-Language',
     ];
+    // An HTML page goes out in its delivery version (assets.php): the pages'
+    // files on this domain, the bucket stylesheets inline. Its revision is in the ETag.
+    $html = stripos($headers['Content-Type'], 'html') !== false;
+    $atag = $html ? ASSETS_ETAG : '';
 
     // An HTML page carries the load notice (beacon.php) and the ETag gets the
     // script version.
@@ -205,13 +209,13 @@ function serve_slug(array $route, Request $req): array
     // A VSL split also reads the content: the drawn video goes into the ETag.
     // A funnel page the gate served always has the tracker version in the ETag (below).
     if (($route['funnel'] ?? null) === false && empty($route['vsl'])) {
-        $headers['ETag'] = '"' . $hash . $pidTag . $ptag . $tag . ($beacon ? track_etag() : '') . '"';
+        $headers['ETag'] = '"' . $hash . $atag . $pidTag . $ptag . $tag . ($beacon ? track_etag() : '') . '"';
         if ($req->ifNoneMatch !== null && etag_matches($req->ifNoneMatch, $headers['ETag'])) {
             return [304, $headers, null];
         }
     }
 
-    $body = cache_read_content($hash);
+    $body = $html ? assets_content_html($hash) : cache_read_content($hash);
     if ($body === null) {
         error_log("[dayone-pages] content missing from cache for slug $slugId ($hash)");
         return [503, ['Content-Type' => 'text/html; charset=utf-8', 'Cache-Control' => 'no-store', 'Retry-After' => '10'], plain_page('One moment', 'Updating the page. Please try again in a few seconds.')];
@@ -277,7 +281,7 @@ function serve_slug(array $route, Request $req): array
     // on it, when it's a pre-lander slug, is marked server-side instead (dot.php, origin pre_lander).
     $track = $beacon;
     $trackOrigin = $track && !track_has_own_tag($body) ? track_origin($funnel['kind'] ?? null) : null;
-    $etag = '"' . $hash . $abTag . ($funnel ? '-' . $funnel['step'] : '') . $vslTag . $pidTag . $ptag . $tag . ($track ? track_etag() : '') . '"';
+    $etag = '"' . $hash . $atag . $abTag . ($funnel ? '-' . $funnel['step'] : '') . $vslTag . $pidTag . $ptag . $tag . ($track ? track_etag() : '') . '"';
     if ($funnel || $abTag !== '' || $vslTag !== '') {
         $headers['Vary'] .= ', Cookie';
     }

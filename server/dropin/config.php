@@ -28,6 +28,9 @@ return [
 
     // Disk cache. The folder is created automatically; the site user must be able to write here.
     'CACHE_DIR'         => __DIR__ . '/_cache',
+    // The pages' files (images, fonts, CSS, video) copied from the buckets: outside the
+    // webroot. Never cleaned (a file never changes); created automatically.
+    'ASSETS_DIR'        => dirname(__DIR__) . '/dayone-assets',
     'CACHE_TTL'         => 60,       // seconds: 1 minute
     'NEGATIVE_TTL'      => 60,       // unknown or paused domain
     'STALE_MAX_AGE'     => 604800,   // how long the expired copy serves if Supabase goes down

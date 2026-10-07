@@ -89,7 +89,7 @@ $route = ['slug_id' => $slug, 'content_hash' => 'ph1', 'content_type' => 'text/h
 [$status, $headers, $body] = serve_slug($route, make_request(['HTTP_ACCEPT_LANGUAGE' => 'es']));
 same('serve_slug 200', 200, $status);
 check('body with the values', str_contains((string) $body, '<h1>Acme</h1><p>es</p>'));
-check('ETag = hash + placeholders', preg_match('/^"ph1-p[0-9a-f]{8}"$/', $headers['ETag']) === 1, $headers['ETag']);
+check('ETag = hash + placeholders', preg_match('/^"ph1' . ASSETS_ETAG . '-p[0-9a-f]{8}"$/', $headers['ETag']) === 1, $headers['ETag']);
 [$status] = serve_slug($route, make_request(['HTTP_ACCEPT_LANGUAGE' => 'es', 'HTTP_IF_NONE_MATCH' => $headers['ETag']]));
 same('304 with the same ETag', 304, $status);
 [$status] = serve_slug(['placeholders' => ['company.llc' => 'Other LLC', 'domain' => 'ex.com']] + $route, make_request(['HTTP_ACCEPT_LANGUAGE' => 'es', 'HTTP_IF_NONE_MATCH' => $headers['ETag']]));

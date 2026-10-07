@@ -37,6 +37,7 @@ yarn-error.log*
 
 # servidor de entrega: cache em disco e config local
 server/cache/
+server/assets/
 server/.env
 
 # MCP do Claude Code (carrega token de acesso)

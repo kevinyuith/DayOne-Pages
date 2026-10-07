@@ -89,6 +89,8 @@ function config(): array
         'server_id'         => (string) $get('SERVER_ID', ''),
         'purge_token'       => (string) $get('PURGE_TOKEN', ''),
         'cache_dir'         => (string) $get('CACHE_DIR', DAYONE_ROOT . '/cache'),
+        // The pages' files (assets.php): outside the cache folder and outside the webroot.
+        'assets_dir'        => (string) $get('ASSETS_DIR', DAYONE_ROOT . '/assets'),
         'cache_ttl'         => $int('CACHE_TTL', 30),
         'negative_ttl'      => $int('NEGATIVE_TTL', 30),
         'stale_max_age'     => $int('STALE_MAX_AGE', 604800),
@@ -139,6 +141,7 @@ set_exception_handler(static function (Throwable $e): void {
 require __DIR__ . '/http.php';
 require __DIR__ . '/normalize.php';
 require __DIR__ . '/cache.php';
+require __DIR__ . '/assets.php';
 require __DIR__ . '/netdb.php';
 require __DIR__ . '/rirdb.php';
 require __DIR__ . '/anondb.php';

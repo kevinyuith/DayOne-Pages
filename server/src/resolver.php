@@ -152,9 +152,13 @@ function refresh_routes(string $host, string $path): ?array
         }
         unset($row);
     }
-    // In use: the cleanup leaves them alone (the routes' and the gate's).
+    // In use: the cleanup leaves them alone (the routes' and the gate's). One
+    // without its delivery version gets its files after the response (assets.php).
     foreach (array_merge(route_content_ids($routes), is_array($rulesData) ? gate_content_ids($rulesData) : []) as $id) {
         cache_touch_content($id);
+        if (!is_file(content_built_file($id))) {
+            assets_queue($id);
+        }
     }
 
     // Knowing up front that the slug has NO funnel steps (nor A/B samples),

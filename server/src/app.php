@@ -5,6 +5,7 @@
  *   /_health, /_purge      → internal handlers
  *   /_dop/l                → browser load notice (beacon.php)
  *   /_dop/dot.js           → the funnel's tracker (track.php)
+ *   /_dop/a/<bucket>/<f>   → a page's file (image, font, CSS, JS, video) from disk (assets.php)
  *   method ∉ {GET, HEAD}   → 405
  *   invalid host           → 404 (no cache, no Supabase)
  *   path too long          → 404 (same)
@@ -34,6 +35,11 @@ function dayone_handle(): void
     if ($tracker !== null) {
         [$status, $headers, $body] = $tracker;
         send_response($status, $headers, $body, $req->isHead());
+        return;
+    }
+    // The pages' files, first party on every domain (assets.php): no hit; Supabase only for a file not on disk yet.
+    if (str_starts_with($req->rawPath, ASSETS_PATH)) {
+        assets_send($req, isset($_SERVER['HTTP_RANGE']) ? (string) $_SERVER['HTTP_RANGE'] : null);
         return;
     }
     if ($req->rawPath === BEACON_PATH) {
@@ -172,6 +178,8 @@ function dayone_handle(): void
         // SWR: refresh the cache with nobody waiting.
         refresh_in_background($host, $path);
     }
+    // The pages served or refreshed without their delivery version: their files come down and it's written (assets.php).
+    assets_prepare_pending();
 
     // The local IP → ASN/country table: rebuilt once a day, by one process, with nobody waiting.
     netdb_maybe_refresh();

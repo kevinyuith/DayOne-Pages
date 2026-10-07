@@ -14,6 +14,8 @@ Cloudflare ──HTTP:80──► nginx (catch-all) ──► php-fpm ──► 
                                                               │
                                              cache/routes/<host>/<path>.php   (routes + content hash, TTL 30 s)
                                              cache/content/<hash>.php         (HTML by its sha256)
+                                             cache/content/<hash>.a<rev>.php  (the same HTML as served: files local, CSS inline)
+                                             ASSETS_DIR/<bucket>/<name>       (the pages' images, fonts, CSS, JS, video)
                                                               │ MISS
                                              POST {SUPABASE_URL}/rest/v1/rpc/resolve      (hashes only; Content-Profile: pages)
                                              POST {SUPABASE_URL}/rest/v1/rpc/content_get  (only the HTML missing on disk)
@@ -133,6 +135,39 @@ cacheable and a 304 also carries a new id. The pages' ETag gets `-b2`
 (`BEACON_ETAG`): changed the script, bump the version. An automated browser also
 runs JavaScript — "loaded" proves a browser rendered the page, not that it was
 a person.
+
+### The pages' files (`/_dop/a/`, `src/assets.php`)
+
+The images, fonts, stylesheets, scripts and videos of the pages live in
+Supabase Storage (public buckets `page-assets` and `page-media`; the editor
+writes there and the HTML points at them). The server keeps a copy of every
+file a page uses in `ASSETS_DIR` (`<bucket>/<name>`, the bucket's own names —
+outside the cache folder and outside the webroot) and serves the pages so that
+nothing comes from Supabase:
+
+- the served HTML is a delivery version stored next to the raw one
+  (`content/<hash>.a<rev>.php`): every bucket URL becomes
+  `/_dop/a/<bucket>/<name>` on the page's own domain, and each bucket
+  stylesheet goes inline, as a `<style data-dop-asset>` where its `<link>` (or a
+  leading `@import`) was — `media="print" onload` ends up for every medium;
+  never inside `<script>`/`<noscript>`/comments; `<meta>` (og:image) keeps the
+  absolute URL; over 1 MB of CSS per page, the rest stays a `<link>`;
+- `GET /_dop/a/<bucket>/<name>` serves the copy (`max-age=31536000, immutable`,
+  ranges for video; Cloudflare keeps it at the edge). A file not on disk is
+  fetched from the bucket once and kept; with Supabase down only that file
+  fails (503, `no-store`);
+- the files come down after the response, in parallel, when a content is
+  refreshed or served without its delivery version; it is written once every
+  file is on disk. Until then the response is built from what is on disk.
+
+A file never changes (a new upload is a new name), so a copy is never deleted;
+the bucket stays the original (a lost disk is refilled from it). The pages'
+ETag gets `-a<rev>` (`ASSETS_ETAG`). After a deploy, the warm-up builds every
+content on disk at once:
+
+```bash
+php -r 'define("DAYONE_ENTRY", true); require "_dayone/bootstrap.php"; echo json_encode(assets_warm()), "\n";'
+```
 
 ### `{{key}}` placeholders (`src/placeholders.php`)
 

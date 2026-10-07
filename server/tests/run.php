@@ -10,6 +10,8 @@ declare(strict_types=1);
 
 $tmp = sys_get_temp_dir() . '/dayone-pages-test-' . getmypid();
 putenv("CACHE_DIR=$tmp");
+putenv("ASSETS_DIR=$tmp/assets");
+putenv('SUPABASE_URL=https://testref.supabase.co'); // the pages' bucket URLs (assets.test.php); no test calls it
 putenv('CACHE_TTL=2');
 putenv('NEGATIVE_TTL=1');
 putenv('STALE_MAX_AGE=10');

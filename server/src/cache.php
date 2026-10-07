@@ -17,6 +17,10 @@
  *       why the file never needs to be invalidated: it only goes in the
  *       cleanup (cache_gc_content), when no route has used it for days.
  *
+ *   content/<h2>/<content_hash>.a<rev>.php
+ *       the same HTML as it is served: the pages' files on this server and
+ *       the bucket stylesheets inline (assets.php).
+ *
  * A routes entry only counts as a HIT if ALL the content it references is on
  * disk; otherwise it becomes a MISS, and the refresh asks Supabase only for
  * the missing HTML (pages.content_get).
@@ -79,6 +83,12 @@ function content_file(string $id): string
 {
     $safe = preg_replace('/[^a-f0-9]/', '', strtolower($id)) ?? '';
     return cache_dir() . '/content/' . substr($safe, 0, 2) . '/' . $safe . '.php';
+}
+
+/** A content's delivery version (assets.php): next to it, same cleanup. */
+function content_built_file(string $id): string
+{
+    return substr(content_file($id), 0, -4) . '.a' . ASSETS_REV . '.php';
 }
 
 function atomic_write(string $file, string $data): bool
@@ -177,11 +187,15 @@ function cache_has_content(string $id): bool
     return $id !== '' && is_file(content_file($id));
 }
 
-/** Marks the content as in use (the cleanup looks at the file's mtime). */
+/** Marks the content (and its delivery version) as in use (the cleanup looks at the file's mtime). */
 function cache_touch_content(string $id): void
 {
     if ($id !== '') {
         @touch(content_file($id));
+        $built = content_built_file($id);
+        if (is_file($built)) {
+            @touch($built);
+        }
     }
 }
 
