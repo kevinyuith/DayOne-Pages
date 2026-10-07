@@ -440,6 +440,14 @@ check('fingerprint: undecidable os_match dropped', !isset($fpOs['consist']['os_m
 // wd_getter spoofed.
 $fpWd = eval_device_fingerprint(['wdg' => 0]);
 same('fingerprint: wd_getter spoofed', 'spoofed', $fpWd['bot']['wd_getter'] ?? null);
+// The nav-timing signals (ntcp/ntfb/nre): the page's own connection, in env.
+$fpNav = eval_device_fingerprint(['ntcp' => 175, 'ntfb' => 225]);
+same('fingerprint: nav connect', 175, $fpNav['env']['nav_connect_ms'] ?? null);
+same('fingerprint: nav ttfb', 225, $fpNav['env']['nav_ttfb_ms'] ?? null);
+check('fingerprint: no conn_reused when ntcp was sent', !isset($fpNav['env']['conn_reused']));
+$fpNavRe = eval_device_fingerprint(['nre' => 1, 'ntfb' => 100]);
+same('fingerprint: conn reused', 1, $fpNavRe['env']['conn_reused'] ?? null);
+check('fingerprint: no nav_connect_ms on a reused connection', !isset($fpNavRe['env']['nav_connect_ms']));
 // Unknown signals don't appear (unknown ≠ empty), and an empty set is no fingerprint.
 check('fingerprint: missing keys absent', !isset($fp['hw']['color_depth']) && !isset($fp['env']['conn']));
 same('fingerprint: empty signals → null', null, eval_device_fingerprint([]));

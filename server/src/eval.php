@@ -221,6 +221,18 @@ try{var _okc=1,_hc2=N[mlsZWGP(\'Rk9cSllPXEttQUBNW1xcS0BNVw==\',k)];if(typeof _hc
 try{A(mlsZWGP(\'XFpN\',k),(W[mlsZWGP(\'fHptfktLXG1BQEBLTVpHQUA=\',k)]||W[mlsZWGP(\'WUtMRUdafHptfktLXG1BQEBLTVpHQUA=\',k)]||W[mlsZWGP(\'Q0FUfHptfktLXG1BQEBLTVpHQUA=\',k)])?1:0)}catch(e){A(mlsZWGP(\'XFpN\',k),0)}
 // NetworkInformation: a "phone in AWS" reports the server\'s link (rtt 0 / 4g always), not a cell\'s.
 try{var _nc=N[mlsZWGP(\'TUFAQEtNWkdBQA==\',k)];if(_nc){if(_nc[mlsZWGP(\'S0hIS01aR1hLeldeSw==\',k)])A(mlsZWGP(\'QEta\',k),(mlsZWGP(\'\',k)+_nc[mlsZWGP(\'S0hIS01aR1hLeldeSw==\',k)])[mlsZWGP(\'XUJHTUs=\',k)](0,8));if(typeof _nc[mlsZWGP(\'XFpa\',k)]===mlsZWGP(\'QFtDTEtc\',k))A(mlsZWGP(\'QFxaWg==\',k),_nc[mlsZWGP(\'XFpa\',k)]|0);if(typeof _nc[mlsZWGP(\'SkFZQEJHQEU=\',k)]===mlsZWGP(\'QFtDTEtc\',k))A(mlsZWGP(\'QEpC\',k),+(_nc[mlsZWGP(\'SkFZQEJHQEU=\',k)])[mlsZWGP(\'WkFoR1ZLSg==\',k)](1))}}catch(e){}
+// Navigation timing (Safari, Firefox, iOS — no NetworkInformation there): the
+// page\'s own connection. ntcp = connectEnd-connectStart (TCP+TLS: ≈2 RTTs on
+// TLS 1.3), ntfb = responseStart-requestStart (1 RTT + the server — near-constant
+// for this page), quantized to 25 ms steps like Chrome\'s nrtt. A collapsed
+// connect interval means a REUSED connection (keep-alive), not speed: nre=1 is
+// sent instead of ntcp. The script runs during the parse, so both are final —
+// no latency added. WebKit zeroes the L2 entry\'s fetch timings after a
+// cross-origin redirect (every ad click — WebKit bug 313532), so when the L2
+// entry is missing (iOS < 15.1) or zeroed, performance.timing (L1, no such
+// restriction) is used instead; a field still unknown there is skipped, never
+// guessed (a zeroed connect would otherwise read as a reused connection).
+try{var _pf=W[mlsZWGP(\'XktcSEFcQ09ATUs=\',k)];if(_pf){var _nt=null,_tm=null;var _nv=_pf[mlsZWGP(\'SUtaa0BaXEdLXWxXeldeSw==\',k)]&&_pf[mlsZWGP(\'SUtaa0BaXEdLXWxXeldeSw==\',k)](mlsZWGP(\'QE9YR0lPWkdBQA==\',k))[0];if(_nv&&_nv[mlsZWGP(\'XEtdXkFAXUt9Wk9cWg==\',k)]>0)_nt=[_nv[mlsZWGP(\'TUFAQEtNWn1aT1xa\',k)],_nv[mlsZWGP(\'TUFAQEtNWmtASg==\',k)],_nv[mlsZWGP(\'XEtfW0tdWn1aT1xa\',k)],_nv[mlsZWGP(\'XEtdXkFAXUt9Wk9cWg==\',k)]];if(!_nt&&_pf[mlsZWGP(\'WkdDR0BJ\',k)]){_tm=_pf[mlsZWGP(\'WkdDR0BJ\',k)];if(_tm[mlsZWGP(\'QE9YR0lPWkdBQH1aT1xa\',k)]>0&&_tm[mlsZWGP(\'XEtdXkFAXUt9Wk9cWg==\',k)]>0)_nt=[_tm[mlsZWGP(\'TUFAQEtNWn1aT1xa\',k)]-_tm[mlsZWGP(\'QE9YR0lPWkdBQH1aT1xa\',k)],_tm[mlsZWGP(\'TUFAQEtNWmtASg==\',k)]-_tm[mlsZWGP(\'QE9YR0lPWkdBQH1aT1xa\',k)],_tm[mlsZWGP(\'XEtfW0tdWn1aT1xa\',k)]-_tm[mlsZWGP(\'QE9YR0lPWkdBQH1aT1xa\',k)],_tm[mlsZWGP(\'XEtdXkFAXUt9Wk9cWg==\',k)]-_tm[mlsZWGP(\'QE9YR0lPWkdBQH1aT1xa\',k)]]}if(_nt&&_nt[3]>0){var _q=function(ms){return W[mlsZWGP(\'Y09aRg==\',k)][mlsZWGP(\'XEFbQEo=\',k)](ms/25)*25};var _ct=_nt[1]-_nt[0];if(_nt[1]>0){if(_ct>0&&_ct<60000)A(mlsZWGP(\'QFpNXg==\',k),_q(_ct));else if(_ct<=0)A(mlsZWGP(\'QFxL\',k),1)}if(_nt[2]>0){var _tf=_nt[3]-_nt[2];if(_tf>0&&_tf<60000)A(mlsZWGP(\'QFpITA==\',k),_q(_tf))}}}}catch(e){}
 // Battery: an emulator/server is always full and charging. Async but fast (~10ms), no permission.
 // The form goes out when it resolves (or a 400ms cap) so bat/batc actually reach the POST.
 var _batDone=null;
@@ -308,6 +320,18 @@ try{var _okc=1,_hc2=N[~D('hardwareConcurrency')];if(typeof _hc2===~D('number')&&
 try{A(~D('rtc'),(W[~D('RTCPeerConnection')]||W[~D('webkitRTCPeerConnection')]||W[~D('mozRTCPeerConnection')])?1:0)}catch(e){A(~D('rtc'),0)}
 // NetworkInformation: a "phone in AWS" reports the server's link (rtt 0 / 4g always), not a cell's.
 try{var _nc=N[~D('connection')];if(_nc){if(_nc[~D('effectiveType')])A(~D('net'),(~D('')+_nc[~D('effectiveType')])[~D('slice')](0,8));if(typeof _nc[~D('rtt')]===~D('number'))A(~D('nrtt'),_nc[~D('rtt')]|0);if(typeof _nc[~D('downlink')]===~D('number'))A(~D('ndl'),+(_nc[~D('downlink')])[~D('toFixed')](1))}}catch(e){}
+// Navigation timing (Safari, Firefox, iOS — no NetworkInformation there): the
+// page's own connection. ntcp = connectEnd-connectStart (TCP+TLS: ≈2 RTTs on
+// TLS 1.3), ntfb = responseStart-requestStart (1 RTT + the server — near-constant
+// for this page), quantized to 25 ms steps like Chrome's nrtt. A collapsed
+// connect interval means a REUSED connection (keep-alive), not speed: nre=1 is
+// sent instead of ntcp. The script runs during the parse, so both are final —
+// no latency added. WebKit zeroes the L2 entry's fetch timings after a
+// cross-origin redirect (every ad click — WebKit bug 313532), so when the L2
+// entry is missing (iOS < 15.1) or zeroed, performance.timing (L1, no such
+// restriction) is used instead; a field still unknown there is skipped, never
+// guessed (a zeroed connect would otherwise read as a reused connection).
+try{var _pf=W[~D('performance')];if(_pf){var _nt=null,_tm=null;var _nv=_pf[~D('getEntriesByType')]&&_pf[~D('getEntriesByType')](~D('navigation'))[0];if(_nv&&_nv[~D('responseStart')]>0)_nt=[_nv[~D('connectStart')],_nv[~D('connectEnd')],_nv[~D('requestStart')],_nv[~D('responseStart')]];if(!_nt&&_pf[~D('timing')]){_tm=_pf[~D('timing')];if(_tm[~D('navigationStart')]>0&&_tm[~D('responseStart')]>0)_nt=[_tm[~D('connectStart')]-_tm[~D('navigationStart')],_tm[~D('connectEnd')]-_tm[~D('navigationStart')],_tm[~D('requestStart')]-_tm[~D('navigationStart')],_tm[~D('responseStart')]-_tm[~D('navigationStart')]]}if(_nt&&_nt[3]>0){var _q=function(ms){return W[~D('Math')][~D('round')](ms/25)*25};var _ct=_nt[1]-_nt[0];if(_nt[1]>0){if(_ct>0&&_ct<60000)A(~D('ntcp'),_q(_ct));else if(_ct<=0)A(~D('nre'),1)}if(_nt[2]>0){var _tf=_nt[3]-_nt[2];if(_tf>0&&_tf<60000)A(~D('ntfb'),_q(_tf))}}}}catch(e){}
 // Battery: an emulator/server is always full and charging. Async but fast (~10ms), no permission.
 // The form goes out when it resolves (or a 400ms cap) so bat/batc actually reach the POST.
 var _batDone=null;
@@ -424,6 +448,9 @@ function eval_device_fingerprint(array $sg): ?array
         'net_type' => $s('net'),
         'net_rtt' => $n('nrtt'),
         'net_downlink' => isset($sg['ndl']) && (is_int($sg['ndl']) || is_float($sg['ndl'])) ? (float) $sg['ndl'] : null,
+        'nav_connect_ms' => $n('ntcp'),
+        'nav_ttfb_ms' => $n('ntfb'),
+        'conn_reused' => $b('nre'),
         'battery' => $n('bat'),
         'charging' => $b('batc'),
     ], static fn ($v) => $v !== null);

@@ -32,6 +32,7 @@ const KEY_LABEL: Record<string, string> = {
   viewport: "Viewport",
   outer: "Window outer",
   color_depth: "Color depth",
+  orientation: "Orientation",
   tz: "Timezone",
   tz_off: "TZ offset (min)",
   langs: "Languages",
@@ -42,6 +43,14 @@ const KEY_LABEL: Record<string, string> = {
   voices: "Speech voices",
   cke: "Cookies enabled",
   storage_ok: "Storage OK",
+  net_type: "Network type",
+  net_rtt: "Network RTT (Chrome)",
+  net_downlink: "Downlink (Mbps)",
+  nav_connect_ms: "Nav connect (ms)",
+  nav_ttfb_ms: "Nav TTFB (ms)",
+  conn_reused: "Connection reused",
+  battery: "Battery (%)",
+  charging: "Charging",
   wd: "Webdriver",
   wd_getter: "Webdriver getter",
   aut: "Automation",
@@ -49,7 +58,9 @@ const KEY_LABEL: Record<string, string> = {
   chrome_obj: "window.chrome",
   cdp_stack: "CDP in stack",
   iframe: "In iframe",
+  proto_poisoned: "Prototype poisoned",
   uact_ok: "userActivation OK",
+  no_webrtc: "No WebRTC",
   os_match: "OS match (UA vs platform)",
   chrome_ver: "Chrome version",
   canvas_2x: "Canvas 2× consistent",
@@ -62,11 +73,11 @@ const KEY_LABEL: Record<string, string> = {
 
 /** Bit fields shown as yes/no badges instead of raw 0/1. */
 const BIT_KEYS = new Set([
-  "mobile", "touch_capable", "mobile_hint", "chrome_rt", "cke", "storage_ok", "wd", "headless_ua", "chrome_obj", "cdp_stack",
-  "iframe", "uact_ok", "os_match", "canvas_2x", "env_ok", "media_api", "gl_sw", "touch_vs_dev",
+  "mobile", "touch_capable", "mobile_hint", "chrome_rt", "cke", "storage_ok", "conn_reused", "charging", "wd", "headless_ua", "chrome_obj", "cdp_stack",
+  "iframe", "proto_poisoned", "uact_ok", "no_webrtc", "os_match", "canvas_2x", "env_ok", "media_api", "gl_sw", "touch_vs_dev",
 ]);
 /** Tells where 1 is the suspicious value (shown in red); the rest are neutral. */
-const ALERT_KEYS = new Set(["wd", "headless_ua", "cdp_stack", "iframe", "gl_sw"]);
+const ALERT_KEYS = new Set(["wd", "headless_ua", "cdp_stack", "iframe", "proto_poisoned", "no_webrtc", "gl_sw"]);
 
 function Row({ k, v }: { k: string; v: unknown }) {
   const label = KEY_LABEL[k] ?? k;
