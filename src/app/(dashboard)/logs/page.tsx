@@ -15,7 +15,7 @@ import { connectionType } from "@/lib/connection";
 import { deviceModel } from "@/lib/device-model";
 import { browserFromUA, osFromUA } from "@/lib/user-agent";
 import { normalizeHost } from "@/lib/pages/normalize";
-import { FUNNEL_DECISIONS, hitPlatforms, listDomains, listHits, unregisteredHosts, type HitLogRow } from "@/lib/pages/queries";
+import { FUNNEL_DECISIONS, hitPlatforms, listDomains, listHits, unregisteredHosts, type HitLogRow, type IpBlock } from "@/lib/pages/queries";
 import { listRules } from "@/lib/pages/rules";
 import { APP_TZ } from "@/lib/time-zone";
 import { registerSeenDomain } from "../domains/actions";
@@ -36,7 +36,7 @@ const loadFmt = new Intl.NumberFormat("en-US", { minimumFractionDigits: 1, maxim
  * Every request logged in pages.hits, with all columns, newest to oldest.
  * Filters in a GET form, no JS (?domain=<id> and hit-filters.ts: platform,
  * result, rule — a label or one rule's id —, flow, unique, funnel, interaction,
- * device, country, ip) and cursor pagination (?before=<id>) that keeps them. An
+ * device, IP block, country, ip) and cursor pagination (?before=<id>) that keeps them. An
  * unregistered host gets a button to register it right there.
  */
 export default async function LogsPage({
@@ -102,6 +102,7 @@ export default async function LogsPage({
         <FilterSelect name="funnel" label="Funnel" value={filters.funnel} options={HIT_FILTER_OPTIONS.funnel} all="Funnel: all" />
         <FilterSelect name="interaction" label="Interaction" value={filters.interaction} options={HIT_FILTER_OPTIONS.interaction} all="Interaction: all" />
         <FilterSelect name="device" label="Device" value={filters.device} options={HIT_FILTER_OPTIONS.device} all="All devices" />
+        <FilterSelect name="block" label="IP block" value={filters.block} options={HIT_FILTER_OPTIONS.block} all="All IP blocks" />
         <FilterInput name="country" label="Country" value={filters.country} placeholder="Country" maxLength={2} className="w-24 uppercase placeholder:normal-case" />
         <FilterInput name="ip" label="IP" value={filters.ip} placeholder="IP" maxLength={45} className="w-44 font-mono" />
         <Button type="submit" variant="secondary">
@@ -120,7 +121,7 @@ export default async function LogsPage({
           description="Requests show up here as the delivery server logs them."
         />
       ) : (
-        <Table className="min-w-[4380px] [&_td]:px-6 [&_td]:py-3 [&_th]:whitespace-nowrap [&_th]:px-6 [&_th]:py-3">
+        <Table className="min-w-[4620px] [&_td]:px-6 [&_td]:py-3 [&_th]:whitespace-nowrap [&_th]:px-6 [&_th]:py-3">
           <thead>
             <tr>
               <Th>Date</Th>
@@ -165,6 +166,9 @@ export default async function LogsPage({
               <Th>Hostname</Th>
               <Th>ASN</Th>
               <Th title="Estimated from the ASN (approximate). The server can't tell WiFi from cable.">Connection</Th>
+              <Th title="Who the registry (ARIN, RIPE, APNIC, LACNIC, AFRINIC) delegated the IP's block to, compared with the owner of the AS that routes it. ISP's own = same owner; other owner = another owner in the same country (an ISP's other company, its upstream, a customer, or a lease); foreign = another owner registered in another country. Hover for the owners' ids.">
+                IP block
+              </Th>
               <Th>User-Agent</Th>
               <Th>Cookies</Th>
             </tr>
@@ -332,6 +336,9 @@ export default async function LogsPage({
                     )}
                   </Td>
                   <Td className="whitespace-nowrap text-muted">{connectionType(h.asn, h.as_name) ?? "—"}</Td>
+                  <Td className="min-w-[200px]">
+                    <IpBlockCell block={h.ip_block} />
+                  </Td>
                   <Td className="min-w-[280px] max-w-[420px] break-all font-mono text-[11px] leading-snug text-muted">{h.user_agent || "—"}</Td>
                   <Td className="min-w-[240px] max-w-[360px] font-mono text-[11px] leading-snug text-muted">
                     {h.cookies ? (
@@ -553,6 +560,35 @@ function Model({ hit }: { hit: HitLogRow }) {
     <span className="flex flex-col items-start" title={m.estimated ? `Estimated from the screen size (${m.code}). Display Zoom makes a bigger iPhone read as a smaller one.` : undefined}>
       <span className={m.estimated ? "text-xs text-muted" : "text-xs font-medium"}>{m.estimated ? `~${m.name}` : m.name}</span>
       {m.code && !m.estimated ? <span className="font-mono text-[11px] text-muted">{m.code}</span> : null}
+    </span>
+  );
+}
+
+const RIR_LABEL: Record<IpBlock["rir"], string> = { arin: "ARIN", ripe: "RIPE", apnic: "APNIC", lacnic: "LACNIC", afrinic: "AFRINIC" };
+
+/**
+ * The IP's block (pages.hits.ip_block): how its owner relates to the routing AS's,
+ * the block, and its registry · country · year · owner (the first 8 characters of
+ * its id, enough to tell owners apart). The full ids on hover.
+ */
+function IpBlockCell({ block: b }: { block: IpBlock | null }) {
+  if (!b) return <span className="text-muted">—</span>;
+  const relation =
+    b.relation === "foreign"
+      ? { label: `foreign owner${b.cc ? ` · ${b.cc}` : ""}`, tone: "danger" as const }
+      : b.relation === "other"
+        ? { label: "other owner", tone: "warning" as const }
+        : b.relation === "same"
+          ? { label: "ISP's own", tone: "neutral" as const }
+          : null;
+  const title = [`Block ${b.range} (${b.status})`, `Owner ${b.holder ?? "—"}`, `AS owner ${b.asn_holder ?? "—"}${b.asn_cc ? ` (${b.asn_cc})` : ""}`].join("\n");
+  return (
+    <span className="flex flex-col items-start gap-0.5" title={title}>
+      {relation ? <Badge tone={relation.tone}>{relation.label}</Badge> : null}
+      <span className="whitespace-nowrap font-mono text-[11px] text-muted">{b.range}</span>
+      <span className="whitespace-nowrap text-[11px] text-muted">
+        {[RIR_LABEL[b.rir] ?? b.rir, b.cc, b.date?.slice(0, 4), b.holder ? `owner ${b.holder.slice(0, 8)}` : null].filter(Boolean).join(" · ")}
+      </span>
     </span>
   );
 }

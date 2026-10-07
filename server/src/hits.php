@@ -11,7 +11,8 @@
  * device and bot (from the User-Agent), referrer host, IP, hostname (reverse
  * DNS of the IP), ASN, raw User-Agent and Cookie header, the route that decided
  * (route, page, slug, decision), the final URL (Location) if it was a redirect
- * and, if it was an HTML page, the visit id of the load notice (beacon.php).
+ * and, if it was an HTML page, the visit id of the load notice (beacon.php),
+ * and the registry delegation of the IP's block (ip_block, rirdb.php).
  * When the device checkpoint is on (eval.php), the decision gains its mark:
  * " · EVAL" (the interstitial page itself) or " · EVAL-PREFETCH" (a prefetch
  * skipped it and stayed on the domain's page).
@@ -83,6 +84,8 @@ function log_hit(Request $req, int $status, string $outcome, ?string $domainId, 
         'p_gate_reason'   => in_array($route['_gate_reason'] ?? null, GATE_REASONS, true) ? $route['_gate_reason'] : null,
         // The device fingerprint (eval.php): the checkpoint POST's signals, structured. Only the POST's hit has it.
         'p_device_fingerprint' => is_array($req->deviceFingerprint ?? null) ? $req->deviceFingerprint : null,
+        // Who the IP's block was delegated to, and how that owner relates to the AS that routes it (rirdb.php, local table).
+        'p_ip_block'      => ip_block($req->ip, $known['asn']),
     ]);
 
     $learned = ['hit_id' => $id, 'asn' => $known['asn'], 'as_name' => $known['as_name'], 'hostname' => $known['hostname']];

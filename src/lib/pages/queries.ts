@@ -739,6 +739,25 @@ export async function unregisteredHosts(since: Date | null = null): Promise<Unre
   }));
 }
 
+/**
+ * pages.hits.ip_block (server/src/rirdb.php): the registry delegation that holds
+ * the IP — range, registry, country, date, status, owner id (opaque, the same on
+ * every block of one organization) — and the routing AS's owner id and country.
+ * relation: "same" = the ISP's own block; "other" = another owner in the same
+ * country; "foreign" = another owner registered in another country.
+ */
+export type IpBlock = {
+  range: string;
+  rir: "arin" | "ripe" | "apnic" | "lacnic" | "afrinic";
+  cc: string | null;
+  date: string | null;
+  status: string;
+  holder: string | null;
+  asn_holder: string | null;
+  asn_cc: string | null;
+  relation: "same" | "other" | "foreign" | null;
+};
+
 /** A hit with everything pages.hits stores (for the Logs screen). */
 export type HitLogRow = HitRow & {
   id: number;
@@ -796,6 +815,8 @@ export type HitLogRow = HitRow & {
    * ua/hw/env/bot/consist. Only a checkpoint POST's hit has it; null on any other.
    */
   device_fingerprint: Record<string, unknown> | null;
+  /** Who the registry delegated the IP's block to, vs the owner of the AS that routes it (the delivery server's local table); null = not recorded. */
+  ip_block: IpBlock | null;
   /** Registered domain (pages.domains), not the request's host. */
   domain: string | null;
   page_name: string | null;
@@ -819,7 +840,7 @@ export async function listHits(
     .select(
       "id, created_at, domain_id, host, path, outcome, status_code, country, device, is_bot, referrer_host, ip, user_agent, " +
         "hostname, asn, as_name, cookies, region, route_id, page_id, slug, decision, query, redirect_url, visit_id, rule_label, rule, rule_reason, rule_tags, rule_matches, gate_reason, funnel, " +
-        "loaded_at, load_ms, accept_language, interaction, interaction_ms, clicked_at, duration_ms, is_unique, signals, device_fingerprint, domains(domain)",
+        "loaded_at, load_ms, accept_language, interaction, interaction_ms, clicked_at, duration_ms, is_unique, signals, device_fingerprint, ip_block, domains(domain)",
     )
     .order("id", { ascending: false })
     .limit(limit + 1);
@@ -843,6 +864,7 @@ export async function listHits(
   if (f.country) q = q.eq("country", f.country);
   if (f.ip) q = q.eq("ip", f.ip);
   if (f.platform) q = q.eq("platform", f.platform);
+  if (f.block) q = q.eq("ip_block->>relation", f.block);
   // rule_tags is a jsonb array: containment, so ["Crawler","TikTok"] matches the flow "Crawler".
   if (f.flow) q = q.contains("rule_tags", JSON.stringify([f.flow]));
   const { data, error } = await q;

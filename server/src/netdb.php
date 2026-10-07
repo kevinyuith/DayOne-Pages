@@ -133,9 +133,18 @@ function netdb_as_name(int $asn): ?string
 function netdb_find(string $file, int $recLen, string $bin): ?string
 {
     $h = netdb_handle($file);
-    if ($h === null) {
-        return null;
-    }
+    return $h === null ? null : range_find($h, $recLen, $bin);
+}
+
+/**
+ * In a file of sorted, non-overlapping fixed-size records that start with
+ * start · end (big-endian, as long as $bin), the record whose range holds the
+ * packed $bin, or null. Also used by rirdb.php.
+ *
+ * @param resource $h
+ */
+function range_find($h, int $recLen, string $bin): ?string
+{
     $n = intdiv((int) (fstat($h)['size'] ?? 0), $recLen);
     $keyLen = strlen($bin);
     $lo = 0;

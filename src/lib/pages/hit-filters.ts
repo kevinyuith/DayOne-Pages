@@ -39,6 +39,12 @@ export const HIT_FILTER_OPTIONS = {
     ["mobile", "Mobile"],
     ["tablet", "Tablet"],
   ],
+  /** The IP's block vs the routing AS (pages.hits.ip_block->>relation). */
+  block: [
+    ["foreign", "Block: foreign owner"],
+    ["other", "Block: other owner"],
+    ["same", "Block: ISP's own"],
+  ],
 } as const satisfies Record<string, readonly (readonly [string, string])[]>;
 
 type Options = typeof HIT_FILTER_OPTIONS;

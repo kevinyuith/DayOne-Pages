@@ -175,4 +175,6 @@ function dayone_handle(): void
 
     // The local IP → ASN/country table: rebuilt once a day, by one process, with nobody waiting.
     netdb_maybe_refresh();
+    // The local table of who each IP block was delegated to (the hit's ip_block): the same.
+    rirdb_maybe_refresh();
 }
