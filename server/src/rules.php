@@ -14,9 +14,10 @@
  * runs the rules but no slug is allowed — a clean click always gets the
  * domain's page, never the funnel; UNLOCKED ignores the rules and the
  * gate_slugs — every slug goes straight to the sub1's [F…] funnel (404 when
- * it has no live page); a page request whose sub1 names no funnel gets the
- * funnel picker (picker.php) and goes to the one picked (?dop_funnel=).
- * ACTIVE is the behavior below.
+ * it has no live page); a page request whose sub1 names no funnel goes to the
+ * domain's default funnel (gate_default_funnel) or, on a domain without one,
+ * gets the funnel picker (picker.php) and goes to the one picked
+ * (?dop_funnel=). ACTIVE is the behavior below.
  *
  * The rules walk: the first one whose conditions ALL match marks the click
  * with the rule's LABEL and it gets the domain's page at the requested slug.
@@ -143,22 +144,30 @@ function gate_pick(array $routes, array $gate, Request $req): ?array
     parse_str($req->rawQuery, $params);
     $sub1 = is_scalar($params['sub1'] ?? null) ? (string) $params['sub1'] : '';
     $code = gate_funnel_code($sub1);
-    // An UNLOCKED domain whose sub1 names no funnel takes the visitor's choice
+    // An UNLOCKED domain whose sub1 names no funnel: a page request goes to
+    // its default funnel when it has one (the picker never shows, and
+    // ?dop_funnel= means nothing); without one, it takes the visitor's choice
     // in the funnel picker (?dop_funnel=). The sub1's token always wins, and
-    // any other status ignores the parameter.
+    // any other status ignores both.
     $sub1Code = $code;
+    $defaultCode = $status === 'UNLOCKED' ? gate_default_funnel($gate) : null;
     if ($status === 'UNLOCKED' && $code === null) {
-        $code = picker_choice($params);
+        if ($defaultCode === null) {
+            $code = picker_choice($params);
+        } elseif (picker_applies($req)) {
+            $code = $defaultCode;
+        }
     }
     $funnel = $code !== null && is_array($gate['funnels'] ?? null) ? ($gate['funnels'][$code] ?? null) : null;
     $split = is_array($funnel['split'] ?? null) ? array_values(array_filter($funnel['split'], 'is_array')) : [];
     if ($split === []) {
-        // An UNLOCKED domain serves funnels only. A sub1 without a funnel gets
-        // the funnel picker on a page request (picked one not live: the picker
-        // again); a sub1 [F…] without a live split (the data only has funnels
-        // with a live page), or anything but a page (robots.txt, assets) → 404.
+        // An UNLOCKED domain serves funnels only. A sub1 without a funnel, on a
+        // domain without a default funnel, gets the funnel picker on a page
+        // request (picked one not live: the picker again); a sub1 [F…] or a
+        // default funnel without a live split (the data only has funnels with
+        // a live page), or anything but a page (robots.txt, assets) → 404.
         if ($status === 'UNLOCKED') {
-            return $sub1Code === null && picker_applies($req)
+            return $sub1Code === null && $defaultCode === null && picker_applies($req)
                 ? picker_route($domainId, $req->path, $gate, $code)
                 : gate_always_404($domainId, $req->path, 'domain_unlocked', $code);
         }
@@ -346,6 +355,19 @@ function gate_funnel_code(string $sub1): ?string
         return null;
     }
     return strtoupper($m[1]);
+}
+
+/**
+ * An UNLOCKED domain's default funnel: the code a click whose sub1 names no
+ * funnel goes to, in place of the funnel picker. dayone-main's dashboard sets
+ * it when it unlocks the domain (pages.domains.settings.default_funnel) and
+ * the resolve's gate carries it as `default_funnel`; null without one (or an
+ * old cache).
+ */
+function gate_default_funnel(array $gate): ?string
+{
+    $value = is_string($gate['default_funnel'] ?? null) ? trim($gate['default_funnel']) : '';
+    return preg_match('/^f\d+$/i', $value) === 1 ? strtoupper($value) : null;
 }
 
 /**

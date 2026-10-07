@@ -4,7 +4,9 @@
  *
  * An UNLOCKED domain ignores the rules and serves funnels only (rules.php):
  * a sub1 with an [F…] token goes straight to that funnel, as always (404 when
- * it has no live page). A page request whose sub1 names NO funnel gets this
+ * it has no live page). A page request whose sub1 names NO funnel goes to the
+ * domain's default funnel when it has one (gate_default_funnel — then this
+ * page never shows and dop_funnel means nothing); without one, it gets this
  * page instead of a 404: a select with the gate's live funnels (the resolve
  * only carries funnels with a live page), code and name, and an Open button —
  * a GET form back to the SAME URL that adds ?dop_funnel=<code>; the rest of

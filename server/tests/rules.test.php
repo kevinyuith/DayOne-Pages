@@ -215,6 +215,38 @@ same('active: dop_funnel is ignored', ['GATE-SAFE', 'home01', 'no_funnel_token']
 [, , , , $route] = decide($root, make_request(['REQUEST_URI' => '/?dop_funnel=F23']), $locked);
 same('locked: dop_funnel is ignored', ['GATE-SAFE', 'domain_locked'], [$route['match_type'], $route['_gate_reason'] ?? null]);
 
+// The domain's default funnel (settings.default_funnel, in the gate data): a
+// click whose sub1 names no funnel goes to it — the picker never shows.
+$unlockedDefault = [...$unlockedNamed, 'default_funnel' => 'F23'];
+[$st, $hd, $body, $outcome, $route] = decide($root, make_request(['REQUEST_URI' => '/?sub1=plain&ttclid=abc']), $unlockedDefault);
+same('unlocked default: the funnel, not the picker', [200, 'served', 'GATE', 'SERVE · GATE', 'F23'], [$st, $outcome, $route['match_type'], hit_decision($route), $route['_funnel'] ?? null]);
+check('unlocked default: one of F23 pages', in_array($route['content_hash'], ['fade01', 'fade02'], true));
+check('unlocked default: no gate reason', !isset($route['_gate_reason']));
+check('unlocked default: a funnel page (beacon)', beacon_applies($route, make_request(['REQUEST_URI' => '/?sub1=plain'])));
+[$st, , , , $route] = decide($root, make_request(), $unlockedDefault);
+same('unlocked default: no query at all', [200, 'GATE', 'F23'], [$st, $route['match_type'], $route['_funnel'] ?? null]);
+[$st, , , , $route] = decide($oferta, make_request(['REQUEST_URI' => '/oferta']), $unlockedDefault);
+same('unlocked default: at any page slug', [200, 'GATE', 'F23'], [$st, $route['match_type'], $route['_funnel'] ?? null]);
+[, , , , $route] = decide($root, make_request(['REQUEST_URI' => '/?sub1=x[F7]']), $unlockedDefault);
+same('unlocked default: the sub1 token wins', ['GATE', 'F7'], [$route['match_type'], $route['_funnel'] ?? null]);
+[, , , , $route] = decide($root, make_request(['REQUEST_URI' => '/?dop_funnel=F7']), $unlockedDefault);
+same('unlocked default: dop_funnel is ignored', ['GATE', 'F23'], [$route['match_type'], $route['_funnel'] ?? null]);
+[$st, , , $outcome, $route] = decide($root, make_request(['REQUEST_URI' => '/app.js']), $unlockedDefault);
+same('unlocked default: an asset is still a 404', [404, 'notfound', 'domain_unlocked'], [$st, $outcome, $route['_gate_reason'] ?? null]);
+check('unlocked default: an asset logs no funnel', !isset($route['_funnel']));
+// A default funnel that isn't live → 404 (like a sub1 token), never the picker.
+[$st, , , $outcome, $route] = decide($root, make_request(['REQUEST_URI' => '/?sub1=plain']), [...$unlockedNamed, 'default_funnel' => 'F30']);
+same('unlocked default not live: 404, code logged', [404, 'notfound', 'F30', 'domain_unlocked'], [$st, $outcome, $route['_funnel'] ?? null, $route['_gate_reason'] ?? null]);
+// Not a funnel code: as if there were none — the picker.
+[, , , , $route] = decide($root, make_request(['REQUEST_URI' => '/?sub1=plain']), [...$unlockedNamed, 'default_funnel' => 'nope']);
+same('unlocked, invalid default: the picker', 'PICK', $route['match_type']);
+// Only UNLOCKED reads it: on ACTIVE a click without a token stays on the safe page.
+[, , , , $route] = decide($root, make_request(['REQUEST_URI' => '/?sub1=plain']), [...$gate, 'default_funnel' => 'F23']);
+same('active: the default funnel is ignored', ['GATE-SAFE', 'home01', 'no_funnel_token'], [$route['match_type'], $route['content_hash'], $route['_gate_reason'] ?? null]);
+same('default funnel: trimmed, uppercased', 'F19', gate_default_funnel(['default_funnel' => ' f19 ']));
+same('default funnel: not a code', null, gate_default_funnel(['default_funnel' => 'F19x']));
+same('default funnel: none', null, gate_default_funnel(['default_funnel' => null]));
+
 // picker_choice / picker_href
 same('picker choice: F23', 'F23', picker_choice(['dop_funnel' => ' f23 ']));
 same('picker choice: not a code', null, picker_choice(['dop_funnel' => 'F23x']));
