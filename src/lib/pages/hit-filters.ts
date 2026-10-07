@@ -45,6 +45,15 @@ export const HIT_FILTER_OPTIONS = {
     ["other", "Block: other owner"],
     ["same", "Block: ISP's own"],
   ],
+  /** Known anonymizers: is_vpn, or one vpn_kind (pages.hits). */
+  vpn: [
+    ["yes", "VPN, Tor or proxy"],
+    ["vpn", "VPN"],
+    ["tor", "Tor"],
+    ["isp_proxy", "ISP proxy"],
+    ["relay", "iCloud Private Relay"],
+    ["hosting", "Hosting"],
+  ],
 } as const satisfies Record<string, readonly (readonly [string, string])[]>;
 
 type Options = typeof HIT_FILTER_OPTIONS;

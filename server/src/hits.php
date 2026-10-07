@@ -12,7 +12,8 @@
  * DNS of the IP), ASN, raw User-Agent and Cookie header, the route that decided
  * (route, page, slug, decision), the final URL (Location) if it was a redirect
  * and, if it was an HTML page, the visit id of the load notice (beacon.php),
- * and the registry delegation of the IP's block (ip_block, rirdb.php).
+ * the registry delegation of the IP's block (ip_block, rirdb.php) and whether
+ * the IP is a known VPN/Tor/ISP proxy, relay or hosting network (anondb.php).
  * When the device checkpoint is on (eval.php), the decision gains its mark:
  * " · EVAL" (the interstitial page itself) or " · EVAL-PREFETCH" (a prefetch
  * skipped it and stayed on the domain's page).
@@ -44,6 +45,9 @@ function log_hit(Request $req, int $status, string $outcome, ?string $domainId, 
     // what the per-IP cache already knows (a rule may have looked it up); the
     // ASN/hostname lookups come after, into the same hit (log_hit_net).
     $known = netinfo_known($req->ip);
+    // Local tables, no network: who owns the IP's block (rirdb.php) and whether it's a known anonymizer (anondb.php).
+    $block = ip_block($req->ip, $known['asn']);
+    $anon = anon_classify($req->ip, $known['asn'], $block);
 
     $id = supabase_log_hit([
         'p_domain'        => $domainId,
@@ -85,7 +89,11 @@ function log_hit(Request $req, int $status, string $outcome, ?string $domainId, 
         // The device fingerprint (eval.php): the checkpoint POST's signals, structured. Only the POST's hit has it.
         'p_device_fingerprint' => is_array($req->deviceFingerprint ?? null) ? $req->deviceFingerprint : null,
         // Who the IP's block was delegated to, and how that owner relates to the AS that routes it (rirdb.php, local table).
-        'p_ip_block'      => ip_block($req->ip, $known['asn']),
+        'p_ip_block'      => $block,
+        // A known VPN, Tor exit or ISP proxy (is_vpn), or a relay/hosting network, and whose (anondb.php). null = no table.
+        'p_is_vpn'        => $anon['is_vpn'] ?? null,
+        'p_vpn_kind'      => $anon['kind'] ?? null,
+        'p_vpn_name'      => $anon['name'] ?? null,
     ]);
 
     $learned = ['hit_id' => $id, 'asn' => $known['asn'], 'as_name' => $known['as_name'], 'hostname' => $known['hostname']];

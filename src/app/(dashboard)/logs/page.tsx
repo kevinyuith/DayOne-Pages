@@ -36,7 +36,7 @@ const loadFmt = new Intl.NumberFormat("en-US", { minimumFractionDigits: 1, maxim
  * Every request logged in pages.hits, with all columns, newest to oldest.
  * Filters in a GET form, no JS (?domain=<id> and hit-filters.ts: platform,
  * result, rule — a label or one rule's id —, flow, unique, funnel, interaction,
- * device, IP block, country, ip) and cursor pagination (?before=<id>) that keeps them. An
+ * device, IP block, VPN, country, ip) and cursor pagination (?before=<id>) that keeps them. An
  * unregistered host gets a button to register it right there.
  */
 export default async function LogsPage({
@@ -103,6 +103,7 @@ export default async function LogsPage({
         <FilterSelect name="interaction" label="Interaction" value={filters.interaction} options={HIT_FILTER_OPTIONS.interaction} all="Interaction: all" />
         <FilterSelect name="device" label="Device" value={filters.device} options={HIT_FILTER_OPTIONS.device} all="All devices" />
         <FilterSelect name="block" label="IP block" value={filters.block} options={HIT_FILTER_OPTIONS.block} all="All IP blocks" />
+        <FilterSelect name="vpn" label="VPN" value={filters.vpn} options={HIT_FILTER_OPTIONS.vpn} all="VPN: all" />
         <FilterInput name="country" label="Country" value={filters.country} placeholder="Country" maxLength={2} className="w-24 uppercase placeholder:normal-case" />
         <FilterInput name="ip" label="IP" value={filters.ip} placeholder="IP" maxLength={45} className="w-44 font-mono" />
         <Button type="submit" variant="secondary">
@@ -121,7 +122,7 @@ export default async function LogsPage({
           description="Requests show up here as the delivery server logs them."
         />
       ) : (
-        <Table className="min-w-[4620px] [&_td]:px-6 [&_td]:py-3 [&_th]:whitespace-nowrap [&_th]:px-6 [&_th]:py-3">
+        <Table className="min-w-[4800px] [&_td]:px-6 [&_td]:py-3 [&_th]:whitespace-nowrap [&_th]:px-6 [&_th]:py-3">
           <thead>
             <tr>
               <Th>Date</Th>
@@ -168,6 +169,9 @@ export default async function LogsPage({
               <Th title="Estimated from the ASN (approximate). The server can't tell WiFi from cable.">Connection</Th>
               <Th title="Who the registry (ARIN, RIPE, APNIC, LACNIC, AFRINIC) delegated the IP's block to, compared with the owner of the AS that routes it. ISP's own = same owner; other owner = another owner in the same country (an ISP's other company, its upstream, a customer, or a lease); foreign = another owner registered in another country. Hover for the owners' ids.">
                 IP block
+              </Th>
+              <Th title="A known anonymizer, and whose: a commercial VPN, a Tor exit or an ISP proxy (a leasing company's block through a residential ISP) count as VPN; iCloud Private Relay and hosting networks are marked but don't. — = none of them; blank = not recorded.">
+                VPN
               </Th>
               <Th>User-Agent</Th>
               <Th>Cookies</Th>
@@ -338,6 +342,9 @@ export default async function LogsPage({
                   <Td className="whitespace-nowrap text-muted">{connectionType(h.asn, h.as_name) ?? "—"}</Td>
                   <Td className="min-w-[200px]">
                     <IpBlockCell block={h.ip_block} />
+                  </Td>
+                  <Td className="min-w-[160px] max-w-[240px]">
+                    <VpnCell hit={h} />
                   </Td>
                   <Td className="min-w-[280px] max-w-[420px] break-all font-mono text-[11px] leading-snug text-muted">{h.user_agent || "—"}</Td>
                   <Td className="min-w-[240px] max-w-[360px] font-mono text-[11px] leading-snug text-muted">
@@ -589,6 +596,31 @@ function IpBlockCell({ block: b }: { block: IpBlock | null }) {
       <span className="whitespace-nowrap text-[11px] text-muted">
         {[RIR_LABEL[b.rir] ?? b.rir, b.cc, b.date?.slice(0, 4), b.holder ? `owner ${b.holder.slice(0, 8)}` : null].filter(Boolean).join(" · ")}
       </span>
+    </span>
+  );
+}
+
+const VPN_KIND: Record<NonNullable<HitLogRow["vpn_kind"]>, { label: string; tone: "danger" | "info" | "neutral" }> = {
+  vpn: { label: "VPN", tone: "danger" },
+  tor: { label: "Tor", tone: "danger" },
+  isp_proxy: { label: "ISP proxy", tone: "danger" },
+  relay: { label: "Private Relay", tone: "info" },
+  hosting: { label: "hosting", tone: "neutral" },
+};
+
+/** The hit's anonymizer (is_vpn / vpn_kind / vpn_name): its kind as a badge and whose it is. */
+function VpnCell({ hit }: { hit: HitLogRow }) {
+  if (hit.is_vpn === null && !hit.vpn_kind) return <span className="text-muted" />;
+  if (!hit.vpn_kind) return <span className="text-muted">—</span>;
+  const k = VPN_KIND[hit.vpn_kind];
+  return (
+    <span className="flex flex-col items-start gap-0.5">
+      <Badge tone={k.tone}>{k.label}</Badge>
+      {hit.vpn_name && hit.vpn_kind !== "relay" && hit.vpn_kind !== "tor" ? (
+        <span className="block max-w-full truncate text-xs text-muted" title={hit.vpn_name}>
+          {hit.vpn_name}
+        </span>
+      ) : null}
     </span>
   );
 }

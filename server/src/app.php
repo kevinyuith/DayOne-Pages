@@ -177,4 +177,6 @@ function dayone_handle(): void
     netdb_maybe_refresh();
     // The local table of who each IP block was delegated to (the hit's ip_block): the same.
     rirdb_maybe_refresh();
+    // The known anonymizers (the hit's is_vpn / vpn_kind / vpn_name): the same.
+    anondb_maybe_refresh();
 }

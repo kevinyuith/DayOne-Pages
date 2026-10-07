@@ -141,6 +141,7 @@ require __DIR__ . '/normalize.php';
 require __DIR__ . '/cache.php';
 require __DIR__ . '/netdb.php';
 require __DIR__ . '/rirdb.php';
+require __DIR__ . '/anondb.php';
 require __DIR__ . '/netinfo.php';
 require __DIR__ . '/supabase.php';
 require __DIR__ . '/conditions.php';
