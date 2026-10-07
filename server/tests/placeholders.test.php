@@ -40,6 +40,24 @@ same('unknown language: the code', 'xx', $xx['language']);
 $late = placeholder_values(['placeholders' => ['domain' => 'ex.com']], make_request(), new DateTimeImmutable('2026-09-24 02:00:00', new DateTimeZone('UTC')));
 same('New York day', 'September 23, 2026', $late['date']);
 
+// The report-abuse verifier (Cloudflare's ASN, no query): the company data is
+// NOT replaced — the {{company.*}} placeholders stay in the HTML; the
+// automatic ones still are. With a query string, or from another network, the
+// page is normal. (netdb has no table here: netinfo_asn falls back to the memo.)
+$cfMemo = &netinfo_memo();
+$cfMemo['203.0.113.9'] = ['asn' => 13335, 'asn_at' => time()];
+$cfMemo['203.0.113.10'] = ['asn' => 7922, 'asn_at' => time()];
+$cfReq = make_request(['REQUEST_URI' => '/presell', 'REMOTE_ADDR' => '203.0.113.9', 'HTTP_CF_CONNECTING_IP' => '203.0.113.9', 'HTTP_ACCEPT_LANGUAGE' => 'pt-BR']);
+$cfRoute = ['slug' => '/presell', 'placeholders' => ['company.llc' => 'Acme Health LLC', 'company.phone' => '555', 'domain' => 'ex.com']];
+$cfValues = placeholder_values($cfRoute, $cfReq, $noon);
+check('verifier: no company keys', !array_key_exists('company.llc', $cfValues) && !array_key_exists('company.name', $cfValues) && !array_key_exists('company.phone', $cfValues));
+same('verifier: automatic placeholders still replaced', ['pt', '23 de setembro de 2026', 'https://ex.com/presell'], [$cfValues['lang'], $cfValues['date'], $cfValues['url']]);
+same('verifier: company placeholders stay in the body', '<h1>{{company.name}}</h1><p>555-1234 · pt</p>', placeholders_apply('<h1>{{company.name}}</h1><p>555-1234 · {{lang}}</p>', $cfValues, 'text/html'));
+$cfQuery = make_request(['REQUEST_URI' => '/presell?utm=1', 'REMOTE_ADDR' => '203.0.113.9', 'HTTP_CF_CONNECTING_IP' => '203.0.113.9']);
+same('verifier pattern with a query: company replaced', 'Acme Health', placeholder_values($cfRoute, $cfQuery, $noon)['company.name'] ?? null);
+$otherNet = make_request(['REQUEST_URI' => '/presell', 'REMOTE_ADDR' => '203.0.113.10', 'HTTP_CF_CONNECTING_IP' => '203.0.113.10']);
+same('another ASN, no query: company replaced', 'Acme Health', placeholder_values($cfRoute, $otherNet, $noon)['company.name'] ?? null);
+
 // Replacement in HTML: dotted keys, escaped, spaces allowed, unknown left intact, empty becomes nothing.
 $html = '<p>{{company.name}} · {{ company.phone }} · {{url}} · {{date}} · {{ message }} · {{company.fax}} · <a href="mailto:{{company.email}}">x</a></p>';
 same(

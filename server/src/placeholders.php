@@ -12,6 +12,13 @@
  *   Accept-Language; without it, English), `date` (today in New York,
  *   spelled out in that language) and `year`.
  *
+ * A visit from the Cloudflare network WITHOUT a query string (the
+ * report-abuse verifier's pattern: ASN 13335, bare URL) gets the page
+ * WITHOUT the company data: the `{{company.*}}` placeholders stay as they
+ * are in the HTML, so the legal entity is neither served to it nor recorded
+ * into the copy that visit may keep. The automatic placeholders are still
+ * replaced. Unknown ASN (lookup failed) = a normal visit, data replaced.
+ *
  * The panel's field list and the editor preview live in
  * src/lib/pages/placeholders.ts. The rules and the tables (languages, months)
  * are the same on both sides — changed one, change the other:
@@ -34,6 +41,8 @@ defined('DAYONE_ENTRY') || (http_response_code(404) && exit);
 
 const PLACEHOLDER_RE = '/\{\{\s*([a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)*)\s*\}\}/';
 const PLACEHOLDER_TZ = 'America/New_York';
+/** The Cloudflare network's AS: a visit from it with no query string is the report-abuse verifier's pattern. */
+const PLACEHOLDER_CF_ASN = 13335;
 
 /** Each language's name in that language. No entry: the code itself. */
 const PLACEHOLDER_LANGUAGE_NAMES = [
@@ -141,6 +150,16 @@ function placeholder_values(array $route, Request $req, ?DateTimeImmutable $now 
     $values['language'] = PLACEHOLDER_LANGUAGE_NAMES[$lang] ?? $lang;
     $values['date'] = placeholder_long_date($today, $lang);
     $values['year'] = $today->format('Y');
+    // The report-abuse verifier (Cloudflare network, bare URL): no company
+    // data — the {{company.*}} placeholders stay unreplaced. The lookup is
+    // the local table (netdb, microseconds); an unknown ASN never triggers.
+    if ($req->rawQuery === '' && netinfo_asn($req->ip, 0) === PLACEHOLDER_CF_ASN) {
+        foreach ($values as $key => $_) {
+            if (str_starts_with($key, 'company.')) {
+                unset($values[$key]);
+            }
+        }
+    }
     ksort($values);
     return $values;
 }
