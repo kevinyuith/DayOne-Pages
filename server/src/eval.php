@@ -53,7 +53,7 @@ const EVAL_NO_JS = 'no_js';
 /** The eval rules' own condition keys (decided here or in the browser; never by conditions_match). */
 const EVAL_OWN_CONDITIONS = [
     'eval_cookie', 'touch', 'mobile_hint', 'pointer', 'webdriver', 'automation', 'gl_software', 'platform',
-    'iframe', 'tostring_tampered', 'proto_poisoned', 'tz_offset', 'net_rtt_min',
+    'iframe', 'tostring_tampered', 'proto_poisoned', 'tz_offset', 'net_rtt_min', 'screens',
     // The on/off detectors (1 = the tell fired). no_js is stripped too, but
     // never evaluated from signals — a POST proves JS ran.
     'no_touch', 'chrome_ua', 'no_chrome_object', 'tz_mismatch', 'tz_not_us', 'no_cookie', 'odd_resolution', EVAL_NO_JS,
@@ -531,6 +531,8 @@ function eval_rules_matched(array $rules, Request $req, ?array $signals, ?array 
  *   net_rtt_min   ms: Chrome's round-trip estimate (navigator.connection.rtt, steps of 50) is at least this —
  *                 a proxy chain adds its hops to every request. 0 or absent (Safari, Firefox, iOS, in-app
  *                 WebViews) = no measurement: undecidable.
+ *   screens       list of "WxH": the screen (screen.width x screen.height, CSS px) is one of them, in either
+ *                 orientation — 800x600 is headless Chrome's default and the auto-clickers' VM. No size = undecidable.
  *
  * The rest of the rule (IPs, ASNs, hostname, User-Agent…) goes through the
  * request walk's own evaluator (rule_conditions_match), so a Suspicious rule
@@ -625,6 +627,22 @@ function eval_conditions_match(array $cond, Request $req, ?array $signals, ?arra
                 return false; // No measurement never confirms a bot.
             }
             $ok = (int) $sig['net_rtt'] >= (int) $want;
+        } elseif ($key === 'screens') {
+            if (!isset($sig['screen'])) {
+                if ($allowPending) {
+                    continue;
+                }
+                return false; // No screen size never confirms a bot.
+            }
+            [$w, $h] = $sig['screen'];
+            $ok = false;
+            foreach (is_array($want) ? $want : [] as $res) {
+                if (is_string($res) && preg_match('/^(\d+)x(\d+)$/', strtolower($res), $m) === 1
+                    && (((int) $m[1] === $w && (int) $m[2] === $h) || ((int) $m[1] === $h && (int) $m[2] === $w))) {
+                    $ok = true;
+                    break;
+                }
+            }
         } else {
             if (!array_key_exists($key, $sig)) {
                 if ($allowPending) {
@@ -799,6 +817,8 @@ function eval_signal_values(?array $signals, ?array $stored): array
     if (array_key_exists('tz', $src)) $out['tz_offset'] = (int) $src['tz'];
     // Chrome's RTT estimate; 0 = it hasn't measured (an in-app WebView always says 0).
     if (isset($src['nrtt']) && (int) $src['nrtt'] > 0) $out['net_rtt'] = (int) $src['nrtt'];
+    // The screen's size [width, height]; 0 = the browser didn't say.
+    if (isset($src['sw'], $src['sh']) && (int) $src['sw'] > 0 && (int) $src['sh'] > 0) $out['screen'] = [(int) $src['sw'], (int) $src['sh']];
     if (isset($src['tze']) && is_string($src['tze']) && $src['tze'] !== '') {
         $out['tze'] = strtolower($src['tze']);
         // tz_not_us: the zone is outside the home list (US + territories, CA, MX, nearby Caribbean).

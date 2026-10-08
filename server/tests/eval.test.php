@@ -368,6 +368,35 @@ $unmeasured->evalSignals = ['nrtt' => 0, 'mtp' => 0];
 [, , , , $route] = decide($root, $unmeasured, $cableGate);
 same('cable gate: no measurement → the funnel (never a guess)', 'GATE', $route['match_type']);
 
+// The screen's size (sw x sh) is one of the listed "WxH", either orientation.
+check('screens: 800x600 fires', eval_conditions_match(['screens' => ['800x600']], $req, ['sw' => 800, 'sh' => 600], null));
+check('screens: rotated (600x800) fires', eval_conditions_match(['screens' => ['800x600']], $req, ['sw' => 600, 'sh' => 800], null));
+check('screens: any of the list', eval_conditions_match(['screens' => ['1024x768', '800x600']], $req, ['sw' => 800, 'sh' => 600], null));
+check('screens: 1920x1080 does not', !eval_conditions_match(['screens' => ['800x600']], $req, ['sw' => 1920, 'sh' => 1080], null));
+check('screens: 800x601 does not (exact)', !eval_conditions_match(['screens' => ['800x600']], $req, ['sw' => 800, 'sh' => 601], null));
+check('screens: no size is undecidable', !eval_conditions_match(['screens' => ['800x600']], $req, ['mtp' => 0], null));
+check('screens: 0x0 is undecidable', !eval_conditions_match(['screens' => ['800x600']], $req, ['sw' => 0, 'sh' => 0], null));
+check('screens: unknown stays pending for the checkpoint', eval_conditions_match(['screens' => ['800x600']], $req, null, null, true));
+check('screens: from a stored entry', eval_conditions_match(['screens' => ['800x600']], $req, null, ['sw' => 800, 'sh' => 600]));
+check('screens: the request walk skips it quietly', !rule_conditions_match(['sub11' => 'taboola', 'screens' => ['800x600']], $req));
+// Through the gate: Taboola + Windows + an 800x600 screen (the AT&T Mobility
+// auto-clicker, headless Chrome's default window).
+$winRule = ['sub11' => 'taboola', 'user_agent' => 'Windows NT', 'screens' => ['800x600']];
+$winGate = array_merge($gate, ['eval_rules' => [['name' => 'Taboola Windows 800x600', 'label' => 'Suspicious', 'reason' => '800x600', 'tags' => ['Taboola'], 'conditions' => $winRule]]]);
+$winClick = static fn (string $ua = ''): Request => make_request(['REQUEST_URI' => '/?sub1=' . rawurlencode('x[F23]') . '&sub11=Taboola', 'HTTP_USER_AGENT' => $ua !== '' ? $ua : $deskUA]);
+[, , , , $route] = decide($root, $winClick(), $winGate);
+same('screens gate: a Windows click gets the checkpoint', 'checkpoint', $route['_eval'] ?? null);
+[, , , , $route] = decide($root, $winClick($mobileUA), $winGate);
+same('screens gate: an iPhone goes straight to the funnel', ['GATE', null], [$route['match_type'], $route['_eval'] ?? null]);
+$small = $winClick();
+$small->evalSignals = ['sw' => 800, 'sh' => 600, 'vw' => 784, 'vh' => 505, 'mtp' => 0];
+[, , , , $route] = decide($root, $small, $winGate);
+same('screens gate: 800x600 → the safe page, flagged', ['GATE-SAFE', 'Taboola Windows 800x600'], [$route['match_type'], $route['_rule'] ?? null]);
+$wide = $winClick();
+$wide->evalSignals = ['sw' => 1920, 'sh' => 1080, 'vw' => 1903, 'vh' => 945, 'mtp' => 0];
+[, , , , $route] = decide($root, $wide, $winGate);
+same('screens gate: 1920x1080 → the funnel', 'GATE', $route['match_type']);
+
 // no_js is never decided by signals (the GET-side walk handles it).
 check('no_js: not a signal condition', !eval_conditions_match(['no_js' => 1], $req, ['mtp' => 0], null));
 

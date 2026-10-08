@@ -98,6 +98,9 @@ export function isIpOrRange(s: string): boolean {
   return bits === undefined || (/^\d{1,3}$/.test(bits) && Number(bits) <= (v4 ? 32 : 128));
 }
 
+/** A screen size, "WxH" (the database checks the same pattern). */
+const SCREEN_RE = /^\d{2,5}x\d{2,5}$/;
+
 export const ruleConditionsSchema = conditionsSchema
   .extend({
     sub1: subId.optional(),
@@ -140,6 +143,8 @@ export const ruleConditionsSchema = conditionsSchema
     tz_offset: z.number().int().min(-840).max(840).optional(),
     // net_rtt_min: Chrome's RTT estimate (navigator.connection.rtt, ms) is at least this; no measurement never matches.
     net_rtt_min: z.number().int().min(1).max(10000).optional(),
+    // screens: the screen (screen.width x screen.height) is one of these "WxH", either orientation; no size never matches.
+    screens: z.array(z.string().regex(SCREEN_RE, "a size is WxH, e.g. 800x600")).min(1).max(50).optional(),
     // The on/off detectors (1 = the tell fired). no_js is decided on the GET
     // (the page served, no POST back), the rest from the browser's signals.
     no_touch: z.union([z.literal(0), z.literal(1)]).optional(),
@@ -405,6 +410,13 @@ export function parseRuleConditionsForm(fd: FormData): { ok: true; value: RuleCo
     if (!/^\d{1,5}$/.test(netRttMin) || Number(netRttMin) < 1 || Number(netRttMin) > 10000) return { ok: false, reason: "Chrome RTT must be whole milliseconds, 1–10000." };
     raw.net_rtt_min = Number(netRttMin);
   }
+  const screens = Array.from(new Set(String(fd.get("screens") ?? "").toLowerCase().replace(/×/g, "x").split(/[\s,;]+/).filter(Boolean)));
+  if (screens.length) {
+    const bad = screens.find((s) => !SCREEN_RE.test(s));
+    if (bad) return { ok: false, reason: `Invalid screen size "${bad}" (WxH, e.g. 800x600).` };
+    if (screens.length > 50) return { ok: false, reason: "Up to 50 screen sizes." };
+    raw.screens = screens;
+  }
   if (fd.get("eval_cookie") === "absent") raw.eval_cookie = "absent";
   // The on/off detectors.
   const noTouch = bit("no_touch");
@@ -463,6 +475,7 @@ export function ruleConditionsToForm(c: RuleConditions | null | undefined): Retu
   protoPoisoned: "" | "0" | "1";
   tzOffset: string;
   netRttMin: string;
+  screens: string;
   noTouch: "" | "0" | "1";
   chromeUa: "" | "0" | "1";
   noChromeObject: "" | "0" | "1";
@@ -506,6 +519,7 @@ export function ruleConditionsToForm(c: RuleConditions | null | undefined): Retu
     protoPoisoned: bit(c?.proto_poisoned),
     tzOffset: c?.tz_offset !== undefined ? String(c.tz_offset) : "",
     netRttMin: c?.net_rtt_min !== undefined ? String(c.net_rtt_min) : "",
+    screens: (c?.screens ?? []).join(", "),
     noTouch: bit(c?.no_touch),
     chromeUa: bit(c?.chrome_ua),
     noChromeObject: bit(c?.no_chrome_object),
@@ -566,6 +580,7 @@ export function summarizeRuleConditions(c: RuleConditions | null | undefined): s
     onOff(c.proto_poisoned, "Proto poisoned", ""),
     c.tz_offset !== undefined ? `TZ offset ${c.tz_offset}` : "",
     c.net_rtt_min !== undefined ? `Chrome RTT ≥ ${c.net_rtt_min} ms` : "",
+    c.screens?.length ? `Screen ${c.screens.join(", ")}` : "",
     onOff(c.no_touch, "No touch", "Has touch"),
     onOff(c.chrome_ua, "Chrome UA", "Not Chrome UA"),
     onOff(c.no_chrome_object, "No window.chrome", ""),
