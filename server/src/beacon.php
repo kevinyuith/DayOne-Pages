@@ -58,7 +58,7 @@ defined('DAYONE_ENTRY') || (http_response_code(404) && exit);
 const BEACON_PATH = '/_dop/l';
 const BEACON_COOKIE = 'dop_v';
 /** ETag suffix of pages with the script. Changed the script, bump the version. */
-const BEACON_ETAG = '-b9';
+const BEACON_ETAG = '-b10';
 /** The longest time on a page that is taken (4 hours). */
 const BEACON_MAX_DURATION_MS = 14400000;
 /** The kinds of the first interaction ("i=<kind>"), as pages.hits.interaction takes them. */
@@ -96,6 +96,18 @@ const BEACON_SCRIPT = '<script data-dop-beacon>(function(){var v=(document.cooki
     // dc = direction changes, tp = teleports (jumps > 250px, synthetic moves).
     . 'var _px=null,_py,_pdx=0,_pdy=0,_pl=0,_fx=null,_fy,_lx=0,_ly=0,_tp=0,_dc=0;'
     . 'addEventListener("mousemove",function(e){if(!e.isTrusted)return;var x=e.clientX,y=e.clientY;if(_fx===null){_fx=x;_fy=y}if(_px!==null){var dx=x-_px,dy=y-_py,ds=Math.abs(dx)+Math.abs(dy);_pl+=ds;if(ds>250)_tp++;if((dx>0&&_pdx<0)||(dx<0&&_pdx>0)||(dy>0&&_pdy<0)||(dy<0&&_pdy>0))_dc++;if(dx||dy){_pdx=dx;_pdy=dy}}_px=x;_py=y;_lx=x;_ly=y},{capture:true,passive:true});'
+    // Device motion — is the phone held and moving, or sitting still (an
+    // emulator or a phone on a desk)? gy/ac = the sensor FIRED (present),
+    // gm/am = how much its readings actually swung: a real phone in a hand
+    // jitters (gm/am > 0); a still phone or an emulator stays ~0 (a fixed
+    // reading never varies), and an emulator usually fires nothing at all.
+    . 'var _gy=0,_ac=0,_ga=null,_gb=null,_gg=null,_gm=0,_ax=null,_ay=null,_az=null,_am=0;'
+    . 'addEventListener("deviceorientation",function(e){if(!e.isTrusted)return;_gy=1;var a=e.alpha,b=e.beta,g=e.gamma;if(a===null&&b===null&&g===null)return;'
+    . 'if(_gb!==null&&b!==null&&g!==null){var d=Math.abs(b-_gb)+Math.abs(g-_gg);if(d>_gm)_gm=Math.round(d)}'
+    . 'if(b!==null)_gb=b;if(g!==null)_gg=g;_ga=a},{capture:true,passive:true});'
+    . 'addEventListener("devicemotion",function(e){if(!e.isTrusted)return;_ac=1;var a=e.accelerationIncludingGravity||e.acceleration;if(!a)return;var x=a.x,y=a.y,z=a.z;if(x===null||y===null||z===null)return;'
+    . 'if(_ax!==null){var d=Math.abs(x-_ax)+Math.abs(y-_ay)+Math.abs(z-_az);if(d>_am)_am=Math.round(d*100)/100}'
+    . '_ax=x;_ay=y;_az=z},{capture:true,passive:true});'
     . 'var i=false;function n(k,y){return function(e){if(e.isTrusted&&(e.type!=="mousemove"||e.movementX||e.movementY)&&K[y]<999)K[y]++;if(i||!e.isTrusted||(e.type==="mousemove"&&!e.movementX&&!e.movementY))return;i=true;b("i="+k+"&t="+Math.round(performance.now()))}}'
     . '[["mousemove","mouse","mm"],["mousedown","mouse","md"],["wheel","scroll","wh"],["touchstart","touch","ts"],["keydown","key","ky"]].forEach(function(p){addEventListener(p[0],n(p[1],p[2]),{capture:true,passive:true})});'
     // Read depth: sd = the deepest the bottom of the screen got, % of the page's
@@ -107,7 +119,7 @@ const BEACON_SCRIPT = '<script data-dop-beacon>(function(){var v=(document.cooki
     . 'if(e){_se=e;h=e.scrollHeight;y=e.scrollTop+e.clientHeight}else{h=Math.max(d.scrollHeight,document.body?document.body.scrollHeight:0);if(h<=innerHeight+2)return;y=(window.pageYOffset||d.scrollTop||0)+innerHeight}'
     . 'var p=Math.min(100,Math.round(y/h*100));if(p>_dp){_dp=p;_ph=Math.round(h)}}catch(x){}}'
     . 'addEventListener("scroll",function(e){if(!e.isTrusted)return;if(K.sc<999)K.sc++;q(e.target)},{capture:true,passive:true});'
-    . 'function u(){if(_fx!==null){var dp=Math.abs(_lx-_fx)+Math.abs(_ly-_fy);K.tp=_tp;K.dc=_dc;K.str=_pl>0?Math.round(dp/_pl*100):0}q(_se);q(null);if(_dp>=0){K.sd=_dp;K.ph=_ph}b("d="+Math.round(performance.now())+"&"+enc(K))}addEventListener("pagehide",u);addEventListener("visibilitychange",function(){if(document.visibilityState==="hidden")u()})})();</script>';
+    . 'function u(){if(_fx!==null){var dp=Math.abs(_lx-_fx)+Math.abs(_ly-_fy);K.tp=_tp;K.dc=_dc;K.str=_pl>0?Math.round(dp/_pl*100):0}if(_gy)K.gy=1;if(_gm>0)K.gm=_gm;if(_ac)K.ac=1;if(_am>0)K.am=_am;q(_se);q(null);if(_dp>=0){K.sd=_dp;K.ph=_ph}b("d="+Math.round(performance.now())+"&"+enc(K))}addEventListener("pagehide",u);addEventListener("visibilitychange",function(){if(document.visibilityState==="hidden")u()})})();</script>';
 
 /**
  * Does this route's response carry the notice? Only a funnel's page served by

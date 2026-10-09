@@ -528,12 +528,18 @@ function Signals({ hit }: { hit: HitLogRow }) {
     if ((sigNum(s, "wh") ?? 0) === 0 && (sigNum(s, "sc") ?? 0) === 0) flags.push({ label: "no scroll", tone: "warning" });
     // The mouse moved a lot but almost in a straight line, barely turning: a synthetic path.
     if ((sigNum(s, "mm") ?? 0) >= 10 && (sigNum(s, "str") ?? 0) >= 90 && (sigNum(s, "dc") ?? 0) <= 2) flags.push({ label: "straight mouse", tone: "warning" });
+    // A touch device whose gyroscope/accelerometer fired but barely swung was sitting
+    // still (a desk, an emulator): a phone in a hand jitters (gm/am above zero).
+    const gyroFired = sigNum(s, "gy") === 1 || sigNum(s, "ac") === 1;
+    const swung = (sigNum(s, "gm") ?? 0) > 0 || (sigNum(s, "am") ?? 0) > 0;
+    if (touchDev && gyroFired && !swung) flags.push({ label: "device still", tone: "warning" });
   }
   // No languages and no plugins, or an empty primary language: a headless hint.
   if (sigNum(s, "nl") === 0 && sigNum(s, "np") === 0) flags.push({ label: "headless?", tone: "warning" });
 
   const counts = ["mm", "md", "wh", "sc", "ts", "ky", "ck"].filter((k) => sigNum(s, k) !== null);
   const traj = ["str", "dc", "tp"].filter((k) => sigNum(s, k) !== null);
+  const motion = ["gy", "gm", "ac", "am"].filter((k) => sigNum(s, k) !== null);
   return (
     <span className="flex flex-col items-start gap-0.5" title={JSON.stringify(s, null, 2)}>
       {flags.length > 0 ? (
@@ -553,6 +559,11 @@ function Signals({ hit }: { hit: HitLogRow }) {
       {traj.length > 0 ? (
         <span className="whitespace-nowrap font-mono text-[11px] text-muted" title="str = how straight the mouse path is (0–100; ~100 = a line), dc = direction changes, tp = teleports">
           {traj.map((k) => `${k} ${sigNum(s, k)}`).join(" · ")}
+        </span>
+      ) : null}
+      {motion.length > 0 ? (
+        <span className="whitespace-nowrap font-mono text-[11px] text-muted" title="gy/ac = the gyroscope/accelerometer fired (present), gm = the gyroscope's swing (degrees), am = the accelerometer's swing (m/s²) — both ~0 = the device sat still (a desk, an emulator)">
+          {motion.map((k) => `${k} ${sigNum(s, k)}`).join(" · ")}
         </span>
       ) : null}
     </span>

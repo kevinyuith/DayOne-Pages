@@ -100,6 +100,12 @@ same('beacon_parse_signals: keeps the read depth (sd, ph)', ['sd' => 63, 'ph' =>
 same('beacon_parse_signals: keeps the new keys (aut, gl, glsw, lng, tp, dc, str)',
     ['aut' => 2, 'gl' => 'Google SwiftShader', 'glsw' => 1, 'lng' => 'en-US', 'tp' => 0, 'dc' => 1, 'str' => 98],
     beacon_parse_signals('{"aut":2,"gl":"Google SwiftShader","glsw":1,"lng":"en-US","tp":0,"dc":1,"str":98}'));
+// Device motion — is the phone held/moving or sitting still (a desk, an emulator)?
+check('script: listens to the gyroscope and the accelerometer', str_contains(BEACON_SCRIPT, '"deviceorientation"') && str_contains(BEACON_SCRIPT, '"devicemotion"') && str_contains(BEACON_SCRIPT, 'accelerationIncludingGravity'));
+check('script: sends the motion signals (gy/gm = gyroscope fired/its swing, ac/am = the accelerometer\'s) when hidden or left', str_contains(BEACON_SCRIPT, 'if(_gy)K.gy=1') && str_contains(BEACON_SCRIPT, 'if(_gm>0)K.gm=_gm') && str_contains(BEACON_SCRIPT, 'if(_ac)K.ac=1') && str_contains(BEACON_SCRIPT, 'if(_am>0)K.am=_am'));
+same('beacon_parse_signals: keeps the motion keys (gy, gm, ac, am)', ['gy' => 1, 'gm' => 14, 'ac' => 1, 'am' => 1.25], beacon_parse_signals('{"gy":1,"gm":14,"ac":1,"am":1.25}'));
+$sgMotion = rawurlencode(json_encode(['mm' => 0, 'ts' => 3, 'gy' => 1, 'gm' => 8, 'ac' => 1, 'am' => 0.5]));
+same('beacon: the motion signals ride the duration notice', ['kind' => 'duration', 'ms' => 3000, 'sg' => ['mm' => 0, 'ts' => 3, 'gy' => 1, 'gm' => 8, 'ac' => 1, 'am' => 0.5]], handle_beacon($post(), "v=$id&d=3000&sg=$sgMotion")[4]);
 
 // serve_slug: HTML gets the script and the ETag gets the version; anything that is not a page stays the same.
 $bSlug = '22222222-2222-2222-2222-222222222222';
