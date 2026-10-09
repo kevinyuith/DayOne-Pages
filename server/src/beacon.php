@@ -8,6 +8,11 @@
  *      minimal script. The safe page (the domain's page, GATE-SAFE)
  *      and every other route go without either: nothing to measure there.
  *   2. On the load event, the script calls sendBeacon("/_dop/l", "t=<ms>"),
+ *      (how the page loaded, for the pages' optimization — 09/10: ttfb = ms to the
+ *      first response byte, fcp = first contentful paint; lcp = largest contentful
+ *      paint with lcpe = its element's tag and lcpa = 1 when it was one of the
+ *      page's own files, /_dop/a/ — go in the signals: fcp/ttfb at load, lcp when
+ *      hidden or left, when it is final),
  *      with the time since navigation start, plus "sg=<json>": the device's
  *      capability signals (webdriver, platform, touch points, cores, memory,
  *      languages/plugins, screen/viewport, pointer/hover media, chrome,
@@ -58,7 +63,7 @@ defined('DAYONE_ENTRY') || (http_response_code(404) && exit);
 const BEACON_PATH = '/_dop/l';
 const BEACON_COOKIE = 'dop_v';
 /** ETag suffix of pages with the script. Changed the script, bump the version. */
-const BEACON_ETAG = '-b10';
+const BEACON_ETAG = '-b11';
 /** The longest time on a page that is taken (4 hours). */
 const BEACON_MAX_DURATION_MS = 14400000;
 /** The kinds of the first interaction ("i=<kind>"), as pages.hits.interaction takes them. */
@@ -66,6 +71,11 @@ const BEACON_INTERACTIONS = ['mouse', 'scroll', 'touch', 'key'];
 const BEACON_SCRIPT = '<script data-dop-beacon>(function(){var v=(document.cookie.match(/(?:^|; )' . BEACON_COOKIE . '=([0-9a-f]{32})/)||[])[1];'
     . 'function b(d){try{navigator.sendBeacon("' . BEACON_PATH . '",(v?"v="+v+"&":"")+d)}catch(e){}}'
     . 'function enc(o){return "sg="+encodeURIComponent(JSON.stringify(o))}'
+    // Largest contentful paint: the last entry wins (the candidate grows until the
+    // first input or the page is hidden), buffered so an entry before this script
+    // ran still counts. lcpe = the element's tag, lcpa = 1 when it came from the
+    // page's own files (/_dop/a/). Browsers without it (WebKit) just report nothing.
+    . 'var _lcp=0,_lce="",_lca=0;try{if(window.PerformanceObserver&&PerformanceObserver.supportedEntryTypes&&PerformanceObserver.supportedEntryTypes.indexOf("largest-contentful-paint")>=0){new PerformanceObserver(function(l){l.getEntries().forEach(function(e){_lcp=Math.round(e.renderTime||e.loadTime||e.startTime||0);_lce=e.element&&e.element.tagName?(""+e.element.tagName).toLowerCase().slice(0,16):"";_lca=e.url&&(""+e.url).indexOf("/_dop/a/")>=0?1:0})}).observe({type:"largest-contentful-paint",buffered:true})}}catch(e){}'
     . 'var M=function(q){try{return matchMedia(q).matches}catch(e){return false}},N=navigator,U=N.userAgentData||{},S={'
     . 'wd:N.webdriver===true?1:0,pl:(""+(N.platform||"")).slice(0,32),mtp:N.maxTouchPoints|0,hc:N.hardwareConcurrency|0,dm:N.deviceMemory||0,'
     . 'nl:(N.languages||[]).length,np:(N.plugins||[]).length,sw:screen.width|0,sh:screen.height|0,dpr:+(window.devicePixelRatio||1).toFixed(2),'
@@ -84,6 +94,10 @@ const BEACON_SCRIPT = '<script data-dop-beacon>(function(){var v=(document.cooki
     // tz = getTimezoneOffset (minutes; an emulator's often mismatches the IP's
     // country), tze = the IANA zone name — the same pair the eval checkpoint takes.
     . 'function s(){S.lng=(""+(N.language||"")).slice(0,12);'
+    // ttfb from the navigation entry, else the L1 timing (WebKit blanks the L2 one
+    // after a cross-origin redirect — every ad click); fcp from the paint entries.
+    . 'try{var _ne=performance.getEntriesByType("navigation")[0],_tm=performance.timing,_rs=_ne&&_ne.responseStart>0?_ne.responseStart:(_tm&&_tm.navigationStart&&_tm.responseStart?_tm.responseStart-_tm.navigationStart:0);if(_rs>0)S.ttfb=Math.round(_rs)}catch(e){}'
+    . 'try{performance.getEntriesByType("paint").forEach(function(p){if(p.name==="first-contentful-paint")S.fcp=Math.round(p.startTime)})}catch(e){}'
     . 'try{S.tz=new Date().getTimezoneOffset()|0}catch(e){}'
     . 'try{var _tz=(Intl.DateTimeFormat().resolvedOptions().timeZone||"");if(_tz)S.tze=(""+_tz).slice(0,40)}catch(e){}'
     . 'try{var _w=window,_a=0;if(_w.__playwright||_w.__puppeteer||_w.__pw_manual||_w._phantom||_w.callPhantom||_w.__nightmare||_w.domAutomation||_w.domAutomationController||_w.Cypress)_a++;if(document.$cdc_asdjflasutopfhvcZLmcfl_||document.__webdriver_evaluate||document.__selenium_unwrapped||document.__fxdriver_evaluate||document.__driver_evaluate)_a++;for(var _k in _w){if(_k.indexOf("cdc_")===0||_k.indexOf("$cdc_")===0){_a++;break}}S.aut=_a}catch(e){}'
@@ -119,7 +133,7 @@ const BEACON_SCRIPT = '<script data-dop-beacon>(function(){var v=(document.cooki
     . 'if(e){_se=e;h=e.scrollHeight;y=e.scrollTop+e.clientHeight}else{h=Math.max(d.scrollHeight,document.body?document.body.scrollHeight:0);if(h<=innerHeight+2)return;y=(window.pageYOffset||d.scrollTop||0)+innerHeight}'
     . 'var p=Math.min(100,Math.round(y/h*100));if(p>_dp){_dp=p;_ph=Math.round(h)}}catch(x){}}'
     . 'addEventListener("scroll",function(e){if(!e.isTrusted)return;if(K.sc<999)K.sc++;q(e.target)},{capture:true,passive:true});'
-    . 'function u(){if(_fx!==null){var dp=Math.abs(_lx-_fx)+Math.abs(_ly-_fy);K.tp=_tp;K.dc=_dc;K.str=_pl>0?Math.round(dp/_pl*100):0}if(_gy)K.gy=1;if(_gm>0)K.gm=_gm;if(_ac)K.ac=1;if(_am>0)K.am=_am;q(_se);q(null);if(_dp>=0){K.sd=_dp;K.ph=_ph}b("d="+Math.round(performance.now())+"&"+enc(K))}addEventListener("pagehide",u);addEventListener("visibilitychange",function(){if(document.visibilityState==="hidden")u()})})();</script>';
+    . 'function u(){if(_fx!==null){var dp=Math.abs(_lx-_fx)+Math.abs(_ly-_fy);K.tp=_tp;K.dc=_dc;K.str=_pl>0?Math.round(dp/_pl*100):0}if(_gy)K.gy=1;if(_gm>0)K.gm=_gm;if(_ac)K.ac=1;if(_am>0)K.am=_am;if(_lcp>0){K.lcp=_lcp;if(_lce)K.lcpe=_lce;K.lcpa=_lca}q(_se);q(null);if(_dp>=0){K.sd=_dp;K.ph=_ph}b("d="+Math.round(performance.now())+"&"+enc(K))}addEventListener("pagehide",u);addEventListener("visibilitychange",function(){if(document.visibilityState==="hidden")u()})})();</script>';
 
 /**
  * Does this route's response carry the notice? Only a funnel's page served by

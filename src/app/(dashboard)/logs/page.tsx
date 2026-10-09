@@ -540,6 +540,9 @@ function Signals({ hit }: { hit: HitLogRow }) {
   const counts = ["mm", "md", "wh", "sc", "ts", "ky", "ck"].filter((k) => sigNum(s, k) !== null);
   const traj = ["str", "dc", "tp"].filter((k) => sigNum(s, k) !== null);
   const motion = ["gy", "gm", "ac", "am"].filter((k) => sigNum(s, k) !== null);
+  // How the page loaded (ms): ttfb to the first byte, fcp first paint, lcp largest paint (+ its element, and whether it was one of the page's own files).
+  const loading = ["ttfb", "fcp", "lcp"].filter((k) => sigNum(s, k) !== null);
+  const lcpWhat = typeof s.lcpe === "string" && s.lcpe ? `${s.lcpe}${sigNum(s, "lcpa") === 1 ? " · own file" : ""}` : null;
   return (
     <span className="flex flex-col items-start gap-0.5" title={JSON.stringify(s, null, 2)}>
       {flags.length > 0 ? (
@@ -559,6 +562,11 @@ function Signals({ hit }: { hit: HitLogRow }) {
       {traj.length > 0 ? (
         <span className="whitespace-nowrap font-mono text-[11px] text-muted" title="str = how straight the mouse path is (0–100; ~100 = a line), dc = direction changes, tp = teleports">
           {traj.map((k) => `${k} ${sigNum(s, k)}`).join(" · ")}
+        </span>
+      ) : null}
+      {loading.length > 0 ? (
+        <span className="whitespace-nowrap font-mono text-[11px] text-muted" title="How the page loaded, in ms: ttfb = first response byte, fcp = first contentful paint, lcp = largest contentful paint (the element in parentheses; 'own file' = it came from /_dop/a/)">
+          {loading.map((k) => `${k} ${sigNum(s, k)}`).join(" · ")}{lcpWhat ? ` (${lcpWhat})` : ""}
         </span>
       ) : null}
       {motion.length > 0 ? (

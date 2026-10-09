@@ -106,6 +106,13 @@ check('script: sends the motion signals (gy/gm = gyroscope fired/its swing, ac/a
 same('beacon_parse_signals: keeps the motion keys (gy, gm, ac, am)', ['gy' => 1, 'gm' => 14, 'ac' => 1, 'am' => 1.25], beacon_parse_signals('{"gy":1,"gm":14,"ac":1,"am":1.25}'));
 $sgMotion = rawurlencode(json_encode(['mm' => 0, 'ts' => 3, 'gy' => 1, 'gm' => 8, 'ac' => 1, 'am' => 0.5]));
 same('beacon: the motion signals ride the duration notice', ['kind' => 'duration', 'ms' => 3000, 'sg' => ['mm' => 0, 'ts' => 3, 'gy' => 1, 'gm' => 8, 'ac' => 1, 'am' => 0.5]], handle_beacon($post(), "v=$id&d=3000&sg=$sgMotion")[4]);
+// How the page loaded (09/10, the pages' optimization): ttfb/fcp at load, lcp (+ element, own file) when hidden or left.
+check('script: measures ttfb and fcp at load', str_contains(BEACON_SCRIPT, 'S.ttfb=Math.round(_rs)') && str_contains(BEACON_SCRIPT, '"first-contentful-paint"') && str_contains(BEACON_SCRIPT, 'S.fcp=Math.round(p.startTime)'));
+check('script: observes the largest contentful paint, buffered, and sends it when hidden or left', str_contains(BEACON_SCRIPT, '"largest-contentful-paint",buffered:true') && str_contains(BEACON_SCRIPT, 'K.lcp=_lcp') && str_contains(BEACON_SCRIPT, 'K.lcpe=_lce') && str_contains(BEACON_SCRIPT, 'K.lcpa=_lca'));
+check('script: lcpa says the LCP element came from the page\'s own files (/_dop/a/)', str_contains(BEACON_SCRIPT, 'indexOf("/_dop/a/")>=0?1:0'));
+same('beacon_parse_signals: keeps the loading keys (ttfb, fcp, lcp, lcpe, lcpa)', ['ttfb' => 180, 'fcp' => 900, 'lcp' => 1400, 'lcpe' => 'img', 'lcpa' => 1], beacon_parse_signals('{"ttfb":180,"fcp":900,"lcp":1400,"lcpe":"img","lcpa":1}'));
+$sgLoad = rawurlencode(json_encode(['mm' => 2, 'lcp' => 1400, 'lcpe' => 'img', 'lcpa' => 1]));
+same('beacon: the lcp rides the duration notice', ['kind' => 'duration', 'ms' => 5000, 'sg' => ['mm' => 2, 'lcp' => 1400, 'lcpe' => 'img', 'lcpa' => 1]], handle_beacon($post(), "v=$id&d=5000&sg=$sgLoad")[4]);
 
 // serve_slug: HTML gets the script and the ETag gets the version; anything that is not a page stays the same.
 $bSlug = '22222222-2222-2222-2222-222222222222';
