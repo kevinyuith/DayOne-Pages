@@ -51,7 +51,15 @@ function dayone_handle(): void
                 fastcgi_finish_request();
             }
             // On the hit (pages.hits); retried while the hit isn't written yet.
-            beacon_record(static fn () => beacon_send($visitId, $notice));
+            $recorded = beacon_record(static fn () => beacon_send($visitId, $notice));
+            // Still no hit (it may be in the spool itself), or Supabase down: the
+            // notice waits in the spool, with this request's time (logspool.php).
+            if ($recorded === false || ($recorded === null && log_spool_retryable(supabase_last_status()))) {
+                $at = (float) ($_SERVER['REQUEST_TIME_FLOAT'] ?? microtime(true));
+                foreach (log_spool_notice_items($visitId, $notice) as $item) {
+                    log_spool($item, $at);
+                }
+            }
         }
         return;
     }
@@ -172,6 +180,10 @@ function dayone_handle(): void
     // Clicks dot didn't take earlier go again (at most once a minute, one process).
     if (config()['dot_clicks']) {
         dot_spool_replay();
+    }
+    // Hits and notices Supabase didn't take go again, in batches (logspool.php).
+    if (config()['log_hits']) {
+        log_spool_replay();
     }
 
     if ($resolved['refresh']) {

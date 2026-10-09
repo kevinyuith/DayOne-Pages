@@ -127,7 +127,7 @@ check('never found: gives up after 4 tries', beacon_record(static fn () => false
 same('waited 1, 2 and 4 s', [1, 2, 4], $waits);
 $waits = [];
 $calls = 0;
-check('a failed call (null) is not retried', beacon_record(static function () use (&$calls) { $calls++; return null; }, $sleep) === false && $calls === 1 && $waits === []);
+check('a failed call (null) is not retried, and says so (null: the caller may spool it)', beacon_record(static function () use (&$calls) { $calls++; return null; }, $sleep) === null && $calls === 1 && $waits === []);
 check('found at once: no wait', beacon_record(static fn () => true, $sleep) === true && $waits === []);
 
 // ── decide() end to end: only the gate's funnel page carries the notice; the safe page doesn't ──

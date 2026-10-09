@@ -3,8 +3,9 @@
  * Traffic log: builds a hit's payload and sends it to Supabase.
  *
  * Called by app.php AFTER the response has gone out
- * (fastcgi_finish_request), so the visitor never waits for this. It's
- * fire-and-forget: any error only goes to the log.
+ * (fastcgi_finish_request), so the visitor never waits for this. A hit
+ * Supabase didn't take (no answer, a 5xx) waits in the log spool
+ * (logspool.php) and is written later; a refusal only goes to the log.
  *
  * What it stores (one row per page request: .html, .php or no extension):
  * host, path and raw query, outcome, status, country (CF-IPCountry), state if US (cf-region),
@@ -49,7 +50,7 @@ function log_hit(Request $req, int $status, string $outcome, ?string $domainId, 
     $block = ip_block($req->ip, $known['asn']);
     $anon = anon_classify($req->ip, $known['asn'], $block);
 
-    $id = supabase_log_hit([
+    $params = [
         'p_domain'        => $domainId,
         'p_host'          => visited_host($req),
         'p_path'          => $req->path,
@@ -94,10 +95,16 @@ function log_hit(Request $req, int $status, string $outcome, ?string $domainId, 
         'p_is_vpn'        => $anon['is_vpn'] ?? null,
         'p_vpn_kind'      => $anon['kind'] ?? null,
         'p_vpn_name'      => $anon['name'] ?? null,
-    ]);
+    ];
+    $id = supabase_log_hit($params);
+    // Supabase didn't answer, or answered 5xx: the hit goes to the spool
+    // (logspool.php) once its lookups are done, and is written later with
+    // this request's time. A refusal (4xx) is dropped, as before.
+    $spool = $id === null && log_spool_retryable(supabase_last_status());
+    $at = (float) ($_SERVER['REQUEST_TIME_FLOAT'] ?? microtime(true));
 
     $learned = ['hit_id' => $id, 'asn' => $known['asn'], 'as_name' => $known['as_name'], 'hostname' => $known['hostname']];
-    if ($id === null) {
+    if ($id === null && !$spool) {
         return $learned;
     }
 
@@ -121,9 +128,15 @@ function log_hit(Request $req, int $status, string $outcome, ?string $domainId, 
     // clicks each rule would catch instead of only the one that won the walk.
     $matches = $gate !== null ? gate_bot_rules_matched($gate, $req) : [];
 
+    $net = ['asn' => $asn, 'as_name' => $asName, 'hostname' => $hostname, 'rule_matches' => $matches !== [] ? $matches : null];
     $netChanged = $asn !== $known['asn'] || $asName !== $known['as_name'] || $hostname !== $known['hostname'];
-    if ($netChanged || $matches !== []) {
-        supabase_log_hit_net($id, $asn, $asName, $hostname, $matches !== [] ? $matches : null);
+    if ($spool) {
+        log_spool(['k' => 'hit', 'p' => $params, 'net' => $net], $at);
+    } elseif ($netChanged || $matches !== []) {
+        supabase_log_hit_net($id, $asn, $asName, $hostname, $net['rule_matches']);
+        if (log_spool_retryable(supabase_last_status())) {
+            log_spool(['k' => 'net', 'id' => $id, 'net' => $net], $at);
+        }
     }
     return ['hit_id' => $id, 'asn' => $asn, 'as_name' => $asName, 'hostname' => $hostname];
 }

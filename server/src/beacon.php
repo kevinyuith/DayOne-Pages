@@ -179,9 +179,10 @@ function beacon_cookie(string $visitId): string
  * the response too and may not be there yet: a notice that found no hit is
  * sent again after 1, 2 and 4 s (nobody waits — the connection is closed).
  * `$send` returns true (recorded), false (no hit yet) or null (the call
- * failed: not retried). Returns whether it was recorded.
+ * failed: not retried). Returns the same: true, false (still no hit after
+ * the tries) or null — the caller spools the last two (logspool.php).
  */
-function beacon_record(callable $send, ?callable $sleep = null): bool
+function beacon_record(callable $send, ?callable $sleep = null): ?bool
 {
     $sleep ??= static fn (int $seconds) => sleep($seconds);
     foreach ([0, 1, 2, 4] as $wait) {
@@ -190,7 +191,7 @@ function beacon_record(callable $send, ?callable $sleep = null): bool
         }
         $r = $send();
         if ($r !== false) {
-            return $r === true;
+            return $r === true ? true : null;
         }
     }
     return false;
@@ -291,6 +292,9 @@ function beacon_send(string $visitId, array $notice): ?bool
         $r2 = supabase_log_signals($visitId, $sg);
         if ($r2 === false) {
             return false; // No hit yet: retry (the notice's own RPC is idempotent).
+        }
+        if ($r2 === null) {
+            return null; // Failed: the whole notice may go to the spool (replaying it is harmless).
         }
         if ($r2 === true) {
             $r = true;

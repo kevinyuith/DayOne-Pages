@@ -202,18 +202,48 @@ function supabase_log_signals(string $visitId, array $signals): ?bool
 }
 
 /**
+ * A batch of the log spool (logspool.php) through pages.log_replay: its
+ * {ok, missing, failed} counts, or null when the call failed —
+ * supabase_last_status() says whether it's worth trying again.
+ *
+ * @param list<array<string, mixed>> $items
+ */
+function supabase_log_replay(array $items): ?array
+{
+    $r = supabase_fire('log_replay', ['p_items' => $items]);
+    return is_array($r) ? $r : null;
+}
+
+/**
+ * The HTTP status of the last logging call (supabase_fire): 200/204 = went
+ * through, 0 = no answer (timeout, connection), -1 = not configured. With
+ * $set, records it.
+ */
+function supabase_last_status(?int $set = null): int
+{
+    static $last = -1;
+    if ($set !== null) {
+        $last = $set;
+    }
+    return $last;
+}
+
+/**
  * POST to a logging RPC (pages.<fn>) with p_key: the function's result
- * (decoded JSON), or null when the call failed (only the log sees it).
+ * (decoded JSON), or null when the call failed (only the log sees it;
+ * supabase_last_status() has its HTTP status).
  */
 function supabase_fire(string $fn, array $params): mixed
 {
     $cfg = config();
     if ($cfg['supabase_url'] === '' || $cfg['supabase_anon_key'] === '' || $cfg['server_key'] === '') {
+        supabase_last_status(-1);
         return null;
     }
 
     $body = json_encode(['p_key' => $cfg['server_key']] + $params);
     if ($body === false) {
+        supabase_last_status(-1);
         return null;
     }
 
@@ -233,6 +263,7 @@ function supabase_fire(string $fn, array $params): mixed
     ]);
     $raw = curl_exec($ch);
     $status = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+    supabase_last_status($raw === false ? 0 : $status);
     if ($raw === false || ($status !== 200 && $status !== 204)) {
         error_log("[dayone-pages] $fn failed (HTTP $status)");
         return null;

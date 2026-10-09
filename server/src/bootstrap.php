@@ -147,6 +147,7 @@ require __DIR__ . '/rirdb.php';
 require __DIR__ . '/anondb.php';
 require __DIR__ . '/netinfo.php';
 require __DIR__ . '/supabase.php';
+require __DIR__ . '/logspool.php';
 require __DIR__ . '/conditions.php';
 require __DIR__ . '/funnel.php';
 require __DIR__ . '/vsl.php';
