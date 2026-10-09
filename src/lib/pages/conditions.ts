@@ -147,6 +147,11 @@ export const ruleConditionsSchema = conditionsSchema
     nav_ttfb_above: z.number().int().min(1).max(10000).optional(),
     // coast: the browser's time zone is on that US coast (east / west); no zone never matches.
     coast: z.enum(["east", "west"]).optional(),
+    // device_memory (GB, navigator.deviceMemory) and plugins (navigator.plugins.length) are exact; chrome_below is the Chrome major version under which a UA matches; nav_connect_min is the checkpoint page's TCP+TLS setup in ms.
+    device_memory: z.number().int().min(1).max(1024).optional(),
+    plugins: z.number().int().min(0).max(1000).optional(),
+    chrome_below: z.number().int().min(1).max(1000).optional(),
+    nav_connect_min: z.number().int().min(1).max(10000).optional(),
     // screens: the screen (screen.width x screen.height) is one of these "WxH", either orientation; no size never matches.
     screens: z.array(z.string().regex(SCREEN_RE, "a size is WxH, e.g. 800x600")).min(1).max(50).optional(),
     // The on/off detectors (1 = the tell fired). no_js is decided on the GET
@@ -421,6 +426,17 @@ export function parseRuleConditionsForm(fd: FormData): { ok: true; value: RuleCo
   }
   const coast = String(fd.get("coast") ?? "");
   if (coast === "east" || coast === "west") raw.coast = coast;
+  for (const [field, min, max, label] of [
+    ["device_memory", 1, 1024, "Device memory must be whole GB, 1–1024."],
+    ["plugins", 0, 1000, "Plugins must be a whole count, 0–1000."],
+    ["chrome_below", 1, 1000, "Chrome version must be a whole major version, 1–1000."],
+    ["nav_connect_min", 1, 10000, "Connect time must be whole milliseconds, 1–10000."],
+  ] as const) {
+    const v = String(fd.get(field) ?? "").trim();
+    if (v === "") continue;
+    if (!/^\d{1,5}$/.test(v) || Number(v) < min || Number(v) > max) return { ok: false, reason: label };
+    raw[field] = Number(v);
+  }
   const screens = Array.from(new Set(String(fd.get("screens") ?? "").toLowerCase().replace(/×/g, "x").split(/[\s,;]+/).filter(Boolean)));
   if (screens.length) {
     const bad = screens.find((s) => !SCREEN_RE.test(s));
@@ -488,6 +504,10 @@ export function ruleConditionsToForm(c: RuleConditions | null | undefined): Retu
   netRttMin: string;
   navTtfbAbove: string;
   coast: "" | "east" | "west";
+  deviceMemory: string;
+  plugins: string;
+  chromeBelow: string;
+  navConnectMin: string;
   screens: string;
   noTouch: "" | "0" | "1";
   chromeUa: "" | "0" | "1";
@@ -534,6 +554,10 @@ export function ruleConditionsToForm(c: RuleConditions | null | undefined): Retu
     netRttMin: c?.net_rtt_min !== undefined ? String(c.net_rtt_min) : "",
     navTtfbAbove: c?.nav_ttfb_above !== undefined ? String(c.nav_ttfb_above) : "",
     coast: c?.coast ?? "",
+    deviceMemory: c?.device_memory !== undefined ? String(c.device_memory) : "",
+    plugins: c?.plugins !== undefined ? String(c.plugins) : "",
+    chromeBelow: c?.chrome_below !== undefined ? String(c.chrome_below) : "",
+    navConnectMin: c?.nav_connect_min !== undefined ? String(c.nav_connect_min) : "",
     screens: (c?.screens ?? []).join(", "),
     noTouch: bit(c?.no_touch),
     chromeUa: bit(c?.chrome_ua),
@@ -597,6 +621,10 @@ export function summarizeRuleConditions(c: RuleConditions | null | undefined): s
     c.net_rtt_min !== undefined ? `Chrome RTT ≥ ${c.net_rtt_min} ms` : "",
     c.nav_ttfb_above !== undefined ? `Checkpoint TTFB > ${c.nav_ttfb_above} ms` : "",
     c.coast ? `Coast ${c.coast}` : "",
+    c.device_memory !== undefined ? `Device memory = ${c.device_memory} GB` : "",
+    c.plugins !== undefined ? `Plugins = ${c.plugins}` : "",
+    c.chrome_below !== undefined ? `Chrome < ${c.chrome_below}` : "",
+    c.nav_connect_min !== undefined ? `Connect ≥ ${c.nav_connect_min} ms` : "",
     c.screens?.length ? `Screen ${c.screens.join(", ")}` : "",
     onOff(c.no_touch, "No touch", "Has touch"),
     onOff(c.chrome_ua, "Chrome UA", "Not Chrome UA"),

@@ -168,6 +168,18 @@ function DeviceSignals({ initial, disabled }: { initial: ReturnType<typeof ruleC
         <Field label="Checkpoint TTFB above (ms)" hint="Time to first byte of the checkpoint page. Strictly above.">
           <input name="nav_ttfb_above" defaultValue={initial.navTtfbAbove} inputMode="numeric" placeholder="300" className={INPUT_CLASS} disabled={disabled} />
         </Field>
+        <Field label="Device memory (GB)" hint="navigator.deviceMemory, exact. Not reported never matches.">
+          <input name="device_memory" defaultValue={initial.deviceMemory} inputMode="numeric" placeholder="32" className={INPUT_CLASS} disabled={disabled} />
+        </Field>
+        <Field label="Plugins (count)" hint="navigator.plugins.length, exact. 0 = none.">
+          <input name="plugins" defaultValue={initial.plugins} inputMode="numeric" placeholder="0" className={INPUT_CLASS} disabled={disabled} />
+        </Field>
+        <Field label="Chrome major below" hint="The User-Agent's Chrome version. Non-Chrome never matches.">
+          <input name="chrome_below" defaultValue={initial.chromeBelow} inputMode="numeric" placeholder="130" className={INPUT_CLASS} disabled={disabled} />
+        </Field>
+        <Field label="Connect at least (ms)" hint="The checkpoint page's TCP+TLS setup. A reused connection never matches.">
+          <input name="nav_connect_min" defaultValue={initial.navConnectMin} inputMode="numeric" placeholder="400" className={INPUT_CLASS} disabled={disabled} />
+        </Field>
         <Field label="US coast" hint="From the browser's time zone.">
           <select name="coast" defaultValue={initial.coast} className={SELECT_CLASS} disabled={disabled}>
             <option value="">Any</option>

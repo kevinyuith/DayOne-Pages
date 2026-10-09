@@ -358,6 +358,24 @@ check('coast: west zone does not match east', !eval_conditions_match(['coast' =>
 check('coast: central zone is neither', !eval_conditions_match(['coast' => 'west'], $req, ['tze' => 'america/chicago'], null));
 check('coast: no zone is undecidable', !eval_conditions_match(['coast' => 'west'], $req, ['mtp' => 0], null));
 check('coast: unknown stays pending for the checkpoint', eval_conditions_match(['coast' => 'west'], $req, null, null, true));
+// Device memory (GB), plugins, Chrome's major version and the connect time.
+check('device_memory: 32 fires on dm=32', eval_conditions_match(['device_memory' => 32], $req, ['dm' => 32], null));
+check('device_memory: 8 does not match 32', !eval_conditions_match(['device_memory' => 32], $req, ['dm' => 8], null));
+check('device_memory: not reported is undecidable', !eval_conditions_match(['device_memory' => 32], $req, ['mtp' => 0], null));
+check('device_memory: unknown stays pending', eval_conditions_match(['device_memory' => 32], $req, null, null, true));
+check('plugins: 0 fires on np=0', eval_conditions_match(['plugins' => 0], $req, ['np' => 0], null));
+check('plugins: 5 does not match 0', !eval_conditions_match(['plugins' => 0], $req, ['np' => 5], null));
+check('plugins: unknown stays pending', eval_conditions_match(['plugins' => 0], $req, null, null, true));
+$chrome129 = make_request(['HTTP_CF_CONNECTING_IP' => '198.51.100.41', 'REMOTE_ADDR' => '198.51.100.41', 'HTTP_USER_AGENT' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36']);
+$chrome154 = make_request(['HTTP_CF_CONNECTING_IP' => '198.51.100.41', 'REMOTE_ADDR' => '198.51.100.41', 'HTTP_USER_AGENT' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36']);
+$safari = make_request(['HTTP_CF_CONNECTING_IP' => '198.51.100.41', 'REMOTE_ADDR' => '198.51.100.41', 'HTTP_USER_AGENT' => 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15']);
+check('chrome_below: 129 is below 130', eval_conditions_match(['chrome_below' => 130], $chrome129, [], null));
+check('chrome_below: 154 is not below 130', !eval_conditions_match(['chrome_below' => 130], $chrome154, [], null));
+check('chrome_below: no Chrome token (Safari) does not match', !eval_conditions_match(['chrome_below' => 130], $safari, [], null));
+check('nav_connect_min: 400 fires on ntcp=400', eval_conditions_match(['nav_connect_min' => 400], $req, ['ntcp' => 400], null));
+check('nav_connect_min: 375 does not', !eval_conditions_match(['nav_connect_min' => 400], $req, ['ntcp' => 375], null));
+check('nav_connect_min: reused connection (no ntcp) is undecidable', !eval_conditions_match(['nav_connect_min' => 400], $req, ['nre' => 1], null));
+check('nav_connect_min: unknown stays pending', eval_conditions_match(['nav_connect_min' => 400], $req, null, null, true));
 $mobileAsns = [6167, 7018, 21928, 20057, 701, 398378, 22394, 15212];
 $rttMemo['198.51.100.31'] = ['asn' => 7018, 'asn_at' => time()];
 $rttMemo['198.51.100.32'] = ['asn' => 7922, 'asn_at' => time()];

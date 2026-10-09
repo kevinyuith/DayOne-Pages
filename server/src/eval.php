@@ -54,7 +54,7 @@ const EVAL_NO_JS = 'no_js';
 const EVAL_OWN_CONDITIONS = [
     'eval_cookie', 'touch', 'mobile_hint', 'pointer', 'webdriver', 'automation', 'gl_software', 'platform',
     'iframe', 'tostring_tampered', 'proto_poisoned', 'tz_offset', 'net_rtt_min', 'screens',
-    'nav_ttfb_above', 'coast',
+    'nav_ttfb_above', 'coast', 'device_memory', 'plugins', 'chrome_below', 'nav_connect_min',
     // The on/off detectors (1 = the tell fired). no_js is stripped too, but
     // never evaluated from signals — a POST proves JS ran.
     'no_touch', 'chrome_ua', 'no_chrome_object', 'tz_mismatch', 'tz_not_us', 'no_cookie', 'odd_resolution', EVAL_NO_JS,
@@ -536,6 +536,10 @@ function eval_rules_matched(array $rules, Request $req, ?array $signals, ?array 
  *                 orientation — 800x600 is headless Chrome's default and the auto-clickers' VM. No size = undecidable.
  *   nav_ttfb_above ms: the checkpoint page's time to first byte is above this (strictly). No timing = undecidable.
  *   coast         'east' | 'west': the browser's IANA zone is on that US coast (eval_coast). No zone = undecidable.
+ *   device_memory the browser's navigator.deviceMemory (GB) is exactly this. Not reported = undecidable.
+ *   plugins       navigator.plugins.length is exactly this (0 = none).
+ *   chrome_below  the User-Agent's Chrome major version is below this (no Chrome token = no match).
+ *   nav_connect_min ms: the checkpoint page's TCP+TLS setup is at least this (a reused connection = undecidable).
  *
  * The rest of the rule (IPs, ASNs, hostname, User-Agent…) goes through the
  * request walk's own evaluator (rule_conditions_match), so a Suspicious rule
@@ -630,6 +634,16 @@ function eval_conditions_match(array $cond, Request $req, ?array $signals, ?arra
                 return false; // No measurement never confirms a bot.
             }
             $ok = (int) $sig['net_rtt'] >= (int) $want;
+        } elseif ($key === 'chrome_below') {
+            $ok = preg_match('~Chrome/(\d+)~', $req->userAgent, $m) === 1 && (int) $m[1] < (int) $want;
+        } elseif ($key === 'nav_connect_min') {
+            if (!isset($sig['nav_connect'])) {
+                if ($allowPending) {
+                    continue;
+                }
+                return false; // No connect timing never confirms a bot.
+            }
+            $ok = $sig['nav_connect'] >= (int) $want;
         } elseif ($key === 'nav_ttfb_above') {
             if (!isset($sig['nav_ttfb'])) {
                 if ($allowPending) {
@@ -665,6 +679,7 @@ function eval_conditions_match(array $cond, Request $req, ?array $signals, ?arra
             $ok = match ($key) {
                 'pointer' => is_string($want) && strcasecmp((string) $got, $want) === 0,
                 'coast' => is_string($want) && $got === $want,
+                'device_memory', 'plugins' => (int) $got === (int) $want,
                 'platform' => is_string($want) && $want !== '' && stripos((string) $got, $want) !== false,
                 'tz_offset' => (int) $got === (int) $want,
                 default => ((int) $got === 1) === ((int) $want === 1),
@@ -855,6 +870,9 @@ function eval_signal_values(?array $signals, ?array $stored): array
     }
     // The checkpoint page's own time to first byte (ms, quantized to 25): the request to the first response byte.
     if (isset($src['ntfb']) && (int) $src['ntfb'] > 0) $out['nav_ttfb'] = (int) $src['ntfb'];
+    if (isset($src['ntcp']) && (int) $src['ntcp'] > 0) $out['nav_connect'] = (int) $src['ntcp'];
+    if (isset($src['dm']) && (int) $src['dm'] > 0) $out['device_memory'] = (int) $src['dm'];
+    if (array_key_exists('np', $src)) $out['plugins'] = (int) $src['np'];
     // The on/off detectors, derived from the raw signals.
     if (array_key_exists('mtp', $src)) $out['no_touch'] = ((int) $src['mtp'] <= 0) ? 1 : 0;
     if (array_key_exists('chr', $src)) $out['no_chrome_object'] = ((int) $src['chr'] === 1) ? 0 : 1;
