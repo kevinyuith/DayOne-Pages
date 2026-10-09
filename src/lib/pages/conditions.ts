@@ -143,6 +143,10 @@ export const ruleConditionsSchema = conditionsSchema
     tz_offset: z.number().int().min(-840).max(840).optional(),
     // net_rtt_min: Chrome's RTT estimate (navigator.connection.rtt, ms) is at least this; no measurement never matches.
     net_rtt_min: z.number().int().min(1).max(10000).optional(),
+    // nav_ttfb_above: the checkpoint page's time to first byte is above this (ms, strictly); no timing never matches.
+    nav_ttfb_above: z.number().int().min(1).max(10000).optional(),
+    // coast: the browser's time zone is on that US coast (east / west); no zone never matches.
+    coast: z.enum(["east", "west"]).optional(),
     // screens: the screen (screen.width x screen.height) is one of these "WxH", either orientation; no size never matches.
     screens: z.array(z.string().regex(SCREEN_RE, "a size is WxH, e.g. 800x600")).min(1).max(50).optional(),
     // The on/off detectors (1 = the tell fired). no_js is decided on the GET
@@ -410,6 +414,13 @@ export function parseRuleConditionsForm(fd: FormData): { ok: true; value: RuleCo
     if (!/^\d{1,5}$/.test(netRttMin) || Number(netRttMin) < 1 || Number(netRttMin) > 10000) return { ok: false, reason: "Chrome RTT must be whole milliseconds, 1–10000." };
     raw.net_rtt_min = Number(netRttMin);
   }
+  const navTtfbAbove = String(fd.get("nav_ttfb_above") ?? "").trim();
+  if (navTtfbAbove !== "") {
+    if (!/^\d{1,5}$/.test(navTtfbAbove) || Number(navTtfbAbove) < 1 || Number(navTtfbAbove) > 10000) return { ok: false, reason: "Checkpoint TTFB must be whole milliseconds, 1–10000." };
+    raw.nav_ttfb_above = Number(navTtfbAbove);
+  }
+  const coast = String(fd.get("coast") ?? "");
+  if (coast === "east" || coast === "west") raw.coast = coast;
   const screens = Array.from(new Set(String(fd.get("screens") ?? "").toLowerCase().replace(/×/g, "x").split(/[\s,;]+/).filter(Boolean)));
   if (screens.length) {
     const bad = screens.find((s) => !SCREEN_RE.test(s));
@@ -475,6 +486,8 @@ export function ruleConditionsToForm(c: RuleConditions | null | undefined): Retu
   protoPoisoned: "" | "0" | "1";
   tzOffset: string;
   netRttMin: string;
+  navTtfbAbove: string;
+  coast: "" | "east" | "west";
   screens: string;
   noTouch: "" | "0" | "1";
   chromeUa: "" | "0" | "1";
@@ -519,6 +532,8 @@ export function ruleConditionsToForm(c: RuleConditions | null | undefined): Retu
     protoPoisoned: bit(c?.proto_poisoned),
     tzOffset: c?.tz_offset !== undefined ? String(c.tz_offset) : "",
     netRttMin: c?.net_rtt_min !== undefined ? String(c.net_rtt_min) : "",
+    navTtfbAbove: c?.nav_ttfb_above !== undefined ? String(c.nav_ttfb_above) : "",
+    coast: c?.coast ?? "",
     screens: (c?.screens ?? []).join(", "),
     noTouch: bit(c?.no_touch),
     chromeUa: bit(c?.chrome_ua),
@@ -580,6 +595,8 @@ export function summarizeRuleConditions(c: RuleConditions | null | undefined): s
     onOff(c.proto_poisoned, "Proto poisoned", ""),
     c.tz_offset !== undefined ? `TZ offset ${c.tz_offset}` : "",
     c.net_rtt_min !== undefined ? `Chrome RTT ≥ ${c.net_rtt_min} ms` : "",
+    c.nav_ttfb_above !== undefined ? `Checkpoint TTFB > ${c.nav_ttfb_above} ms` : "",
+    c.coast ? `Coast ${c.coast}` : "",
     c.screens?.length ? `Screen ${c.screens.join(", ")}` : "",
     onOff(c.no_touch, "No touch", "Has touch"),
     onOff(c.chrome_ua, "Chrome UA", "Not Chrome UA"),

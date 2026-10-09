@@ -165,6 +165,16 @@ function DeviceSignals({ initial, disabled }: { initial: ReturnType<typeof ruleC
         <Field label="Chrome RTT at least (ms)" hint="navigator.connection.rtt, steps of 50. No measurement never matches.">
           <input name="net_rtt_min" defaultValue={initial.netRttMin} inputMode="numeric" placeholder="150" className={INPUT_CLASS} disabled={disabled} />
         </Field>
+        <Field label="Checkpoint TTFB above (ms)" hint="Time to first byte of the checkpoint page. Strictly above.">
+          <input name="nav_ttfb_above" defaultValue={initial.navTtfbAbove} inputMode="numeric" placeholder="300" className={INPUT_CLASS} disabled={disabled} />
+        </Field>
+        <Field label="US coast" hint="From the browser's time zone.">
+          <select name="coast" defaultValue={initial.coast} className={SELECT_CLASS} disabled={disabled}>
+            <option value="">Any</option>
+            <option value="east">East</option>
+            <option value="west">West</option>
+          </select>
+        </Field>
         <Field label="Screen is (W×H)" hint="screen.width × screen.height, either orientation; comma-separated.">
           <input name="screens" defaultValue={initial.screens} placeholder="800x600" className={INPUT_CLASS} disabled={disabled} />
         </Field>

@@ -343,6 +343,37 @@ check('cable rule: a failed ASN lookup never flags', !eval_conditions_match($cab
 check('cable rule: a phone does not', !eval_conditions_match($cableRule, $rttReq('198.51.100.21', $mobileUA), ['nrtt' => 300], null));
 check('cable rule: the checkpoint applies to a cable desktop (RTT still unknown)', eval_conditions_match($cableRule, $rttReq('198.51.100.21'), null, null, true));
 check('cable rule: not to another ASN — no checkpoint for it', !eval_conditions_match($cableRule, $rttReq('198.51.100.22'), null, null, true));
+
+// The checkpoint page's TTFB (ntfb, ms) above nav_ttfb_above, and the US coast
+// of the browser's zone (tze). A rule that names either waits for the POST.
+check('nav_ttfb_above: 350 > 300 fires', eval_conditions_match(['nav_ttfb_above' => 300], $req, ['ntfb' => 350], null));
+check('nav_ttfb_above: exactly 300 does not (strictly above)', !eval_conditions_match(['nav_ttfb_above' => 300], $req, ['ntfb' => 300], null));
+check('nav_ttfb_above: 250 does not', !eval_conditions_match(['nav_ttfb_above' => 300], $req, ['ntfb' => 250], null));
+check('nav_ttfb_above: no timing is undecidable', !eval_conditions_match(['nav_ttfb_above' => 300], $req, ['mtp' => 0], null));
+check('nav_ttfb_above: unknown stays pending for the checkpoint', eval_conditions_match(['nav_ttfb_above' => 300], $req, null, null, true));
+check('nav_ttfb_above: from a stored entry', eval_conditions_match(['nav_ttfb_above' => 225], $req, null, ['ntfb' => 275]));
+same('coast: the zone helper', ['east', 'east', 'west', 'west', null, null], [eval_coast('america/new_york'), eval_coast('america/detroit'), eval_coast('america/los_angeles'), eval_coast('america/phoenix'), eval_coast('america/chicago'), eval_coast('europe/madrid')]);
+check('coast: east zone matches east', eval_conditions_match(['coast' => 'east'], $req, ['tze' => 'america/new_york'], null));
+check('coast: west zone does not match east', !eval_conditions_match(['coast' => 'east'], $req, ['tze' => 'america/los_angeles'], null));
+check('coast: central zone is neither', !eval_conditions_match(['coast' => 'west'], $req, ['tze' => 'america/chicago'], null));
+check('coast: no zone is undecidable', !eval_conditions_match(['coast' => 'west'], $req, ['mtp' => 0], null));
+check('coast: unknown stays pending for the checkpoint', eval_conditions_match(['coast' => 'west'], $req, null, null, true));
+$mobileAsns = [6167, 7018, 21928, 20057, 701, 398378, 22394, 15212];
+$rttMemo['198.51.100.31'] = ['asn' => 7018, 'asn_at' => time()];
+$rttMemo['198.51.100.32'] = ['asn' => 7922, 'asn_at' => time()];
+$eastMobile = ['sub11' => 'taboola', 'asns' => $mobileAsns, 'nav_ttfb_above' => 300, 'coast' => 'east'];
+$eastOther = ['sub11' => 'taboola', 'asns' => $mobileAsns, 'asns_mode' => 'block', 'nav_ttfb_above' => 225, 'coast' => 'east'];
+$westAll = ['sub11' => 'taboola', 'nav_ttfb_above' => 350, 'coast' => 'west'];
+check('Leste mobile: AT&T on the east at 350 fires', eval_conditions_match($eastMobile, $rttReq('198.51.100.31'), ['ntfb' => 350, 'tze' => 'america/new_york'], null));
+check('Leste mobile: AT&T at exactly 300 does not', !eval_conditions_match($eastMobile, $rttReq('198.51.100.31'), ['ntfb' => 300, 'tze' => 'america/new_york'], null));
+check('Leste mobile: AT&T on the west does not', !eval_conditions_match($eastMobile, $rttReq('198.51.100.31'), ['ntfb' => 350, 'tze' => 'america/los_angeles'], null));
+check('Leste demais: Comcast on the east at 250 fires', eval_conditions_match($eastOther, $rttReq('198.51.100.32'), ['ntfb' => 250, 'tze' => 'america/new_york'], null));
+check('Leste demais: Comcast at exactly 225 does not', !eval_conditions_match($eastOther, $rttReq('198.51.100.32'), ['ntfb' => 225, 'tze' => 'america/new_york'], null));
+check('Leste demais: a mobile ASN is not in this rule', !eval_conditions_match($eastOther, $rttReq('198.51.100.31'), ['ntfb' => 400, 'tze' => 'america/new_york'], null));
+check('Oeste todos: 351 fires', eval_conditions_match($westAll, $rttReq('198.51.100.32'), ['ntfb' => 351, 'tze' => 'america/los_angeles'], null));
+check('Oeste todos: 350 does not', !eval_conditions_match($westAll, $rttReq('198.51.100.32'), ['ntfb' => 350, 'tze' => 'america/los_angeles'], null));
+check('Oeste todos: east visitors are not in it', !eval_conditions_match($westAll, $rttReq('198.51.100.32'), ['ntfb' => 900, 'tze' => 'america/new_york'], null));
+check('Taboola rules: the checkpoint applies while the timing is unknown', eval_conditions_match($eastMobile, $rttReq('198.51.100.31'), null, null, true));
 $fbReq = $rttReq('198.51.100.24');
 $fbReq->evalParams = ['sub11' => 'facebook'];
 check('cable rule: another platform fails before the ASN lookup', !eval_conditions_match($cableRule, $fbReq, ['nrtt' => 300], null) && !isset(netinfo_memo()['198.51.100.24']));

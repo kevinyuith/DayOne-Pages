@@ -54,6 +54,7 @@ const EVAL_NO_JS = 'no_js';
 const EVAL_OWN_CONDITIONS = [
     'eval_cookie', 'touch', 'mobile_hint', 'pointer', 'webdriver', 'automation', 'gl_software', 'platform',
     'iframe', 'tostring_tampered', 'proto_poisoned', 'tz_offset', 'net_rtt_min', 'screens',
+    'nav_ttfb_above', 'coast',
     // The on/off detectors (1 = the tell fired). no_js is stripped too, but
     // never evaluated from signals — a POST proves JS ran.
     'no_touch', 'chrome_ua', 'no_chrome_object', 'tz_mismatch', 'tz_not_us', 'no_cookie', 'odd_resolution', EVAL_NO_JS,
@@ -533,6 +534,8 @@ function eval_rules_matched(array $rules, Request $req, ?array $signals, ?array 
  *                 WebViews) = no measurement: undecidable.
  *   screens       list of "WxH": the screen (screen.width x screen.height, CSS px) is one of them, in either
  *                 orientation — 800x600 is headless Chrome's default and the auto-clickers' VM. No size = undecidable.
+ *   nav_ttfb_above ms: the checkpoint page's time to first byte is above this (strictly). No timing = undecidable.
+ *   coast         'east' | 'west': the browser's IANA zone is on that US coast (eval_coast). No zone = undecidable.
  *
  * The rest of the rule (IPs, ASNs, hostname, User-Agent…) goes through the
  * request walk's own evaluator (rule_conditions_match), so a Suspicious rule
@@ -627,6 +630,14 @@ function eval_conditions_match(array $cond, Request $req, ?array $signals, ?arra
                 return false; // No measurement never confirms a bot.
             }
             $ok = (int) $sig['net_rtt'] >= (int) $want;
+        } elseif ($key === 'nav_ttfb_above') {
+            if (!isset($sig['nav_ttfb'])) {
+                if ($allowPending) {
+                    continue;
+                }
+                return false; // No timing never confirms a bot.
+            }
+            $ok = $sig['nav_ttfb'] > (int) $want;
         } elseif ($key === 'screens') {
             if (!isset($sig['screen'])) {
                 if ($allowPending) {
@@ -653,6 +664,7 @@ function eval_conditions_match(array $cond, Request $req, ?array $signals, ?arra
             $got = $sig[$key];
             $ok = match ($key) {
                 'pointer' => is_string($want) && strcasecmp((string) $got, $want) === 0,
+                'coast' => is_string($want) && $got === $want,
                 'platform' => is_string($want) && $want !== '' && stripos((string) $got, $want) !== false,
                 'tz_offset' => (int) $got === (int) $want,
                 default => ((int) $got === 1) === ((int) $want === 1),
@@ -663,6 +675,21 @@ function eval_conditions_match(array $cond, Request $req, ?array $signals, ?arra
         }
     }
     return true;
+}
+
+/**
+ * The US coast of a lowercased IANA zone: 'east', 'west', or null (the centre,
+ * the mountain states and anything outside the US).
+ */
+function eval_coast(string $zone): ?string
+{
+    if (preg_match('~^america/(new_york|detroit|toronto|montreal|miami|atlanta|boston|philadelphia|nassau|indiana/.*|kentucky/.*|louisville|charlotte|iqaluit|nipigon|thunder_bay|pangnirtung|port-au-prince|havana|jamaica|panama|cancun)$~', $zone) === 1) {
+        return 'east';
+    }
+    if (preg_match('~^america/(los_angeles|vancouver|tijuana|seattle|boise|dawson|whitehorse|ensenada|santa_isabel|juneau|anchorage|metlakatla|sitka|yakutat|nome|adak|hermosillo|mazatlan|phoenix|creston|dawson_creek|fort_nelson)$~', $zone) === 1) {
+        return 'west';
+    }
+    return null;
 }
 
 /** A Chrome-family User-Agent: Chrome, Chromium, Edge or Opera (their token + a version). */
@@ -823,7 +850,11 @@ function eval_signal_values(?array $signals, ?array $stored): array
         $out['tze'] = strtolower($src['tze']);
         // tz_not_us: the zone is outside the home list (US + territories, CA, MX, nearby Caribbean).
         $out['tz_not_us'] = eval_tz_us($out['tze']) ? 0 : 1;
+        $coast = eval_coast($out['tze']);
+        if ($coast !== null) $out['coast'] = $coast;
     }
+    // The checkpoint page's own time to first byte (ms, quantized to 25): the request to the first response byte.
+    if (isset($src['ntfb']) && (int) $src['ntfb'] > 0) $out['nav_ttfb'] = (int) $src['ntfb'];
     // The on/off detectors, derived from the raw signals.
     if (array_key_exists('mtp', $src)) $out['no_touch'] = ((int) $src['mtp'] <= 0) ? 1 : 0;
     if (array_key_exists('chr', $src)) $out['no_chrome_object'] = ((int) $src['chr'] === 1) ? 0 : 1;
