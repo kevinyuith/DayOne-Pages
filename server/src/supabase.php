@@ -52,9 +52,9 @@ function http_curl(string $url): \CurlHandle
  *
  * @return array{ok: bool, routes?: array, error?: string, status?: int}
  */
-function supabase_resolve(string $host, string $path): array
+function supabase_resolve(string $host, string $path, ?int $timeoutMs = null): array
 {
-    $r = supabase_rpc('resolve', ['p_host' => $host, 'p_path' => $path, 'p_with_content' => false]);
+    $r = supabase_rpc('resolve', ['p_host' => $host, 'p_path' => $path, 'p_with_content' => false], $timeoutMs);
     return $r['ok'] ? ['ok' => true, 'routes' => $r['rows']] : $r;
 }
 
@@ -69,11 +69,11 @@ const CONTENT_GET_BATCH = 50;
  * @param list<array{page_id: string, slug: string}> $refs
  * @return array{ok: bool, contents?: list<array{page_id: string, slug: string, content_hash: string, content: string}>, error?: string, status?: int}
  */
-function supabase_content_get(array $refs): array
+function supabase_content_get(array $refs, ?int $timeoutMs = null): array
 {
     $contents = [];
     foreach (array_chunk(array_values($refs), CONTENT_GET_BATCH) as $batch) {
-        $r = supabase_rpc('content_get', ['p_refs' => $batch]);
+        $r = supabase_rpc('content_get', ['p_refs' => $batch], $timeoutMs);
         if (!$r['ok']) {
             return $r;
         }
@@ -88,11 +88,12 @@ function supabase_content_get(array $refs): array
 }
 
 /**
- * POST to a read RPC (pages.<fn>) with p_key; returns the rows.
+ * POST to a read RPC (pages.<fn>) with p_key; returns the rows. $timeoutMs
+ * replaces SUPABASE_TIMEOUT (the check of an expired copy, resolver.php).
  *
  * @return array{ok: bool, rows?: array, error?: string, status?: int}
  */
-function supabase_rpc(string $fn, array $params): array
+function supabase_rpc(string $fn, array $params, ?int $timeoutMs = null): array
 {
     $cfg = config();
     if ($cfg['supabase_url'] === '' || $cfg['supabase_anon_key'] === '' || $cfg['server_key'] === '') {
@@ -109,8 +110,9 @@ function supabase_rpc(string $fn, array $params): array
         CURLOPT_POST => true,
         CURLOPT_POSTFIELDS => $body,
         CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_CONNECTTIMEOUT => 2,
-        CURLOPT_TIMEOUT => max(1, $cfg['supabase_timeout']),
+        CURLOPT_CONNECTTIMEOUT_MS => $timeoutMs !== null ? min(2000, max(100, $timeoutMs)) : 2000,
+        CURLOPT_TIMEOUT_MS => $timeoutMs !== null ? max(100, $timeoutMs) : 1000 * max(1, $cfg['supabase_timeout']),
+        CURLOPT_NOSIGNAL => true,
         CURLOPT_HTTPHEADER => [
             'apikey: ' . $cfg['supabase_anon_key'],
             'Authorization: Bearer ' . $cfg['supabase_anon_key'],

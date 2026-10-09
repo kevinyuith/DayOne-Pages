@@ -95,6 +95,8 @@ function config(): array
         'negative_ttl'      => $int('NEGATIVE_TTL', 30),
         'stale_max_age'     => $int('STALE_MAX_AGE', 604800),
         'swr'               => $int('SWR', 1) === 1,
+        // The check of an expired copy before the response (resolver.php): past this, the copy is served.
+        'revalidate_timeout_ms' => $int('REVALIDATE_TIMEOUT_MS', 1000),
         'max_path_len'      => $int('MAX_PATH_LEN', 200),
         'max_paths_per_host'=> $int('MAX_PATHS_PER_HOST', 2000),
         'supabase_timeout'  => $int('SUPABASE_TIMEOUT', 5),

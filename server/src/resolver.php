@@ -4,23 +4,38 @@
  *
  *   HIT       fresh cache with all content on disk
  *   MISS      went to Supabase and rewrote it
- *   STALE     Supabase failed; served the expired copy
+ *   STALE     Supabase failed or was too slow; served the expired copy
  *   UPDATING  another worker is refreshing; served the expired copy
  *   (null)    nothing on disk and Supabase down → the caller answers 503
  *
- * With SWR=1 and php-fpm, a STALE entry is served right away and refreshed
- * AFTER the response goes out (fastcgi_finish_request): the visitor never
- * waits for Supabase after the first visit.
+ * An expired copy is checked BEFORE the response (09/10). It used to be served
+ * right away and refreshed after the response (SWR), so the first visitor after
+ * a quiet spell got what was decided at the previous visit — up to STALE_MAX_AGE
+ * (7 days) old: a page added to a domain answered 404 once (55 of the 57 new
+ * whites of the 30 days before), a domain taken back from Unlocked to Active
+ * sent one more visitor to the funnel, a new rule missed one click. A write
+ * without a purge only took effect at the second visit, not "within 30 s".
+ *
+ * The check gets REVALIDATE_TIMEOUT_MS (1 s) when there's a copy to fall back
+ * on: Supabase failing or slower than that serves the copy, and it's refreshed
+ * after the response (fastcgi_finish_request, the full time limit), as before.
+ * The breaker: after a failure, for SUPABASE_BREAKER_SECONDS every expired copy
+ * is served right away — an outage doesn't hold each visitor for the time limit.
+ * It's the same resolve the background refresh made, so Supabase gets no more
+ * calls; only the visitor who arrives after a quiet spell waits for it (~20 ms).
  */
 declare(strict_types=1);
 
 defined('DAYONE_ENTRY') || (http_response_code(404) && exit);
 
 /**
- * @return array{routes: array, platform: ?array, xcache: string, refresh: bool}|null
+ * @param (callable(string, string, ?int): ?array)|null $refresh  the refresh (the tests pass a fake Supabase)
+ * @param bool|null $background  can refresh after the response (null = SWR on and php-fpm)
+ * @return array{routes: array, gate: ?array, xcache: string, refresh: bool}|null
  */
-function resolve_routes(string $host, string $path): ?array
+function resolve_routes(string $host, string $path, ?callable $refresh = null, ?bool $background = null): ?array
 {
+    $refresh ??= 'refresh_routes';
     ['state' => $state, 'entry' => $entry] = cache_get_routes($host, $path);
 
     if ($state === 'FRESH' && cache_has_all_content($entry['routes'])) {
@@ -28,19 +43,28 @@ function resolve_routes(string $host, string $path): ?array
     }
 
     $cfg = config();
-    if ($state === 'STALE' && $cfg['swr'] && function_exists('fastcgi_finish_request')) {
-        return ['routes' => $entry['routes'], 'gate' => $entry['gate'] ?? null, 'xcache' => 'STALE', 'refresh' => true];
+    $background ??= $cfg['swr'] && function_exists('fastcgi_finish_request');
+    // A copy that can stand in for Supabase: expired, with every page it serves still on disk.
+    $fallback = $state === 'STALE' && cache_has_all_content($entry['routes']);
+    $copy = static fn(string $xcache, bool $refreshLater): array =>
+        ['routes' => $entry['routes'], 'gate' => $entry['gate'] ?? null, 'xcache' => $xcache, 'refresh' => $refreshLater];
+
+    if ($fallback && $background && supabase_breaker_open()) {
+        return $copy('STALE', true);
     }
 
     $lock = try_lock("$host|$path");
     if ($lock !== null) {
         try {
-            $fresh = refresh_routes($host, $path);
+            $fresh = $refresh($host, $path, $fallback ? $cfg['revalidate_timeout_ms'] : null);
             if ($fresh !== null) {
+                supabase_breaker_close();
                 return ['routes' => $fresh, 'gate' => gate_last_refresh_data(), 'xcache' => 'MISS', 'refresh' => false];
             }
+            supabase_breaker_trip();
             if ($entry !== null) {
-                return ['routes' => $entry['routes'], 'gate' => $entry['gate'] ?? null, 'xcache' => 'STALE', 'refresh' => false];
+                // Failing or slow: the copy now, the refresh after the response.
+                return $copy('STALE', $fallback && $background);
             }
             return null;
         } finally {
@@ -50,7 +74,7 @@ function resolve_routes(string $host, string $path): ?array
 
     // Another worker is at Supabase.
     if ($entry !== null) {
-        return ['routes' => $entry['routes'], 'gate' => $entry['gate'] ?? null, 'xcache' => 'UPDATING', 'refresh' => false];
+        return $copy('UPDATING', false);
     }
     for ($i = 0; $i < 20; $i++) {
         usleep(100_000);
@@ -60,6 +84,37 @@ function resolve_routes(string $host, string $path): ?array
         }
     }
     return null;
+}
+
+/** For how long after a failed refresh every expired copy is served without waiting for Supabase. */
+const SUPABASE_BREAKER_SECONDS = 30;
+
+function supabase_breaker_file(): string
+{
+    return cache_dir() . '/supabase-breaker';
+}
+
+/** Did a refresh fail in the last SUPABASE_BREAKER_SECONDS? Shared by the workers: the file's mtime. */
+function supabase_breaker_open(): bool
+{
+    $file = supabase_breaker_file();
+    clearstatcache(true, $file);
+    $t = @filemtime($file);
+    return $t !== false && time() - $t < SUPABASE_BREAKER_SECONDS;
+}
+
+function supabase_breaker_trip(): void
+{
+    @touch(supabase_breaker_file());
+}
+
+function supabase_breaker_close(): void
+{
+    $file = supabase_breaker_file();
+    clearstatcache(true, $file);
+    if (is_file($file)) {
+        @unlink($file);
+    }
 }
 
 /** One content cache cleanup every so many refreshes (on average). */
@@ -72,10 +127,11 @@ const CONTENT_GC_EVERY = 500;
  *
  * resolve brings only each content's hash; the HTML only comes (content_get)
  * for the hashes not yet on disk — in practice, only when a page changes.
+ * $timeoutMs: a shorter time limit for each Supabase call (null = SUPABASE_TIMEOUT).
  */
-function refresh_routes(string $host, string $path): ?array
+function refresh_routes(string $host, string $path, ?int $timeoutMs = null): ?array
 {
-    $r = supabase_resolve($host, $path);
+    $r = supabase_resolve($host, $path, $timeoutMs);
     if (!$r['ok']) {
         error_log("[dayone-pages] supabase failed for $host$path: " . ($r['error'] ?? '?'));
         return null;
@@ -125,7 +181,7 @@ function refresh_routes(string $host, string $path): ?array
         }
     }
     if ($refs) {
-        $got = supabase_content_get(array_values($refs));
+        $got = supabase_content_get(array_values($refs), $timeoutMs);
         if (!$got['ok']) {
             error_log("[dayone-pages] content_get failed for $host$path: " . ($got['error'] ?? '?'));
             return null;
@@ -191,7 +247,7 @@ function refresh_routes(string $host, string $path): ?array
     return $routes;
 }
 
-/** The SWR background refresh: with the lock, no rush. */
+/** The refresh after the response (an expired copy was served): with the lock, the full time limit. */
 function refresh_in_background(string $host, string $path): void
 {
     $lock = try_lock("$host|$path");
@@ -199,7 +255,11 @@ function refresh_in_background(string $host, string $path): void
         return;
     }
     try {
-        refresh_routes($host, $path);
+        if (refresh_routes($host, $path) !== null) {
+            supabase_breaker_close();
+        } else {
+            supabase_breaker_trip();
+        }
     } finally {
         unlock($lock);
     }
