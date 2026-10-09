@@ -167,7 +167,8 @@ const TRACKER_DOT_JS = <<<'JS'
  *   confirms it. dot answers 503 when its database write fails (PostgREST
  *   reloading its schema cache, the database out of connections: outages of up
  *   to 20 minutes were seen). An event dot didn't take goes again while the page
- *   is open (2s, 4s, 8s… then every minute, for 15 minutes) and from the next
+ *   is open (2s, 4s, 8s… then every minute, each ±50% at random so the visitors
+ *   don't all come back at once, for 15 minutes) and from the next
  *   page of this domain (for a day), with `_delay_ms` (how long ago it happened,
  *   so dot dates it right without trusting this device's clock). dot keeps the
  *   first event of a kind per click and video_watch as the max, so an event
@@ -358,7 +359,11 @@ const TRACKER_DOT_JS = <<<'JS'
       }
     }).catch(function () {
       if (Date.now() - item.t < RETRY_WINDOW) {
-        setTimeout(function () { post(item, attempt + 1); }, Math.min(60000, 2000 * Math.pow(2, attempt - 1)));
+        // Jittered (50–150% of the step): when dot is down, every visitor's event
+        // fails in the same seconds; without it they'd all come back together,
+        // in waves that keep the database down (10/08: 3× the calls in 2 minutes).
+        var wait = Math.min(60000, 2000 * Math.pow(2, attempt - 1));
+        setTimeout(function () { post(item, attempt + 1); }, wait / 2 + Math.random() * wait);
       }
       // past the window it stays in the outbox: the next page of this domain sends it
     });
@@ -374,7 +379,7 @@ const TRACKER_DOT_JS = <<<'JS'
     var a = outboxRead().filter(function (x) { return x && x.p && x.id && now - x.t < OUTBOX_MAX_AGE; });
     outboxWrite(a);
     a.forEach(function (item, i) {
-      setTimeout(function () { post(item, 1); }, 1500 + i * 150);
+      setTimeout(function () { post(item, 1); }, 1500 + i * 150 + Math.random() * 1000);
     });
   }
   // Send for pagehide and for a click that leaves the page. sendBeacon is the
