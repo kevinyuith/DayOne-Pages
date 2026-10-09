@@ -8,7 +8,16 @@
       "ClaudeInChromeDomain(127.0.0.1:8793)",
       "ClaudeInChromeDomain(localhost:8098)",
       "ClaudeInChromeDomain(localhost:3210)",
-      "ClaudeInChromeDomain(dayone-pages-production.up.railway.app)"
+      "ClaudeInChromeDomain(dayone-pages-production.up.railway.app)",
+      "ClaudeInChromeDomain(127.0.0.1:8791)",
+      "ClaudeInChromeDomain(openedmat.com)",
+      "Bash(supabase start *)",
+      "Bash(cat)",
+      "Read(//tmp/**)",
+      "Bash(supabase db *)",
+      "ClaudeInChromeDomain(localhost:3000)",
+      "ClaudeInChromeDomain(dayone.pages)",
+      "ClaudeInChromeDomain(app.dayone-pages.com)"
     ]
   }
 }
