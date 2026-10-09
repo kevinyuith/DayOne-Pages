@@ -274,6 +274,7 @@ remove the old one.
 
 - `GET /_health` → `{"ok":true,"server_id":...,"cache_writable":true}` with header `X-DayOne-Pages: <SERVER_ID>`. Doesn't depend on Supabase.
 - `POST /_purge` with `X-Purge-Token: <PURGE_TOKEN>` and body `{"host":"example.com"}` or `{"all":true}`. Missing/wrong token → 404.
+  For one host it may be signed instead: `X-Purge-Time: <unix time>` and `X-Purge-Signature: <hex HMAC-SHA256 of "host|time" with PURGE_TOKEN>`, valid for 2 minutes either way — what the dashboards send (the database signs it, `pages.purge_request`, with the same token kept in Vault as `dayone_pages.purge_token`). It works on any domain the server serves: `https://<host>/_purge`.
 
 ## Local testing
 

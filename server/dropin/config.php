@@ -23,7 +23,9 @@ return [
     // Marker returned by /_health. Same as the panel's SERVER_ID.
     'SERVER_ID'         => '',
 
-    // Token for POST /_purge (X-Purge-Token header). Empty = purge disabled.
+    // Token for POST /_purge (X-Purge-Token header, or a signature made with it). Empty = purge disabled.
+    // The same value goes to Vault, 'dayone_pages.purge_token' (pages.ai_secret_set): the database signs
+    // the dashboards' purges with it (pages.purge_request).
     'PURGE_TOKEN'       => '',
 
     // Disk cache. The folder is created automatically; the site user must be able to write here.

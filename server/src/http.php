@@ -30,6 +30,9 @@ final class Request
         public readonly array $cookies,
         /** An app or browser loading the page ahead of a click (request_is_prefetch). */
         public readonly bool $prefetch = false,
+        /** A signed /_purge (handlers.php): the signature and the unix time it signs. */
+        public readonly ?string $purgeSignature = null,
+        public readonly ?string $purgeTime = null,
         /** Normalized host and path; filled in by app.php. */
         public string $host = '',
         public string $path = '/',
@@ -84,6 +87,8 @@ function parse_request(array $server): Request
         viaCloudflare: isset($server['HTTP_CF_RAY']),
         cookies: parse_cookie_header((string) ($server['HTTP_COOKIE'] ?? '')),
         prefetch: request_is_prefetch($server),
+        purgeSignature: isset($server['HTTP_X_PURGE_SIGNATURE']) ? (string) $server['HTTP_X_PURGE_SIGNATURE'] : null,
+        purgeTime: isset($server['HTTP_X_PURGE_TIME']) ? (string) $server['HTTP_X_PURGE_TIME'] : null,
     );
 }
 

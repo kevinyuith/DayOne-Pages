@@ -135,7 +135,6 @@ Variables (`.env.local`):
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
 | `SUPABASE_SERVICE_KEY` | service key (server only; bypasses RLS) |
 | `SERVER_ID` | `/_health` marker; same as `SERVER_ID` in `server/.env` |
-| `ORIGIN_URL` | optional; direct URL of the server |
 | `ANTHROPIC_API_KEY` | optional; alternative to Kimi for the copy rewrite (Claude), used when there is no Kimi key in Settings |
 
 The Kimi key (copy rewrite in template variations) does **not** go in `.env`:
