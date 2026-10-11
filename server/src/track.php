@@ -63,10 +63,10 @@ function track_origin(?string $kind): ?string
 
 /**
  * The tracker's URL: the content version (?v=), the step (&origin=), the
- * served page's id (&page_id=) and the VSL video the response drew
- * (&video_id=), if it drew one.
+ * served page's id (&page_id=), the VSL video the response drew
+ * (&video_id=), if it drew one, and the CTA mode (&cta=, cta.php).
  */
-function track_url(string $origin, ?string $pageId = null, ?string $videoId = null): string
+function track_url(string $origin, ?string $pageId = null, ?string $videoId = null, ?int $cta = null): string
 {
     $q = ['v' => tracker_version(TRACKER_FILES[TRACKER_PATH]), 'origin' => $origin];
     if ($pageId !== null) {
@@ -74,6 +74,10 @@ function track_url(string $origin, ?string $pageId = null, ?string $videoId = nu
     }
     if ($videoId !== null) {
         $q['video_id'] = $videoId;
+    }
+    // The funnel's CTA (cta.php): 1 = ask /_dop/cta at the pitch, 2 = at once (a returning visitor).
+    if ($cta !== null) {
+        $q['cta'] = $cta;
     }
     return TRACKER_PATH . '?' . http_build_query($q, '', '&');
 }
@@ -91,9 +95,9 @@ function track_has_own_tag(string $html): bool
 }
 
 /** The step's tracker, right after <head> (the earliest spot); without a <head>, before </body> or at the end. */
-function track_inject(string $html, string $origin, ?string $pageId = null, ?string $videoId = null): string
+function track_inject(string $html, string $origin, ?string $pageId = null, ?string $videoId = null, ?int $cta = null): string
 {
-    $script = '<script data-dop-track async src="' . htmlspecialchars(track_url($origin, $pageId, $videoId), ENT_QUOTES) . '"></script>';
+    $script = '<script data-dop-track async src="' . htmlspecialchars(track_url($origin, $pageId, $videoId, $cta), ENT_QUOTES) . '"></script>';
     if (preg_match('/<head\b[^>]*>/i', $html, $m, PREG_OFFSET_CAPTURE) === 1) {
         $at = (int) $m[0][1] + strlen($m[0][0]);
         return substr_replace($html, $script, $at, 0);
@@ -159,6 +163,24 @@ const TRACKER_DOT_JS = <<<'JS'
  *   split's pick) — dot's page_id column. The server writes it in this script's
  *   own URL (?page_id=, filled when the page is served) and sets it in the
  *   `page_id` cookie in the same response; the URL wins.
+ *
+ * CTA_ID: on a VSL whose CTA is the server's (cta.php), this script's URL has
+ *   &cta=1: CTA_LEAD seconds before the pitch (the player config's pitchTime) it
+ *   asks /_dop/cta (same origin) for the CTA the server draws and puts it, HIDDEN,
+ *   under the player ([data-dop-cta], or right after the <vturb-smartplayer>), so
+ *   its jars, fonts and icons are already down when it shows; at the pitch it shows
+ *   it — loaded or not — and sends the video_pitch WITH its cta_id, and every event
+ *   after it too (video_watch, video_click, video_end, scroll_depth): nothing before
+ *   the pitch carries it, so only who saw the CTA counts. A pitch with no config
+ *   pitchTime (only VTurb's pitch:time), or a seek past the lead, asks at the pitch
+ *   and waits for it up to CTA_TIMEOUT. &cta=2 = the visitor already got one of the funnel's CTAs:
+ *   asked for at once, as VTurb shows its CTA to a returning viewer. Its links get
+ *   the page's URL parameters, the dotid and the cta_id (appended as text: the
+ *   checkout link's own nested u= stays as it is), and, on the visitor's touch or
+ *   click, VTurb's conversion key (the player's conversionKey, v3_…: it has the
+ *   time watched in it) as vturb_id and under every name of the player config's
+ *   `conversion`. No answer in time → the
+ *   page's reserve (<template data-dop-cta-reserve>), with no cta_id: it wasn't drawn.
  *
  * Also preserved: UTM/click-ID capture (sessionStorage dot_attr), dotid cookie
  * (1 day), ?dotid= propagation on external links, send retries, pagehide beacon.
@@ -245,6 +267,16 @@ const TRACKER_DOT_JS = <<<'JS'
     var m = document.cookie.match(/(?:^|;\s*)page_id=([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:;|$)/);
     return m ? m[1] : null;
   })();
+  // ---- cta: the funnel's CTA under the VSL, drawn by the server at the pitch (see the header) ----
+  var CTA_TIMEOUT = 2000;      // max wait (ms) for /_dop/cta before the reserve
+  var CTA_LEAD = 3;            // seconds before the pitch the CTA is fetched and laid out hidden (its images load)
+  var ctaMode = (function () {
+    var m = mySrc.match(/[?&]cta=([12])(?:[&#]|$)/);
+    return m ? +m[1] : 0;
+  })();
+  var ctaId = null;            // the drawn CTA, once it's shown: every event from then on carries it
+  var ctaPending = null;       // the drawn CTA while it waits hidden for the pitch
+  var ctaPromise = null;
   function setCookie(name, value, days) {
     var d = new Date();
     d.setTime(d.getTime() + days * 86400000);
@@ -274,6 +306,7 @@ const TRACKER_DOT_JS = <<<'JS'
     };
     if (dotid) payload.dotid = dotid;
     if (pageId) payload.page_id = pageId;
+    if (ctaId) payload.cta_id = ctaId;
     for (var k in attrs) payload[k] = attrs[k];
     if (extra) { for (var k2 in extra) payload[k2] = extra[k2]; }
     return payload;
@@ -449,7 +482,11 @@ const TRACKER_DOT_JS = <<<'JS'
       if (pitchSent) return;
       pitchSent = true;
       var extra = { video_time: t, video_id: videoId };
-      if (sync) sendSync(buildPayload('video_pitch', extra)); else sendEvent('video_pitch', extra);
+      if (sync) { sendSync(buildPayload('video_pitch', extra)); return; }
+      // the server's CTA (&cta=): it shows now (already laid out when it was fetched CTA_LEAD before;
+      // otherwise asked for now) and the video_pitch goes with its cta_id
+      var cta = ctaFetch(false);
+      if (cta) cta.then(function () { ctaReveal(); sendEvent('video_pitch', extra); }); else sendEvent('video_pitch', extra);
     }
     // video was already playing when the tracker attached (e.g. resume, or a late tracker)
     if (currentTime() > 0) firePlay();
@@ -465,6 +502,8 @@ const TRACKER_DOT_JS = <<<'JS'
       }
       // no pitch:time from the player: the config's pitch, but never in the muted smart autoplay (VTurb's rule)
       var p = pitchTime();
+      // the server's CTA, CTA_LEAD before the pitch: fetched and laid out hidden, so its images are down when it shows
+      if (ctaMode === 1 && p > 0 && t >= p - CTA_LEAD && t < p && !el.inSmartAutoPlay) ctaFetch(true);
       if (p > 0 && t >= p && !el.inSmartAutoPlay) firePitch(t);
     });
     // VTurb's own pitch mark: only after a real play
@@ -505,6 +544,162 @@ const TRACKER_DOT_JS = <<<'JS'
     if (clickSent) return;
     clickSent = true;
     sendSync(buildPayload('video_click', { video_time: currentTime(), video_id: videoId }));
+  }
+  // The CTA's place: <div data-dop-cta> if the page has one, else a new one right after the player.
+  function ctaSlot() {
+    var s = document.querySelector('[data-dop-cta]');
+    if (s) return s;
+    var p = document.querySelector('vturb-smartplayer');
+    if (!p || !p.parentNode) return null;
+    s = document.createElement('div');
+    s.setAttribute('data-dop-cta', '');
+    p.parentNode.insertBefore(s, p.nextSibling);
+    return s;
+  }
+  // A CTA link to another site gets what the VTurb CTA passes on: the page's URL parameters (but
+  // ours, dop_*), the dotid and the cta_id. Appended as text, so the checkout link's own nested
+  // u=https://…?aff=… is left exactly as it was.
+  function ctaLink(href, id) {
+    var hash = '';
+    var at = href.indexOf('#');
+    if (at >= 0) { hash = href.slice(at); href = href.slice(0, at); }
+    var have = {};
+    var q = href.indexOf('?');
+    if (q >= 0) {
+      href.slice(q + 1).split('&').forEach(function (kv) {
+        var k = kv.split('=')[0];
+        try { if (k) have[decodeURIComponent(k)] = 1; } catch (e) {}
+      });
+    }
+    var add = [];
+    query.forEach(function (v, k) {
+      if (!have[k] && k.indexOf('dop_') !== 0) { have[k] = 1; add.push(encodeURIComponent(k) + '=' + encodeURIComponent(v)); }
+    });
+    if (dotid && !have.dotid) add.push('dotid=' + encodeURIComponent(dotid));
+    if (id && !have.cta_id) add.push('cta_id=' + encodeURIComponent(id));
+    return add.length ? href + (q >= 0 ? '&' : '?') + add.join('&') + hash : href + hash;
+  }
+  // Puts the CTA in its place (once) — hidden when it's early for the pitch: it's laid out and its
+  // images load, but nobody sees it until ctaReveal. Its scripts run (innerHTML alone doesn't run them).
+  function ctaShow(html, id, hidden) {
+    var slot = ctaSlot();
+    if (!slot || slot.getAttribute('data-dop-cta-shown')) return false;
+    slot.setAttribute('data-dop-cta-shown', id || 'reserve');
+    if (hidden) slot.style.display = 'none';
+    slot.innerHTML = html;
+    var scripts = slot.querySelectorAll('script');
+    for (var i = 0; i < scripts.length; i++) {
+      var old = scripts[i];
+      var s = document.createElement('script');
+      for (var j = 0; j < old.attributes.length; j++) s.setAttribute(old.attributes[j].name, old.attributes[j].value);
+      s.text = old.text;
+      old.parentNode.replaceChild(s, old);
+    }
+    var links = slot.querySelectorAll('a[href]');
+    for (var k = 0; k < links.length; k++) {
+      try {
+        var u = new URL(links[k].getAttribute('href'), window.location.href);
+        if (/^https?:$/.test(u.protocol) && u.hostname !== window.location.hostname) {
+          links[k].setAttribute('href', ctaLink(links[k].getAttribute('href'), id));
+        }
+      } catch (e) {}
+    }
+    return true;
+  }
+  // The CTA shows: the slot becomes visible and, if the server drew it, its cta_id goes on every event from now on.
+  function ctaReveal() {
+    var slot = document.querySelector('[data-dop-cta]');
+    if (slot) slot.style.display = '';
+    if (ctaPending) ctaId = ctaPending;
+  }
+  // VTurb's conversion key (v3_<session>_<player>_<seconds sent>…, what VTurb matches a sale by): the player
+  // computes it when it's read — the time watched is in it —, so a CTA link takes it on the visitor's own touch,
+  // click or long press, as VTurb does with its own CTA. It goes under every name the player's config lists
+  // (`conversion`: vturb_id on F8) and always as vturb_id (what the conversions postback reads first), on the
+  // outer link (checkout.directdayone.com passes it on), as text like the rest.
+  function conversionKey() {
+    var els = [document.querySelector('vturb-smartplayer'), player];
+    for (var i = 0; i < els.length; i++) {
+      try {
+        var k = els[i] && els[i].conversionKey;
+        if (typeof k === 'string' && /^v3_[\w.-]{1,300}$/.test(k)) return k;
+      } catch (e) {}
+    }
+    return '';
+  }
+  function conversionNames() {
+    var names = ['vturb_id'];
+    [document.querySelector('vturb-smartplayer'), player].forEach(function (el) {
+      try {
+        var c = el && (el.config || el.__config);
+        ((c && c.conversion) || []).forEach(function (n) {
+          if (typeof n === 'string' && /^[\w.-]{1,40}$/.test(n) && names.indexOf(n) < 0) names.push(n);
+        });
+      } catch (e) {}
+    });
+    return names;
+  }
+  // name=value on a link, as text: replaces the value it already has (the first), otherwise appends it.
+  function linkParam(href, name, value) {
+    var hash = '';
+    var at = href.indexOf('#');
+    if (at >= 0) { hash = href.slice(at); href = href.slice(0, at); }
+    var pair = encodeURIComponent(name) + '=' + encodeURIComponent(value);
+    var re = new RegExp('([?&])' + name.replace(/\./g, '\\.') + '=[^&]*');
+    href = re.test(href) ? href.replace(re, function (m, sep) { return sep + pair; }) : href + (href.indexOf('?') >= 0 ? '&' : '?') + pair;
+    return href + hash;
+  }
+  function ctaKeyOnLink(ev) {
+    var a = ev.target && ev.target.closest ? ev.target.closest('[data-dop-cta] a[href]') : null;
+    if (!a) return;
+    var href = a.getAttribute('href');
+    try {
+      var u = new URL(href, window.location.href);
+      if (!/^https?:$/.test(u.protocol) || u.hostname === window.location.hostname) return;
+    } catch (e) { return; }
+    var key = conversionKey();
+    if (!key) return;
+    conversionNames().forEach(function (n) { href = linkParam(href, n, key); });
+    a.setAttribute('href', href);
+  }
+  if (ctaMode) {
+    ['pointerdown', 'touchstart', 'mousedown', 'click', 'auxclick', 'contextmenu'].forEach(function (t) {
+      document.addEventListener(t, ctaKeyOnLink, true);
+    });
+  }
+  // Asks the server for the CTA, once (`hidden`: early for the pitch, laid out but not shown):
+  // resolves when it's in place (or the reserve, after CTA_TIMEOUT or a failure). The server's CTA
+  // waits in ctaPending; ctaReveal shows it.
+  function ctaFetch(hidden) {
+    if (!ctaMode) return null;
+    if (ctaPromise) return ctaPromise;
+    var url = '/_dop/cta?page=' + encodeURIComponent(pageId || '') + '&video=' + encodeURIComponent(videoId || '');
+    var asked = fetch(url, { credentials: 'same-origin', signal: timeoutSignal(CTA_TIMEOUT) })
+      .then(function (res) { return res.status === 200 ? res.json() : null; })
+      .then(function (d) {
+        return d && typeof d.html === 'string' && /^[0-9a-f-]{36}$/.test(d.cta_id || '') ? { id: d.cta_id, html: d.html } : null;
+      })
+      .catch(function () { return null; });
+    var late = new Promise(function (done) { setTimeout(function () { done(null); }, CTA_TIMEOUT); });
+    ctaPromise = Promise.race([asked, late]).then(function (c) {
+      if (c && ctaShow(c.html, c.id, hidden)) {
+        ctaPending = c.id;
+      } else if (!c) {
+        var t = document.querySelector('template[data-dop-cta-reserve]');
+        if (t) ctaShow(t.innerHTML, null, hidden);
+      }
+      return c;
+    });
+    return ctaPromise;
+  }
+  // A returning visitor (&cta=2): the CTA at once, as soon as the player is in the page.
+  function ctaAtOnce() {
+    var c = ctaFetch(false);
+    if (c) c.then(ctaReveal);
+  }
+  if (ctaMode === 2) {
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ctaAtOnce);
+    else ctaAtOnce();
   }
   if (dotid) setCookie('dotid', dotid, 1); // renew the cookie
   // If the page_view response arrives before the DOM finishes loading,

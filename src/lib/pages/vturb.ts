@@ -13,6 +13,11 @@
  * from the funnel's VSLs tab — shows `standIn` (on a funnel page: the video with
  * the largest share); an A/B test player (ab-<id>) or one with no known video
  * gets the box without a cover.
+ *
+ * The CTA's place, `<div data-dop-cta>` (the delivery server draws the
+ * funnel's CTA into it at the pitch — server/src/cta.php; without one it goes
+ * right after the player), is empty in the page: the canvas and the Preview
+ * draw it as a dashed box, so it can be seen and moved.
  */
 
 /** The video that stands in for `{{video_id}}`. */
@@ -23,6 +28,12 @@ const VIDEO_RE = /^[0-9a-f]{24}$/;
 const PLACEHOLDER_RE = /\{\{\s*video_id\s*\}\}/;
 
 const PLAY_ICON = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='white' d='M8 5v14l11-7z'/%3E%3C/svg%3E")`;
+
+/** The CTA's place while it's empty (the server fills it at the pitch). */
+const CTA_SLOT_CSS =
+  `[data-dop-cta]:empty{display:block;position:relative;min-height:96px;margin:12px 0;border:2px dashed #9aa3b5;border-radius:8px}` +
+  `[data-dop-cta]:empty::before{content:"CTA (drawn at pitch)";position:absolute;inset:0;display:flex;align-items:center;` +
+  `justify-content:center;color:#5d687c;font:600 13px/1.4 system-ui,-apple-system,sans-serif}`;
 
 /** A CSS string literal. */
 const cssString = (s: string) => `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\a ")}"`;
@@ -71,10 +82,11 @@ function playerCss(id: string, account: string | null, standIn: VturbStandIn | n
  * Goes into the canvas' editor style (injectCanvasChrome).
  */
 export function vturbCanvasCss(doc: Document, standIn: VturbStandIn | null): string {
+  const slot = doc.querySelector("[data-dop-cta]") ? CTA_SLOT_CSS : "";
   const ids = Array.from(doc.querySelectorAll("vturb-smartplayer"), (el) => el.id);
-  if (ids.length === 0) return "";
+  if (ids.length === 0) return slot;
   const account = vturbAccount(doc.documentElement.outerHTML);
-  return baseCss("vturb-smartplayer") + [...new Set(ids)].map((id) => playerCss(id, account, standIn)).join("");
+  return baseCss("vturb-smartplayer") + [...new Set(ids)].map((id) => playerCss(id, account, standIn)).join("") + slot;
 }
 
 /**
@@ -87,10 +99,13 @@ export function withVturbPreview(html: string, standIn: VturbStandIn | null): st
   const ids = Array.from(html.matchAll(/<vturb-smartplayer\b[^>]*\bid\s*=\s*"([^"]*)"/gi), (m) => m[1]).filter(
     (id) => PLACEHOLDER_RE.test(id) || id === "vid-",
   );
-  if (ids.length === 0) return html;
+  const slot = /\bdata-dop-cta\b/.test(html) ? CTA_SLOT_CSS : "";
+  if (ids.length === 0 && !slot) return html;
   const account = vturbAccount(html);
-  const css = baseCss(`vturb-smartplayer:is(${[...new Set(ids)].map((id) => `[id=${cssString(id)}]`).join(",")})`) +
-    [...new Set(ids)].map((id) => playerCss(id, account, standIn)).join("");
+  const css = (ids.length
+    ? baseCss(`vturb-smartplayer:is(${[...new Set(ids)].map((id) => `[id=${cssString(id)}]`).join(",")})`) +
+      [...new Set(ids)].map((id) => playerCss(id, account, standIn)).join("")
+    : "") + slot;
   const style = `<style>${css}</style>`;
   const at = html.search(/<\/head\s*>/i);
   return at >= 0 ? html.slice(0, at) + style + html.slice(at) : style + html;

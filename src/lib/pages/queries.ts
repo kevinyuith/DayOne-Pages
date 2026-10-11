@@ -267,7 +267,9 @@ export type FunnelVsl = {
 };
 
 /** A video (VTurb player) of the funnel's A/B test, with its share and, when found, its VSL. */
-export type FunnelVideo = { id: string; name: string | null; weight: number; vsl: FunnelVsl | null };
+/** A VSL's CTA: the VTurb player's own, or the funnel's CTAs drawn by the server at the pitch (server/src/cta.php). */
+export type VslCtaMode = "vturb" | "server";
+export type FunnelVideo = { id: string; name: string | null; weight: number; vsl: FunnelVsl | null; cta: VslCtaMode };
 
 /** A funnel's VSLs tab: its VSL split (pages.funnels.vsl). */
 export type FunnelVslPanel = {
@@ -277,6 +279,10 @@ export type FunnelVslPanel = {
   version: string | null;
   /** The split's videos, most traffic first. */
   videos: FunnelVideo[];
+  /** The funnel's CTAs are on (pages.funnels.cta_enabled): its VSLs may take the server's CTA. */
+  ctaEnabled: boolean;
+  /** Published CTAs with a share: "Server" only works with one. */
+  ctasLive: number;
 };
 
 type RawVsl = { title: string | null; funnel_status: string | null; language: string | null; pitch: number | null; copywriter: string | null; editor: string | null; video_url: string | null };
@@ -329,8 +335,10 @@ export async function getFunnelVslPanel(mainFunnelId: string): Promise<FunnelVsl
   type Panel = {
     id: string;
     updated_at: string | null;
-    vsl: Record<string, { weight: number; name: string | null }> | null;
+    vsl: Record<string, { weight: number; name: string | null; cta?: string }> | null;
     vsls: (RawVsl & { vsl_id: string; video_ids: string[] | null })[];
+    cta_enabled?: boolean;
+    ctas_live?: number;
   };
   const r = data as Panel | null;
   if (!r) return null;
@@ -347,8 +355,16 @@ export async function getFunnelVslPanel(mainFunnelId: string): Promise<FunnelVsl
     funnelRowId: r.id,
     version: r.updated_at,
     videos: Object.entries(r.vsl ?? {})
-      .map(([id, v]) => ({ id, name: v.name, weight: Number(v.weight) || 0, vsl: byPlayer.get(id) ?? byTitle.get(titleKey(v.name)) ?? null }))
+      .map(([id, v]) => ({
+        id,
+        name: v.name,
+        weight: Number(v.weight) || 0,
+        vsl: byPlayer.get(id) ?? byTitle.get(titleKey(v.name)) ?? null,
+        cta: (v.cta === "server" ? "server" : "vturb") as VslCtaMode,
+      }))
       .sort((a, b) => b.weight - a.weight || (a.name ?? "").localeCompare(b.name ?? "")),
+    ctaEnabled: r.cta_enabled === true,
+    ctasLive: Number(r.ctas_live) || 0,
   };
 }
 

@@ -260,6 +260,10 @@ function gate_pick(array $routes, array $gate, Request $req): ?array
     if (is_array($funnel['vsl'] ?? null)) {
         $route['vsl'] = array_values(array_filter($funnel['vsl'], 'is_array'));
     }
+    // The funnel's CTAs, drawn at the pitch (cta.php): only a funnel with CTAs on has them.
+    if (is_array($funnel['ctas'] ?? null)) {
+        $route['ctas'] = array_values(array_filter($funnel['ctas'], 'is_array'));
+    }
     // A checkpoint POST that passed: the funnel response marks the visitor ok
     // (eval_response_cookie).
     if ($evalPassed) {

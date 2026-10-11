@@ -5,6 +5,7 @@
  *   /_health, /_purge      → internal handlers
  *   /_dop/l                → browser load notice (beacon.php)
  *   /_dop/dot.js           → the funnel's tracker (track.php)
+ *   /_dop/cta              → the funnel's CTA, drawn at the pitch (cta.php)
  *   /_dop/a/<bucket>/<f>   → a page's file (image, font, CSS, JS, video) from disk (assets.php)
  *   method ∉ {GET, HEAD}   → 405
  *   invalid host           → 404 (no cache, no Supabase)
@@ -35,6 +36,13 @@ function dayone_handle(): void
     if ($tracker !== null) {
         [$status, $headers, $body] = $tracker;
         send_response($status, $headers, $body, $req->isHead());
+        return;
+    }
+    // The funnel's CTA at the pitch (cta.php): no hit; Supabase only for an HTML not on disk yet.
+    $cta = handle_cta($req);
+    if ($cta !== null) {
+        [$status, $headers, $body] = $cta;
+        send_response($status, $headers, $body, false);
         return;
     }
     // The pages' files, first party on every domain (assets.php): no hit; Supabase only for a file not on disk yet.
@@ -192,6 +200,8 @@ function dayone_handle(): void
     }
     // The pages served or refreshed without their delivery version: their files come down and it's written (assets.php).
     assets_prepare_pending();
+    // The reserve CTA a page wanted and didn't have on disk: fetched now (cta.php).
+    cta_prefetch_pending();
 
     // The local IP → ASN/country table: rebuilt once a day, by one process, with nobody waiting.
     netdb_maybe_refresh();

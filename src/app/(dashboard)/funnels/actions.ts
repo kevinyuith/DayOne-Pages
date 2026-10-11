@@ -7,7 +7,7 @@ import { funnelPageStatus, joinFunnelSplit, loadFunnelWeights, writeFunnelWeight
 import { isValidSlug, normalizePath } from "@/lib/pages/normalize";
 import { STARTER_HTML } from "@/lib/pages/starter-template";
 import { normalizeShares } from "@/lib/pages/traffic";
-import { getFunnelVslPanel, searchProducedVsls, type FunnelVslPanel, type ProducedVsl } from "@/lib/pages/queries";
+import { getFunnelVslPanel, searchProducedVsls, type FunnelVslPanel, type ProducedVsl, type VslCtaMode } from "@/lib/pages/queries";
 import { isPageStatus } from "@/lib/pages/types";
 import { supabaseService } from "@/lib/supabase/service";
 import type { SaveEditorInput, SaveEditorResult } from "../templates/actions";
@@ -347,6 +347,32 @@ export async function saveFunnelVsl(funnelRowId: string, weights: Record<string,
     // NULL = the split changed since the screen loaded it: nothing was written.
     if (!savedAt) return fail("Someone saved this split since the screen loaded. The list now shows the saved split: make your change again.");
     // The domains with the funnel serve the new split right away (without the purge, within 30 s).
+    return purgeFunnelDomains(funnelRowId);
+  } catch (cause) {
+    return fail(errorReason(cause));
+  }
+}
+
+/**
+ * A VSL's CTA: the VTurb player's own ("vturb") or the funnel's CTAs, drawn by the
+ * delivery server at the pitch ("server", server/src/cta.php). Only on a funnel with
+ * its CTAs on and a published CTA (the database checks it). Written in the VSL's
+ * entry of the split, over the version the screen loaded.
+ */
+export async function setFunnelVslCta(funnelRowId: string, videoId: string, mode: VslCtaMode, version: string | null): Promise<ActionResult> {
+  if (!UUID_RE.test(funnelRowId) || !VTURB_ID_RE.test(videoId) || (mode !== "vturb" && mode !== "server")) return fail("Invalid VSL.");
+  try {
+    const db = supabaseService();
+    const row = await db.from("funnels").select("vsl").eq("id", funnelRowId).maybeSingle();
+    if (row.error) throw new Error(row.error.message);
+    if (!row.data) return fail("Funnel not found.");
+    const vsl = ((row.data as { vsl: Record<string, Record<string, unknown>> | null }).vsl ?? {}) as Record<string, Record<string, unknown>>;
+    if (!(videoId in vsl)) return fail("This video isn't in the split anymore. The list now shows the saved split.");
+    vsl[videoId] = { ...vsl[videoId], cta: mode };
+    const { data: savedAt, error } = await db.rpc("funnel_vsl_set", { p_funnel: funnelRowId, p_vsl: vsl, p_expected: version });
+    if (error?.code === "23514") return fail("The CTA from the server needs at least one published CTA with traffic in this funnel.");
+    if (error) throw new Error(error.message);
+    if (!savedAt) return fail("Someone saved this split since the screen loaded. The list now shows the saved split: make your change again.");
     return purgeFunnelDomains(funnelRowId);
   } catch (cause) {
     return fail(errorReason(cause));

@@ -274,6 +274,11 @@ function serve_slug(array $route, Request $req): array
         $headers['Set-Cookie'] = [...(array) ($headers['Set-Cookie'] ?? []), vsl_cookie($vslCookie)];
     }
 
+    // The funnel's CTA at the pitch (cta.php): the drawn video on CTA mode "server" → the tracker
+    // asks /_dop/cta for it (&cta=), with the largest-share CTA as the reserve in the page.
+    $cta = $beacon ? cta_page_mode($route, $video, $req->cookies) : null;
+    $ctaTag = $cta !== null ? '-c' . $cta['mode'] . ($cta['reserve'] !== null ? substr($cta['reserve']['hash'], 0, 8) : '') : '';
+
     // The funnel's tracker (track.php): the served step's dot.js in the <head> — ONLY on a funnel
     // page the gate served (beacon), as the served step's kind (a page with steps) or the Lander
     // (one without) —, unless the page has a tracker tag of its own. The version goes into the ETag.
@@ -281,7 +286,7 @@ function serve_slug(array $route, Request $req): array
     // on it, when it's a pre-lander slug, is marked server-side instead (dot.php, origin pre_lander).
     $track = $beacon;
     $trackOrigin = $track && !track_has_own_tag($body) ? track_origin($funnel['kind'] ?? null) : null;
-    $etag = '"' . $hash . $atag . $abTag . ($funnel ? '-' . $funnel['step'] : '') . $vslTag . $pidTag . $ptag . $tag . ($track ? track_etag() : '') . '"';
+    $etag = '"' . $hash . $atag . $abTag . ($funnel ? '-' . $funnel['step'] : '') . $vslTag . $ctaTag . $pidTag . $ptag . $tag . ($track ? track_etag() : '') . '"';
     if ($funnel || $abTag !== '' || $vslTag !== '') {
         $headers['Vary'] .= ', Cookie';
     }
@@ -296,8 +301,13 @@ function serve_slug(array $route, Request $req): array
     if ($beacon) {
         $body = beacon_inject($body);
     }
+    if ($cta !== null && $cta['reserve_html'] !== null) {
+        // With our tracker the reserve waits inert; a page with a tracker of its own gets no dot.js
+        // from us, so nobody would ask for the CTA: the reserve goes straight in the slot.
+        $body = $trackOrigin !== null ? cta_reserve_inject($body, $cta['reserve_html']) : cta_slot_inject($body, $cta['reserve_html']);
+    }
     if ($trackOrigin !== null) {
-        $body = track_inject($body, $trackOrigin, $pageId, $video);
+        $body = track_inject($body, $trackOrigin, $pageId, $video, $cta['mode'] ?? null);
     }
     return [200, $headers, $body, ['video' => $video]];
 }

@@ -7,9 +7,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { INPUT_BASE } from "@/components/ui/field";
-import type { FunnelVideo, FunnelVsl, FunnelVslPanel, ProducedVsl, VslStatus } from "@/lib/pages/queries";
+import type { FunnelVideo, FunnelVsl, FunnelVslPanel, ProducedVsl, VslCtaMode, VslStatus } from "@/lib/pages/queries";
 import { evenSplit } from "@/lib/pages/traffic";
-import { findFunnelVideo, loadFunnelVsls, saveFunnelVsl, searchFunnelVsls } from "./actions";
+import { findFunnelVideo, loadFunnelVsls, saveFunnelVsl, searchFunnelVsls, setFunnelVslCta } from "./actions";
 
 /**
  * A funnel's VSLs tab (inside its row on the Funnel screen), loaded when it
@@ -17,7 +17,9 @@ import { findFunnelVideo, loadFunnelVsls, saveFunnelVsl, searchFunnelVsls } from
  * player id) with its share, editable; the shares add up to 100. The split is
  * ours: saving writes only the database, and the delivery server draws one
  * video per visitor (server/src/vsl.php). VSLs are added searching the
- * produced ones (or by VTurb video id).
+ * produced ones (or by VTurb video id). On a funnel with its CTAs on, each VSL
+ * also says whose CTA it shows under the player: VTurb's own, or the funnel's
+ * CTAs drawn by the server at the pitch (server/src/cta.php) — saved at once.
  */
 
 const STATUS_LABELS: Record<VslStatus, string> = {
@@ -80,6 +82,8 @@ export function FunnelVslsPanel({ mainFunnelId, label }: { mainFunnelId: string;
         version={panel.version}
         label={label}
         videos={panel.videos}
+        ctaEnabled={panel.ctaEnabled}
+        ctasLive={panel.ctasLive}
         onDone={async (m) => {
           setMessage(m);
           await load();
@@ -128,6 +132,8 @@ function VslSplit({
   version,
   label,
   videos,
+  ctaEnabled,
+  ctasLive,
   onDone,
 }: {
   funnelRowId: string;
@@ -135,6 +141,8 @@ function VslSplit({
   version: string | null;
   label: string;
   videos: FunnelVideo[];
+  ctaEnabled: boolean;
+  ctasLive: number;
   onDone: (message: Message) => Promise<void>;
 }) {
   const [weights, setWeights] = useState<Record<string, string>>(() => Object.fromEntries(videos.map((v) => [v.id, String(v.weight)])));
@@ -163,6 +171,13 @@ function VslSplit({
   const visible = showAll ? all : all.filter((v) => added.includes(v) || v.weight > 0 || num(v.id) > 0);
   const hidden = all.length - visible.length;
 
+  const onCta = (video: FunnelVideo, mode: VslCtaMode) =>
+    start(async () => {
+      const r = await setFunnelVslCta(funnelRowId, video.id, mode, version);
+      await onDone(
+        r.ok ? { tone: "success", text: mode === "server" ? "This VSL now shows the funnel's CTAs at the pitch." : "This VSL now shows VTurb's CTA." } : { tone: "danger", text: r.reason },
+      );
+    });
   const onSave = () =>
     start(async () => {
       const r = await saveFunnelVsl(funnelRowId, Object.fromEntries(all.map((v) => [v.id, num(v.id)])), version);
@@ -183,7 +198,7 @@ function VslSplit({
       if (inSplit(id)) return setAddError("This video is already in the split.");
       const r = await findFunnelVideo(id);
       if (!r.ok) return setAddError(r.reason);
-      addVideo({ id: r.id, name: r.name, weight: 0, vsl: null });
+      addVideo({ id: r.id, name: r.name, weight: 0, vsl: null, cta: "vturb" });
     });
   // The finished VSLs of the funnel's niche and language; the words (2+ letters) narrow them.
   const runSearch = async (value: string) => {
@@ -238,6 +253,7 @@ function VslSplit({
               <th className="px-3 py-2 text-right font-medium">Pitch</th>
               <th className="px-3 py-2 font-medium">Copy</th>
               <th className="px-3 py-2 font-medium">Editor</th>
+              {ctaEnabled ? <th className="px-3 py-2 font-medium">CTA</th> : null}
               <th className="px-3 py-2 text-right">
                 {all.length > 1 ? (
                   <button type="button" onClick={onEven} disabled={pending} className="text-xs font-medium text-muted hover:text-foreground">
@@ -272,13 +288,30 @@ function VslSplit({
                   </td>
                   <td className="px-3 py-2 font-mono text-xs text-muted">{v.id}</td>
                   <VslCells vsl={v.vsl} />
+                  {ctaEnabled ? (
+                    <td className="px-3 py-2">
+                      <select
+                        value={v.cta}
+                        onChange={(e) => onCta(v, e.target.value as VslCtaMode)}
+                        disabled={pending || isNew || changed}
+                        aria-label={`CTA of ${v.name ?? v.id}`}
+                        title={isNew || changed ? "Save the shares first." : undefined}
+                        className={`h-7 rounded-md border bg-transparent px-1.5 text-xs ${v.cta === "server" ? "border-accent/60 text-accent" : "border-border"}`}
+                      >
+                        <option value="vturb">VTurb</option>
+                        <option value="server" disabled={ctasLive === 0 && v.cta !== "server"}>
+                          {ctasLive === 0 && v.cta !== "server" ? "Server (no published CTA)" : "Server"}
+                        </option>
+                      </select>
+                    </td>
+                  ) : null}
                   <td />
                 </tr>
               );
             })}
             {visible.length === 0 ? (
               <tr>
-                <td colSpan={9} className="px-3 py-3 text-sm text-muted">
+                <td colSpan={ctaEnabled ? 10 : 9} className="px-3 py-3 text-sm text-muted">
                   {all.length ? "No video with traffic." : "No video in the split."}
                 </td>
               </tr>
@@ -335,7 +368,7 @@ function VslSplit({
                         size="sm"
                         variant="secondary"
                         disabled={!v.videoId || already}
-                        onClick={() => v.videoId && addVideo({ id: v.videoId, name: v.title, weight: 0, vsl: v })}
+                        onClick={() => v.videoId && addVideo({ id: v.videoId, name: v.title, weight: 0, vsl: v, cta: "vturb" })}
                       >
                         {already ? "In the split" : "Add"}
                       </Button>
