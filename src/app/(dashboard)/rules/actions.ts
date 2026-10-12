@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { errorReason, fail, type ActionResult } from "@/lib/action-result";
 import { parseRuleConditionsForm } from "@/lib/pages/conditions";
-import { RULE_LABELS, isRuleLabel } from "@/lib/pages/rules-types";
+import { gateTotals, ruleBacktest } from "@/lib/pages/rules";
+import { RULE_LABELS, isRuleLabel, isRuleMode, type RuleBacktest, type RuleMode } from "@/lib/pages/rules-types";
 import { supabaseService } from "@/lib/supabase/service";
 
 /**
@@ -33,7 +34,9 @@ export async function saveRule(prev: RuleFormState, fd: FormData): Promise<RuleF
   const name = String(fd.get("name") ?? "").trim();
   const label = String(fd.get("label") ?? "").trim();
   const reason = String(fd.get("reason") ?? "").trim();
-  const isActive = fd.get("is_active") === "on" || fd.get("is_active") === "true";
+  // Active / Monitor / Paused (an older form posts only the is_active checkbox).
+  const modeField = String(fd.get("mode") ?? "");
+  const mode: RuleMode = isRuleMode(modeField) ? modeField : fd.get("is_active") === "on" || fd.get("is_active") === "true" ? "active" : "paused";
 
   if (id && !UUID_RE.test(id)) return { error: "Invalid rule.", attempt };
   if (name.length < 1 || name.length > 120) return { error: "Name is required (up to 120 characters).", attempt };
@@ -55,8 +58,11 @@ export async function saveRule(prev: RuleFormState, fd: FormData): Promise<RuleF
       p_label: label,
       p_tags: tags,
       p_conditions: cond.value,
-      p_is_active: isActive,
+      p_is_active: mode !== "paused",
       p_reason: reason,
+      p_is_monitor: mode === "monitor",
+      // This form knows every condition key: what it leaves out is removed.
+      p_full: true,
     });
     if (error) {
       if (error.code === UNIQUE_VIOLATION) return { error: "A rule with that name already exists.", attempt };
@@ -89,9 +95,9 @@ export async function duplicateRule(id: string): Promise<ActionResult> {
   if (!UUID_RE.test(id)) return fail("Invalid rule.");
   try {
     const db = supabaseService();
-    const got = await db.from("rules").select("name,label,tags,conditions,is_active,reason").eq("id", id).maybeSingle();
+    const got = await db.from("rules").select("name,label,tags,conditions,is_active,is_monitor,reason").eq("id", id).maybeSingle();
     if (got.error) throw new Error(got.error.message);
-    const src = got.data as { name: string; label: string; tags: unknown; conditions: unknown; is_active: boolean; reason: string | null } | null;
+    const src = got.data as { name: string; label: string; tags: unknown; conditions: unknown; is_active: boolean; is_monitor: boolean; reason: string | null } | null;
     if (!src) return fail("Rule not found.");
     // A name that isn't taken: "<name> (copy)", then "(copy 2)"…, within 120 characters.
     const names = new Set((((await db.from("rules").select("name")).data as { name: string }[] | null) ?? []).map((r) => r.name));
@@ -106,6 +112,8 @@ export async function duplicateRule(id: string): Promise<ActionResult> {
       p_conditions: src.conditions ?? {},
       p_is_active: src.is_active,
       p_reason: src.reason ?? "",
+      p_is_monitor: src.is_monitor === true,
+      p_full: true,
     });
     if (error) throw new Error(error.message);
   } catch (cause) {
@@ -126,6 +134,67 @@ export async function setRuleActive(id: string, active: boolean): Promise<Action
   }
   revalidateRules();
   return { ok: true };
+}
+
+/** Active (blocks), Monitor (records, never blocks) or Paused, without opening the form. */
+export async function setRuleMode(id: string, mode: RuleMode): Promise<ActionResult> {
+  if (!UUID_RE.test(id) || !isRuleMode(mode)) return fail("Invalid rule.");
+  try {
+    const { error } = await supabaseService()
+      .from("rules")
+      .update({ is_active: mode !== "paused", is_monitor: mode === "monitor" })
+      .eq("id", id);
+    if (error) throw new Error(error.message);
+  } catch (cause) {
+    return fail(errorReason(cause));
+  }
+  revalidateRules();
+  return { ok: true };
+}
+
+/** How far back "Test" looks: 24 hours for any rule; 3 or 7 days only for a rule scoped to platforms. */
+export type TestWindow = "24h" | "3d" | "7d";
+const TEST_WINDOW_MS: Record<TestWindow, number> = { "24h": 86_400_000, "3d": 3 * 86_400_000, "7d": 7 * 86_400_000 };
+
+export type RuleTestResult =
+  | {
+      ok: true;
+      result: RuleBacktest;
+      /** The clicks that passed on the same platforms in the same period: the yardstick for the ones this rule would block. */
+      baseline: { passed: number; loaded: number; interacted: number };
+    }
+  | { ok: false; error: string };
+
+/**
+ * Runs the form's CURRENT conditions (saved or not) over the hits already
+ * logged (pages.rule_backtest). Nothing is saved.
+ */
+export async function testRule(fd: FormData): Promise<RuleTestResult> {
+  const cond = parseRuleConditionsForm(fd);
+  if (!cond.ok) return { ok: false, error: cond.reason };
+  const field = String(fd.get("test_window") ?? "24h");
+  const window: TestWindow = field === "3d" || field === "7d" ? field : "24h";
+  const scoped = (cond.value.sub11_in?.length ?? 0) > 0;
+  // Dynamic Server Action: reading the clock per call is intentional.
+  const since = new Date(Date.now() - TEST_WINDOW_MS[scoped ? window : "24h"]);
+  try {
+    const run = await ruleBacktest(cond.value, since);
+    if (!run.ok) {
+      if (run.code === CHECK_VIOLATION) return { ok: false, error: `Invalid conditions: ${run.message}` };
+      throw new Error(run.message);
+    }
+    const platforms = new Set(scoped ? cond.value.sub11_in : run.value.platforms.map((p) => p.platform));
+    const baseline = { passed: 0, loaded: 0, interacted: 0 };
+    for (const g of await gateTotals(new Date(run.value.since))) {
+      if (!platforms.has(g.platform)) continue;
+      baseline.passed += g.passed;
+      baseline.loaded += g.loaded;
+      baseline.interacted += g.interacted;
+    }
+    return { ok: true, result: run.value, baseline };
+  } catch (cause) {
+    return { ok: false, error: errorReason(cause) };
+  }
 }
 
 /** Moves a rule one step in the walk order (dir: -1 up, +1 down). */

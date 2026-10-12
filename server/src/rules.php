@@ -35,13 +35,19 @@
  * bot/suspicious are the rules you write.
  *
  * The conditions are the hit log's fields (rule_conditions_match): the click's
- * sub ids (sub1, sub11), ANY URL parameter (param), country, device, language,
+ * sub ids (sub1, sub11), its platform (sub11_in: the sub11 is one of a list),
+ * ANY URL parameter (param), country, device, language,
  * referrer, URL parameters (via conditions_match), a regex on the User-Agent,
  * the request being a prefetch (request_is_prefetch: loaded ahead of a click,
  * e.g. TikTok's Android app while the ad shows in the feed), the IP (IPs/CIDR
  * ranges), and — network lookups, checked last and only when
  * everything else matched — the ASN and a regex on the hostname (netinfo.php:
  * a short timeout, cached per IP; a lookup that fails never flags a click).
+ * A rule's exceptions (except: a list of condition sets) are checked after
+ * all of that: when any of them matches, the rule doesn't.
+ *
+ * Rules in Monitor (the gate data's `monitor_rules`) never take part in the
+ * walk or the checkpoint: gate_rules_matched only logs what they'd catch.
  */
 declare(strict_types=1);
 
@@ -55,7 +61,7 @@ const GATE_SAFE_MATCH = 'GATE-SAFE';
 const GATE_REASONS = ['slug_not_allowed', 'no_funnel_token', 'funnel_not_live', 'domain_disabled', 'domain_locked', 'domain_unlocked'];
 
 /** The rule-only condition keys (the base ones are conditions_match's). */
-const RULE_OWN_CONDITIONS = ['sub1', 'sub11', 'param', 'user_agent', 'user_agent_mode', 'prefetch', 'ips', 'ips_mode', 'asns', 'asns_mode', 'hostname', 'hostname_mode', 'accept_languages'];
+const RULE_OWN_CONDITIONS = ['sub1', 'sub11', 'sub11_in', 'param', 'user_agent', 'user_agent_mode', 'prefetch', 'ips', 'ips_mode', 'asns', 'asns_mode', 'hostname', 'hostname_mode', 'accept_languages', 'except'];
 
 /**
  * Builds the SERVE route the gate decides on, or null when the click falls
@@ -376,10 +382,12 @@ function gate_default_funnel(array $gate): ?string
 
 /**
  * A rule's conditions against the request: the base dimensions via
- * conditions_match, plus the click's sub ids (exact, case-insensitive), a
- * generic URL parameter and the User-Agent regex (case-insensitive;
- * `user_agent_mode: block` inverts). The base evaluator would reject the
- * rule-only keys as unknown, so they're stripped before calling it.
+ * conditions_match, plus the click's sub ids (exact, case-insensitive), its
+ * platform (`sub11_in`), a generic URL parameter and the User-Agent regex
+ * (case-insensitive; `user_agent_mode: block` inverts). The base evaluator
+ * would reject the rule-only keys as unknown, so they're stripped before
+ * calling it. The exceptions (`except`) come last: the rule only matches when
+ * none of them does.
  *
  * A device-signal condition (a Suspicious rule's touch, webdriver…) only
  * exists after the browser checkpoint (eval.php): the request can't decide
@@ -412,6 +420,15 @@ function rule_conditions_match(array $cond, Request $req): bool
         }
         $v = $read($key);
         if ($v === null || strcasecmp($v, (string) $cond[$key]) !== 0) {
+            return false;
+        }
+    }
+
+    // `sub11_in`: the click's platform (its sub11, lowercased — what
+    // pages.hits.platform stores) is one of the list. No sub11 = no match.
+    if (isset($cond['sub11_in'])) {
+        $v = $read('sub11');
+        if ($v === null || !rule_platform_in(mb_strtolower($v), $cond['sub11_in'])) {
             return false;
         }
     }
@@ -510,7 +527,45 @@ function rule_conditions_match(array $cond, Request $req): bool
         }
     }
 
+    // `except`: every condition matched — the rule still doesn't when one of
+    // its exceptions does (each a set of conditions, all of them must match).
+    // An exception with a device signal never matches here (the request can't
+    // decide it, see above): an undecidable exception never exempts a click.
+    if (rule_excepted($cond, static fn (array $exception): bool => rule_conditions_match($exception, $req))) {
+        return false;
+    }
+
     return true;
+}
+
+/** Is the platform (a lowercased sub11) in a rule's `sub11_in` list? */
+function rule_platform_in(string $platform, mixed $list): bool
+{
+    foreach (is_array($list) ? $list : [] as $p) {
+        if (is_string($p) && mb_strtolower($p) === $platform) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * Does one of the rule's exceptions (`except`) match, by $matches? An entry
+ * that isn't a set of conditions, or an empty one, is ignored; an `except`
+ * nested in an entry is dropped (the database forbids it — it never recurses).
+ */
+function rule_excepted(array $cond, callable $matches): bool
+{
+    foreach (is_array($cond['except'] ?? null) ? $cond['except'] : [] as $exception) {
+        if (!is_array($exception)) {
+            continue;
+        }
+        unset($exception['except']);
+        if ($exception !== [] && $matches($exception)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 /**
@@ -519,13 +574,13 @@ function rule_conditions_match(array $cond, Request $req): bool
  * bars "by layers"); this is for the log's rule_matches, so you can see which
  * clicks each rule would catch, not only the one that won the race. Suspicious
  * rules are left out: their device signals only exist after the checkpoint
- * (eval.php), so the server can't decide them here.
+ * (eval.php) — gate_rules_matched adds them where they can be decided.
  *
  * Called from log_hit, AFTER the response and AFTER the net lookups, so the
  * ASN (local table) and the hostname (PTR already cached for this IP) add no
  * new network — the two hostname Bot rules reuse the reverse DNS log_hit just did.
  *
- * @return list<array{name:string,label:string,reason:string,tags:list<string>}>
+ * @return list<array{id:string,name:string,label:string,reason:string,tags:list<string>}>
  */
 function gate_bot_rules_matched(array $gate, Request $req): array
 {
@@ -538,14 +593,75 @@ function gate_bot_rules_matched(array $gate, Request $req): array
         if (!rule_conditions_match($cond, $req)) {
             continue;
         }
-        $out[] = [
-            'name' => (string) ($rule['name'] ?? ''),
-            'label' => (string) ($rule['label'] ?? ''),
-            'reason' => (string) ($rule['reason'] ?? ''),
-            'tags' => is_array($rule['tags'] ?? null) ? array_values(array_filter($rule['tags'], 'is_string')) : [],
-        ];
+        $out[] = gate_rule_match_entry($rule);
     }
     return $out;
+}
+
+/**
+ * The log's rule_matches: EVERY rule whose conditions match this click, in
+ * walk order, not only the one gate_pick served on —
+ *
+ *   1. the Bot rules, on the request (gate_bot_rules_matched);
+ *   2. the Suspicious rules (`eval_rules`): on the checkpoint's POST, every one
+ *      the device's signals now match (the same verdict gate_pick gives); on
+ *      any other request, the ones the request alone decides (no device
+ *      signal), plus — on the "no JS" GET (the chk cookie, no POST) — the ones
+ *      that name no_js: 1 and whose rest matches (eval_no_js_rules);
+ *   3. the rules in Monitor (`monitor_rules`; missing on an old cache), by the
+ *      same tests for their label, each marked `monitor: true`. gate_pick and
+ *      the checkpoint never read them: a Suspicious rule in Monitor only sees
+ *      the clicks an active rule sent to the checkpoint.
+ *
+ * Called from log_hit, after the response and the net lookups (see
+ * gate_bot_rules_matched).
+ *
+ * @return list<array{id:string,name:string,label:string,reason:string,tags:list<string>,monitor?:true}>
+ */
+function gate_rules_matched(array $gate, Request $req): array
+{
+    $out = gate_bot_rules_matched($gate, $req);
+    $evalReq = eval_request_from_query($req);
+    $signals = is_array($req->evalSignals ?? null) ? $req->evalSignals : null;
+    $noJs = $signals === null && ($req->cookies[EVAL_COOKIE] ?? '') === 'chk';
+
+    // A Suspicious rule: with the POST's signals, the checkpoint's verdict
+    // (eval_rules_matched's test); without, the request's side alone or the
+    // no-JS GET's.
+    $suspicious = static fn (array $rule): bool => $signals !== null
+        ? eval_conditions_match(is_array($rule['conditions'] ?? null) ? $rule['conditions'] : [], $evalReq, $signals, null)
+        : rule_conditions_match(is_array($rule['conditions'] ?? null) ? $rule['conditions'] : [], $req)
+            || ($noJs && eval_no_js_rules([$rule], $evalReq) !== []);
+
+    foreach (is_array($gate['eval_rules'] ?? null) ? $gate['eval_rules'] : [] as $rule) {
+        if (is_array($rule) && $suspicious($rule)) {
+            $out[] = gate_rule_match_entry($rule);
+        }
+    }
+    foreach (is_array($gate['monitor_rules'] ?? null) ? $gate['monitor_rules'] : [] as $rule) {
+        if (!is_array($rule)) {
+            continue;
+        }
+        $matched = strcasecmp((string) ($rule['label'] ?? ''), 'Suspicious') === 0
+            ? $suspicious($rule)
+            : rule_conditions_match(is_array($rule['conditions'] ?? null) ? $rule['conditions'] : [], $req);
+        if ($matched) {
+            $out[] = gate_rule_match_entry($rule) + ['monitor' => true];
+        }
+    }
+    return $out;
+}
+
+/** A rule as a rule_matches entry: {id, name, label, reason, tags} (id '' on a cache from before the ids). */
+function gate_rule_match_entry(array $rule): array
+{
+    return [
+        'id' => (string) ($rule['id'] ?? ''),
+        'name' => (string) ($rule['name'] ?? ''),
+        'label' => (string) ($rule['label'] ?? ''),
+        'reason' => (string) ($rule['reason'] ?? ''),
+        'tags' => is_array($rule['tags'] ?? null) ? array_values(array_filter($rule['tags'], 'is_string')) : [],
+    ];
 }
 
 /** A route (the domain's page at the requested slug) re-marked for the log with the gate's decision data. */

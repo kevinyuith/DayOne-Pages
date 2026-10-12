@@ -1,7 +1,9 @@
 import { DEFAULT_RANGE, type RangeKey } from "@/lib/pages/dashboard-filters";
 
-/** A rule stage filter: show only Bot or only Suspicious (null = both). */
-export type StageFilter = "bot" | "suspicious" | null;
+/** A rule stage filter: show only Monitor, Bot or Suspicious (null = all). */
+export type StageFilter = "monitor" | "bot" | "suspicious" | null;
+
+export const parseStage = (v: string | undefined): StageFilter => (v === "monitor" || v === "bot" || v === "suspicious" ? v : null);
 
 /**
  * The Rules screen's URL: the period of the numbers (?range=, left out when it's

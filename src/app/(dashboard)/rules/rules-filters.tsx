@@ -11,7 +11,7 @@ type Value = { range: RangeKey; platform: string | null; q: string; stage: Stage
 
 /**
  * The Rules screen's bar: the period of the Blocked numbers (?range=), a text
- * search by name/reason (?q=), the stage (?stage=, Bot or Suspicious) and the
+ * search by name/reason (?q=), the stage (?stage=, Monitor, Bot or Suspicious) and the
  * Platform filter (?platform=). Each navigates and page.tsx reads them on the
  * server; the choice shows right away (useOptimistic) and the table is dimmed
  * while the new numbers come (data-dash-pending, as on the Dashboard). The search debounces.
@@ -82,6 +82,7 @@ export function RulesFilters({ range, platform, platforms, q, stage }: Value & {
         <span className="sr-only">Stage</span>
         <select value={shown.stage ?? ""} onChange={(e) => go({ stage: (e.target.value || null) as StageFilter })} className={selectCls(shown.stage !== null)}>
           <option value="">All stages</option>
+          <option value="monitor">Monitor</option>
           <option value="bot">Bot</option>
           <option value="suspicious">Suspicious</option>
         </select>

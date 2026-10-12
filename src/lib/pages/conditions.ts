@@ -101,75 +101,113 @@ export function isIpOrRange(s: string): boolean {
 /** A screen size, "WxH" (the database checks the same pattern). */
 const SCREEN_RE = /^\d{2,5}x\d{2,5}$/;
 
-export const ruleConditionsSchema = conditionsSchema
+/** A platform of the rule's scope: the click's sub11 as hits.platform keeps it (lowercase). */
+const platformName = z
+  .string()
+  .min(1)
+  .max(40)
+  .refine((p) => p === p.trim().toLowerCase() && !/[&=]/.test(p), "a platform is lowercase, without & or =");
+
+const ruleConditionsShape = conditionsSchema.extend({
+  sub1: subId.optional(),
+  sub11: subId.optional(),
+  // The platform scope: the click's sub11 (any case) is one of these.
+  sub11_in: z.array(platformName).min(1).max(20).optional(),
+  param: paramRule.optional(),
+  user_agent: z.string().min(1).max(500).optional(),
+  user_agent_mode: z.literal("block").optional(),
+  // Only a prefetch: the page loaded ahead of a click (X-Moz / Sec-Purpose / Purpose: prefetch).
+  prefetch: z.literal(true).optional(),
+  // The number of language tags in Accept-Language: a bot often sends a bare
+  // "en" (one tag), a real browser sends "en-US,en" (two). {max: 1} flags it.
+  accept_languages: z
+    .strictObject({
+      min: z.number().int().min(0).max(50).optional(),
+      max: z.number().int().min(0).max(50).optional(),
+    })
+    .refine((a) => a.min !== undefined || a.max !== undefined, { message: "min or max required" })
+    .optional(),
+  // The click's IP (IPs and CIDR ranges), its AS number and its hostname (reverse DNS, a regex).
+  ips: z.array(z.string().refine(isIpOrRange, "invalid IP or range")).min(1).max(200).optional(),
+  ips_mode: z.literal("block").optional(),
+  asns: z.array(z.number().int().min(1).max(4294967295)).min(1).max(200).optional(),
+  asns_mode: z.literal("block").optional(),
+  hostname: z.string().min(1).max(500).optional(),
+  hostname_mode: z.literal("block").optional(),
+  // ── The device signals (the checkpoint, server/src/eval.php) — only the
+  // browser knows them; the gate's Suspicious stage runs there.
+  // eval_cookie "absent" = the visitor never passed the checkpoint.
+  eval_cookie: z.literal("absent").optional(),
+  touch: z.union([z.literal(0), z.literal(1)]).optional(),
+  mobile_hint: z.union([z.literal(0), z.literal(1)]).optional(),
+  pointer: z.enum(["coarse", "fine", "none"]).optional(),
+  webdriver: z.union([z.literal(0), z.literal(1)]).optional(),
+  automation: z.union([z.literal(0), z.literal(1)]).optional(),
+  gl_software: z.union([z.literal(0), z.literal(1)]).optional(),
+  platform: z.string().min(1).max(60).optional(),
+  iframe: z.union([z.literal(0), z.literal(1)]).optional(),
+  tostring_tampered: z.union([z.literal(0), z.literal(1)]).optional(),
+  proto_poisoned: z.union([z.literal(0), z.literal(1)]).optional(),
+  tz_offset: z.number().int().min(-840).max(840).optional(),
+  // net_rtt_min: Chrome's RTT estimate (navigator.connection.rtt, ms) is at least this; no measurement never matches.
+  net_rtt_min: z.number().int().min(1).max(10000).optional(),
+  // nav_ttfb_above: the checkpoint page's time to first byte is above this (ms, strictly); no timing never matches.
+  nav_ttfb_above: z.number().int().min(1).max(10000).optional(),
+  // coast: the browser's time zone is on that US coast (east / west); no zone never matches.
+  coast: z.enum(["east", "west"]).optional(),
+  // device_memory (GB, navigator.deviceMemory) and plugins (navigator.plugins.length) are exact; chrome_below is the Chrome major version under which a UA matches; nav_connect_min is the checkpoint page's TCP+TLS setup in ms.
+  device_memory: z.number().int().min(1).max(1024).optional(),
+  plugins: z.number().int().min(0).max(1000).optional(),
+  chrome_below: z.number().int().min(1).max(1000).optional(),
+  nav_connect_min: z.number().int().min(1).max(10000).optional(),
+  // screens: the screen (screen.width x screen.height) is one of these "WxH", either orientation; no size never matches.
+  screens: z.array(z.string().regex(SCREEN_RE, "a size is WxH, e.g. 800x600")).min(1).max(50).optional(),
+  // The on/off detectors (1 = the tell fired). no_js is decided on the GET
+  // (the page served, no POST back), the rest from the browser's signals.
+  no_touch: z.union([z.literal(0), z.literal(1)]).optional(),
+  chrome_ua: z.union([z.literal(0), z.literal(1)]).optional(),
+  no_chrome_object: z.union([z.literal(0), z.literal(1)]).optional(),
+  tz_mismatch: z.union([z.literal(0), z.literal(1)]).optional(),
+  // tz_not_us: the browser's IANA zone is outside the home list (US + territories, Canada, Mexico, nearby Caribbean).
+  tz_not_us: z.union([z.literal(0), z.literal(1)]).optional(),
+  no_js: z.union([z.literal(0), z.literal(1)]).optional(),
+  no_cookie: z.union([z.literal(0), z.literal(1)]).optional(),
+  odd_resolution: z.union([z.literal(0), z.literal(1)]).optional(),
+  // zoomed: the desktop browser's zoom isn't 100% (the checkpoint's outerWidth / innerWidth outside 97–105%).
+  zoomed: z.union([z.literal(0), z.literal(1)]).optional(),
+});
+
+/** A list's mode needs its list (the database checks the same). */
+function modeChecks(
+  c: { user_agent_mode?: string; user_agent?: string; ips_mode?: string; ips?: unknown[]; asns_mode?: string; asns?: unknown[]; hostname_mode?: string; hostname?: string },
+  ctx: z.RefinementCtx,
+) {
+  const pairs = [
+    [c.user_agent_mode, c.user_agent?.length, "user_agent_mode"],
+    [c.ips_mode, c.ips?.length, "ips_mode"],
+    [c.asns_mode, c.asns?.length, "asns_mode"],
+    [c.hostname_mode, c.hostname?.length, "hostname_mode"],
+  ] as const;
+  for (const [mode, size, key] of pairs) {
+    if (mode && !size) ctx.addIssue({ code: "custom", message: `${key} requires ${key.replace("_mode", "")}`, path: [key] });
+  }
+}
+
+/**
+ * An exception: a condition object of its own (no exceptions inside), never
+ * empty. The rule matches when all its conditions match and NO exception does.
+ */
+export const ruleExceptionSchema = ruleConditionsShape
+  .superRefine(modeChecks)
+  .refine((c) => Object.keys(c).length > 0, { message: "an exception can't be empty" });
+export type RuleException = z.infer<typeof ruleExceptionSchema>;
+
+export const ruleConditionsSchema = ruleConditionsShape
   .extend({
-    sub1: subId.optional(),
-    sub11: subId.optional(),
-    param: paramRule.optional(),
-    user_agent: z.string().min(1).max(500).optional(),
-    user_agent_mode: z.literal("block").optional(),
-    // Only a prefetch: the page loaded ahead of a click (X-Moz / Sec-Purpose / Purpose: prefetch).
-    prefetch: z.literal(true).optional(),
-    // The number of language tags in Accept-Language: a bot often sends a bare
-    // "en" (one tag), a real browser sends "en-US,en" (two). {max: 1} flags it.
-    accept_languages: z
-      .strictObject({
-        min: z.number().int().min(0).max(50).optional(),
-        max: z.number().int().min(0).max(50).optional(),
-      })
-      .refine((a) => a.min !== undefined || a.max !== undefined, { message: "min or max required" })
-      .optional(),
-    // The click's IP (IPs and CIDR ranges), its AS number and its hostname (reverse DNS, a regex).
-    ips: z.array(z.string().refine(isIpOrRange, "invalid IP or range")).min(1).max(200).optional(),
-    ips_mode: z.literal("block").optional(),
-    asns: z.array(z.number().int().min(1).max(4294967295)).min(1).max(200).optional(),
-    asns_mode: z.literal("block").optional(),
-    hostname: z.string().min(1).max(500).optional(),
-    hostname_mode: z.literal("block").optional(),
-    // ── The device signals (the checkpoint, server/src/eval.php) — only the
-    // browser knows them; the gate's Suspicious stage runs there.
-    // eval_cookie "absent" = the visitor never passed the checkpoint.
-    eval_cookie: z.literal("absent").optional(),
-    touch: z.union([z.literal(0), z.literal(1)]).optional(),
-    mobile_hint: z.union([z.literal(0), z.literal(1)]).optional(),
-    pointer: z.enum(["coarse", "fine", "none"]).optional(),
-    webdriver: z.union([z.literal(0), z.literal(1)]).optional(),
-    automation: z.union([z.literal(0), z.literal(1)]).optional(),
-    gl_software: z.union([z.literal(0), z.literal(1)]).optional(),
-    platform: z.string().min(1).max(60).optional(),
-    iframe: z.union([z.literal(0), z.literal(1)]).optional(),
-    tostring_tampered: z.union([z.literal(0), z.literal(1)]).optional(),
-    proto_poisoned: z.union([z.literal(0), z.literal(1)]).optional(),
-    tz_offset: z.number().int().min(-840).max(840).optional(),
-    // net_rtt_min: Chrome's RTT estimate (navigator.connection.rtt, ms) is at least this; no measurement never matches.
-    net_rtt_min: z.number().int().min(1).max(10000).optional(),
-    // nav_ttfb_above: the checkpoint page's time to first byte is above this (ms, strictly); no timing never matches.
-    nav_ttfb_above: z.number().int().min(1).max(10000).optional(),
-    // coast: the browser's time zone is on that US coast (east / west); no zone never matches.
-    coast: z.enum(["east", "west"]).optional(),
-    // device_memory (GB, navigator.deviceMemory) and plugins (navigator.plugins.length) are exact; chrome_below is the Chrome major version under which a UA matches; nav_connect_min is the checkpoint page's TCP+TLS setup in ms.
-    device_memory: z.number().int().min(1).max(1024).optional(),
-    plugins: z.number().int().min(0).max(1000).optional(),
-    chrome_below: z.number().int().min(1).max(1000).optional(),
-    nav_connect_min: z.number().int().min(1).max(10000).optional(),
-    // screens: the screen (screen.width x screen.height) is one of these "WxH", either orientation; no size never matches.
-    screens: z.array(z.string().regex(SCREEN_RE, "a size is WxH, e.g. 800x600")).min(1).max(50).optional(),
-    // The on/off detectors (1 = the tell fired). no_js is decided on the GET
-    // (the page served, no POST back), the rest from the browser's signals.
-    no_touch: z.union([z.literal(0), z.literal(1)]).optional(),
-    chrome_ua: z.union([z.literal(0), z.literal(1)]).optional(),
-    no_chrome_object: z.union([z.literal(0), z.literal(1)]).optional(),
-    tz_mismatch: z.union([z.literal(0), z.literal(1)]).optional(),
-    // tz_not_us: the browser's IANA zone is outside the home list (US + territories, Canada, Mexico, nearby Caribbean).
-    tz_not_us: z.union([z.literal(0), z.literal(1)]).optional(),
-    no_js: z.union([z.literal(0), z.literal(1)]).optional(),
-    no_cookie: z.union([z.literal(0), z.literal(1)]).optional(),
-    odd_resolution: z.union([z.literal(0), z.literal(1)]).optional(),
+    // Up to 10 exceptions: any of them matching keeps the click out of the rule.
+    except: z.array(ruleExceptionSchema).min(1).max(10).optional(),
   })
-  .refine((c) => !c.user_agent_mode || (c.user_agent?.length ?? 0) > 0, { message: "user_agent_mode requires user_agent", path: ["user_agent_mode"] })
-  .refine((c) => !c.ips_mode || (c.ips?.length ?? 0) > 0, { message: "ips_mode requires ips", path: ["ips_mode"] })
-  .refine((c) => !c.asns_mode || (c.asns?.length ?? 0) > 0, { message: "asns_mode requires asns", path: ["asns_mode"] })
-  .refine((c) => !c.hostname_mode || (c.hostname?.length ?? 0) > 0, { message: "hostname_mode requires hostname", path: ["hostname_mode"] });
+  .superRefine(modeChecks);
 
 export type RuleConditions = z.infer<typeof ruleConditionsSchema>;
 
@@ -462,6 +500,53 @@ export function parseRuleConditionsForm(fd: FormData): { ok: true; value: RuleCo
   if (noCookie !== undefined) raw.no_cookie = noCookie;
   const oddResolution = bit("odd_resolution");
   if (oddResolution !== undefined) raw.odd_resolution = oddResolution;
+  const zoomed = bit("zoomed");
+  if (zoomed !== undefined) raw.zoomed = zoomed;
+
+  // The platform scope: the click's sub11, any case. A sub11 condition (the
+  // old sub11 field or a "sub11 equals" URL parameter) folds into it.
+  const platforms = new Set(
+    String(fd.get("sub11_in") ?? "")
+      .split(/[\s,;]+/)
+      .map((p) => p.trim().toLowerCase())
+      .filter(Boolean),
+  );
+  if (typeof raw.sub11 === "string") {
+    platforms.add(raw.sub11.toLowerCase());
+    delete raw.sub11;
+  }
+  const query = raw.query as Record<string, unknown> | undefined;
+  const sub11Rule = query?.sub11;
+  if (query && typeof sub11Rule === "object" && sub11Rule !== null && "equals" in sub11Rule) {
+    platforms.add(String(sub11Rule.equals).toLowerCase());
+    delete query.sub11;
+    if (Object.keys(query).length === 0) delete raw.query;
+  }
+  if (platforms.size) raw.sub11_in = [...platforms];
+
+  // The exceptions, as the form keeps them: a JSON list of condition objects.
+  const exceptJson = String(fd.get("except_json") ?? "").trim();
+  if (exceptJson) {
+    let list: unknown;
+    try {
+      list = JSON.parse(exceptJson);
+    } catch {
+      return { ok: false, reason: "The exceptions couldn't be read." };
+    }
+    if (!Array.isArray(list)) return { ok: false, reason: "The exceptions couldn't be read." };
+    for (const e of list) {
+      for (const key of ["user_agent", "hostname"] as const) {
+        const re = (e as Record<string, unknown> | null)?.[key];
+        if (typeof re !== "string") continue;
+        try {
+          new RegExp(re, "i");
+        } catch {
+          return { ok: false, reason: `An exception's ${key === "user_agent" ? "User-Agent" : "hostname"} regex doesn't compile.` };
+        }
+      }
+    }
+    if (list.length) raw.except = list;
+  }
 
   const parsed = ruleConditionsSchema.safeParse(raw);
   if (!parsed.success) {
@@ -517,13 +602,26 @@ export function ruleConditionsToForm(c: RuleConditions | null | undefined): Retu
   noJs: "" | "0" | "1";
   noCookie: "" | "0" | "1";
   oddResolution: "" | "0" | "1";
+  zoomed: "" | "0" | "1";
+  /** The platform scope, lowercase — a legacy sub11 / "sub11 equals" condition folded in. */
+  sub11In: string[];
+  except: RuleException[];
 } {
   const p = c?.param;
+  // A legacy sub11 (the field or "sub11 equals") shows as the platform scope; the form saves it as sub11_in.
+  const legacySub11 = c?.query?.sub11;
+  const sub11In = [
+    ...new Set(
+      [...(c?.sub11_in ?? []), c?.sub11 ?? "", typeof legacySub11 === "object" ? legacySub11.equals : ""].map((x) => x.trim().toLowerCase()).filter(Boolean),
+    ),
+  ];
+  const base = conditionsToForm(c);
+  if (typeof legacySub11 === "object") base.query = base.query.filter((q) => q.key !== "sub11");
   const bit = (v: 0 | 1 | undefined): "" | "0" | "1" => (v === 1 ? "1" : v === 0 ? "0" : "");
   return {
-    ...conditionsToForm(c),
+    ...base,
     sub1: c?.sub1 ?? "",
-    sub11: c?.sub11 ?? "",
+    sub11: "",
     paramName: p?.name ?? "",
     paramMode:
       p?.equals !== undefined ? "equals" : p?.not_equals !== undefined ? "not_equals" : p?.absent_or_equals !== undefined ? "absent_or_equals" : p?.contains !== undefined ? "contains" : "present",
@@ -567,6 +665,9 @@ export function ruleConditionsToForm(c: RuleConditions | null | undefined): Retu
     noJs: bit(c?.no_js),
     noCookie: bit(c?.no_cookie),
     oddResolution: bit(c?.odd_resolution),
+    zoomed: bit(c?.zoomed),
+    sub11In,
+    except: [...(c?.except ?? [])],
   };
 }
 
@@ -574,6 +675,7 @@ export function ruleConditionsToForm(c: RuleConditions | null | undefined): Retu
 export function summarizeRuleConditions(c: RuleConditions | null | undefined): string {
   if (!c) return "Always";
   const parts: string[] = [];
+  if (c.sub11_in?.length) parts.push(`Platform ${c.sub11_in.join(", ")}`);
   if (c.sub11) parts.push(`sub11 = ${c.sub11}`);
   if (c.sub1) parts.push(`sub1 = ${c.sub1}`);
   if (c.param)
@@ -634,7 +736,10 @@ export function summarizeRuleConditions(c: RuleConditions | null | undefined): s
     onOff(c.no_js, "No JS", ""),
     onOff(c.no_cookie, "Cookies off", ""),
     onOff(c.odd_resolution, "Odd resolution", ""),
+    onOff(c.zoomed, "Zoomed", "Not zoomed"),
   ].filter(Boolean);
   if (sig.length) parts.push(sig.join(", "));
-  return parts.length ? parts.join(" · ") : "Always";
+  const summary = parts.length ? parts.join(" · ") : "Always";
+  if (!("except" in c) || !c.except?.length) return summary;
+  return `${summary} · except ${c.except.map((e) => summarizeRuleConditions(e)).join(" | ")}`;
 }

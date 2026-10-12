@@ -26,6 +26,7 @@ export const metadata: Metadata = {
 };
 
 const PAGE_SIZE = 100;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 /** The Platform filter lists the platforms (sub11) seen in this window. */
 const PLATFORM_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -36,8 +37,10 @@ const loadFmt = new Intl.NumberFormat("en-US", { minimumFractionDigits: 1, maxim
  * Every request logged in pages.hits, with all columns, newest to oldest.
  * Filters in a GET form, no JS (?domain=<id> and hit-filters.ts: platform,
  * result, rule — a label or one rule's id —, flow, unique, funnel, interaction,
- * device, IP block, VPN, country, ip) and cursor pagination (?before=<id>) that keeps them. An
- * unregistered host gets a button to register it right there.
+ * device, IP block, VPN, country, ip; ?matched=<rule id> = the hits that rule
+ * matched, any stage or Monitor — the Rules screen links to it) and cursor
+ * pagination (?before=<id>) that keeps them. An unregistered host gets a
+ * button to register it right there.
  */
 export default async function LogsPage({
   searchParams,
@@ -48,14 +51,15 @@ export default async function LogsPage({
   // eslint-disable-next-line react-hooks/purity
   const nowMs = Date.now();
   const params = await searchParams;
-  const { domain, before } = params;
+  const { domain, before, matched } = params;
   const filters = parseHitFilters(params);
   const domains = await listDomains();
   const selected = typeof domain === "string" && domains.some((d) => d.id === domain) ? domain : null;
   const beforeId = typeof before === "string" && /^\d+$/.test(before) ? Number(before) : null;
-  const filtered = selected !== null || hitFilterParams(filters).length > 0;
+  const matchedId = typeof matched === "string" && UUID_RE.test(matched.trim().toLowerCase()) ? matched.trim().toLowerCase() : null;
+  const filtered = selected !== null || matchedId !== null || hitFilterParams(filters).length > 0;
   const [{ rows: hits, hasMore }, unregistered, rules, platforms] = await Promise.all([
-    listHits({ domainId: selected, beforeId, limit: PAGE_SIZE, filters }),
+    listHits({ domainId: selected, beforeId, limit: PAGE_SIZE, filters, matchedRuleId: matchedId }),
     unregisteredHosts(),
     listRules(),
     hitPlatforms(new Date(nowMs - PLATFORM_WINDOW_MS)),
@@ -72,10 +76,14 @@ export default async function LogsPage({
   // Unregistered hosts that can be registered from here (the "looks like a domain" rules live in the SQL).
   const registrable = new Set(unregistered.map((u) => u.domain));
 
-  const pageHref = (cursor: number | null) => {
+  // The Matched filter's rule, by name ("Deleted rule" when it no longer exists).
+  const matchedName = matchedId ? (rules.find((r) => r.id === matchedId)?.name ?? "Deleted rule") : null;
+
+  const pageHref = (cursor: number | null, keepMatched = true) => {
     const qs = new URLSearchParams();
     if (selected) qs.set("domain", selected);
     for (const [k, v] of hitFilterParams(filters)) qs.set(k, v);
+    if (matchedId && keepMatched) qs.set("matched", matchedId);
     if (cursor) qs.set("before", String(cursor));
     const s = qs.toString();
     return s ? `/logs?${s}` : "/logs";
@@ -86,6 +94,23 @@ export default async function LogsPage({
       <PageHeader title="Logs" />
 
       <form method="get" className="mb-6 flex flex-wrap items-center gap-2">
+        {matchedId ? (
+          // Set from the Rules screen (no select for it): kept by Filter, removed by its ×.
+          <span className="inline-flex items-center gap-1 rounded-lg border border-border bg-surface py-1 pl-3 pr-1 text-sm font-medium">
+            <input type="hidden" name="matched" value={matchedId} />
+            <span className="text-muted">Matched by</span>
+            <span className="max-w-[220px] truncate" title={matchedName ?? undefined}>
+              {matchedName}
+            </span>
+            <Link
+              href={pageHref(null, false)}
+              aria-label="Remove the Matched by filter"
+              className="rounded px-1.5 text-lg leading-none text-muted hover:bg-foreground/5 hover:text-foreground"
+            >
+              ×
+            </Link>
+          </span>
+        ) : null}
         <FilterSelect name="domain" label="Domain" value={selected} options={domains.map((d) => [d.id, d.domain] as const)} all="All domains" />
         <FilterSelect name="platform" label="Platform" value={filters.platform} options={platformOptions.map((p) => [p, platformLabel(p)] as const)} all="All platforms" />
         <FilterSelect name="result" label="Result" value={filters.result} options={HIT_FILTER_OPTIONS.result} all="All results" />
@@ -134,8 +159,8 @@ export default async function LogsPage({
               <Th>Result</Th>
               <Th title="The first click with this IP and browser (User-Agent) on this domain in 30 days.">Unique</Th>
               <Th>Rule</Th>
-              <Th title="Every active Bot rule whose conditions matched this click — not just the one that served. The gate bars on the first match, so this shows which rules overlap. Suspicious rules are not evaluated here.">
-                All Bot rules
+              <Th title="Every rule whose conditions matched this click — not just the one that served (outlined). The gate bars on the first match, so this shows which rules overlap. Suspicious rules show on the checkpoint's request; Monitor rules are recorded here and never block.">
+                All rules
               </Th>
               <Th>Flow</Th>
               <Th>Reason</Th>
@@ -251,21 +276,24 @@ export default async function LogsPage({
                       <span className="text-muted">—</span>
                     )}
                   </Td>
-                  <Td className="min-w-[180px] max-w-[340px]">
+                  <Td className="min-w-[280px] max-w-[460px]">
                     {h.rule_matches?.length ? (
                       <span className="flex flex-col items-start gap-1">
                         <span className="text-xs text-muted">{h.rule_matches.length} matched</span>
-                        <span className="flex flex-wrap gap-1">
-                          {h.rule_matches.map((m) => (
-                            <span
-                              key={m.name}
-                              title={m.reason || undefined}
-                              className={`rounded px-1.5 py-0.5 text-xs ${m.name === h.rule ? "bg-foreground/[0.06] font-medium ring-1 ring-foreground/25" : "bg-foreground/[0.06]"}`}
-                            >
-                              {m.name}
-                            </span>
+                        <ul className="flex flex-col gap-1">
+                          {h.rule_matches.map((m, i) => (
+                            // One line per rule: its label (Monitor for a Monitor rule), its name — outlined when it served — and its reason.
+                            <li key={i} className="flex items-start gap-1.5 text-xs" title={m.monitor ? `${m.label} rule in Monitor` : undefined}>
+                              <Badge tone={m.monitor ? "info" : m.label.toLowerCase() === "bot" ? "danger" : "warning"} className="shrink-0">
+                                {m.monitor ? "Monitor" : m.label}
+                              </Badge>
+                              <span className="pt-0.5">
+                                <span className={`font-medium ${!m.monitor && m.name === h.rule ? "rounded bg-foreground/[0.06] px-1 ring-1 ring-foreground/25" : ""}`}>{m.name}</span>
+                                {m.reason ? <span className="text-muted"> — {m.reason}</span> : null}
+                              </span>
+                            </li>
                           ))}
-                        </span>
+                        </ul>
                       </span>
                     ) : (
                       <span className="text-muted">—</span>

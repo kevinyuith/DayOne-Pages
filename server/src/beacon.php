@@ -71,6 +71,13 @@ const BEACON_INTERACTIONS = ['mouse', 'scroll', 'touch', 'key'];
 const BEACON_SCRIPT = '<script data-dop-beacon>(function(){var v=(document.cookie.match(/(?:^|; )' . BEACON_COOKIE . '=([0-9a-f]{32})/)||[])[1];'
     . 'function b(d){try{navigator.sendBeacon("' . BEACON_PATH . '",(v?"v="+v+"&":"")+d)}catch(e){}}'
     . 'function enc(o){return "sg="+encodeURIComponent(JSON.stringify(o))}'
+    // DevTools open (dvt): a docked panel widens the outer/inner gap; an open
+    // console slows a console.log with a lazily-formatted object. Checked on an
+    // interval (and once at load); the first detection goes out on its own, and
+    // it joins the capability object when it is already set. INFORMATIONAL ONLY.
+    . 'var _dvt=0;function _dchk(){try{var g=Math.max(Math.abs(outerWidth-innerWidth),Math.abs(outerHeight-innerHeight));if(g>160)return 1;var _i=document.createElement("img"),t0=performance.now();console.log(_i);return performance.now()-t0>1?1:0}catch(e){return 0}}'
+    . 'function _dpoll(){if(_dvt)return;_dvt=_dchk();if(_dvt)b(enc({dvt:1}))}'
+    . 'try{if(_dchk())_dvt=1;setInterval(_dpoll,1500)}catch(e){}'
     // Largest contentful paint: the last entry wins (the candidate grows until the
     // first input or the page is hidden), buffered so an entry before this script
     // ran still counts. lcpe = the element's tag, lcpa = 1 when it came from the
@@ -94,6 +101,7 @@ const BEACON_SCRIPT = '<script data-dop-beacon>(function(){var v=(document.cooki
     // tz = getTimezoneOffset (minutes; an emulator's often mismatches the IP's
     // country), tze = the IANA zone name — the same pair the eval checkpoint takes.
     . 'function s(){S.lng=(""+(N.language||"")).slice(0,12);'
+    . 'if(_dvt)S.dvt=1;'
     // ttfb from the navigation entry, else the L1 timing (WebKit blanks the L2 one
     // after a cross-origin redirect — every ad click); fcp from the paint entries.
     . 'try{var _ne=performance.getEntriesByType("navigation")[0],_tm=performance.timing,_rs=_ne&&_ne.responseStart>0?_ne.responseStart:(_tm&&_tm.navigationStart&&_tm.responseStart?_tm.responseStart-_tm.navigationStart:0);if(_rs>0)S.ttfb=Math.round(_rs)}catch(e){}'

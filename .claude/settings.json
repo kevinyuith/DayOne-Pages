@@ -17,7 +17,10 @@
       "Bash(supabase db *)",
       "ClaudeInChromeDomain(localhost:3000)",
       "ClaudeInChromeDomain(dayone.pages)",
-      "ClaudeInChromeDomain(app.dayone-pages.com)"
+      "ClaudeInChromeDomain(app.dayone-pages.com)",
+      "ClaudeInChromeDomain(localhost:3123)",
+      "ClaudeInChromeDomain(localhost:3100)",
+      "ClaudeInChromeDomain(localhost:3018)"
     ]
   }
 }

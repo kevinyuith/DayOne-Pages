@@ -1,22 +1,28 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState } from "react";
+import { useActionState, useRef, useState } from "react";
+import { PlatformTile } from "@/components/platform-chip";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { CHECKBOX_CLASS, Field, INPUT_BASE, INPUT_CLASS, SELECT_BASE, SELECT_CLASS } from "@/components/ui/field";
 import { DEVICES, DEVICE_LABELS, ruleConditionsToForm } from "@/lib/pages/conditions";
-import { RULE_LABELS, isRuleLabel, type Rule, type RuleLabel } from "@/lib/pages/rules-types";
+import { platformLabel } from "@/lib/pages/dashboard-filters";
+import { RULE_LABELS, RULE_MODES, RULE_MODE_LABELS, isRuleLabel, ruleMode, type Rule, type RuleLabel } from "@/lib/pages/rules-types";
 import { saveRule, type RuleFormState } from "./actions";
+import { ExceptionsBlock } from "./form-exceptions";
+import { AddMenu, PARAM_AS_PARAM, PARAM_ROW_LABELS, PARAM_ROW_MODES, type ParamRowMode } from "./form-parts";
+import { TestPanel } from "./form-test-panel";
 
 const INITIAL: RuleFormState = { attempt: 0 };
 
 
 /**
  * One traffic rule of the gate. In the table, "Add rule" (no rule) and "Edit"
- * (with one) open the same form in a dialog.
+ * (with one) open the same form in a dialog. `platformOptions` = the platforms
+ * (sub11, lowercase) the Platform condition offers.
  */
-export function RuleForm({ rule }: { rule?: Rule }) {
+export function RuleForm({ rule, platformOptions = [] }: { rule?: Rule; platformOptions?: string[] }) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -39,16 +45,20 @@ export function RuleForm({ rule }: { rule?: Rule }) {
         onClose={() => setOpen(false)}
         className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-4xl"
       >
-        <FormBody rule={rule} onDone={() => setOpen(false)} />
+        <FormBody rule={rule} platformOptions={platformOptions} onDone={() => setOpen(false)} />
       </Dialog>
     </>
   );
 }
 
-function FormBody({ rule, onDone }: { rule?: Rule; onDone: () => void }) {
+function FormBody({ rule, platformOptions, onDone }: { rule?: Rule; platformOptions: string[]; onDone: () => void }) {
   const initial = ruleConditionsToForm(rule?.conditions);
   const [state, action, pending] = useActionState(saveRule, INITIAL);
   const [label, setLabel] = useState<RuleLabel>(rule && isRuleLabel(rule.label) ? rule.label : RULE_LABELS[0]);
+  // The Platform condition's picks: the Test panel offers 3 and 7 days only with one.
+  const [platforms, setPlatforms] = useState<string[]>(initial.sub11In);
+  const formRef = useRef<HTMLFormElement>(null);
+  const mode = rule ? ruleMode(rule) : "active";
 
   if (state.success) {
     // Saved: the server revalidated the page; close the dialog.
@@ -56,7 +66,7 @@ function FormBody({ rule, onDone }: { rule?: Rule; onDone: () => void }) {
   }
 
   return (
-    <form action={action}>
+    <form ref={formRef} action={action}>
       <input type="hidden" name="rule_id" value={rule?.id ?? ""} />
 
       <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,10rem)_minmax(0,12rem)]">
@@ -77,22 +87,36 @@ function FormBody({ rule, onDone }: { rule?: Rule; onDone: () => void }) {
         </Field>
       </div>
 
-      <div className="mt-4">
+      <div className="mt-4 grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto]">
         <Field label="Reason" hint="What the log shows when this rule catches a click.">
           <input name="reason" defaultValue={rule?.reason ?? ""} maxLength={200} placeholder="Datacenter IP range" className={INPUT_CLASS} disabled={pending} />
         </Field>
+        {/* Active blocks; Monitor records the clicks it would block (rule_matches) and never blocks; Paused is skipped. */}
+        <fieldset className="min-w-0">
+          <legend className="text-xs font-medium text-muted">Status</legend>
+          <div className="mt-1 inline-flex h-10 items-center rounded-lg border border-border bg-background p-0.5">
+            {RULE_MODES.map((m) => (
+              <label
+                key={m}
+                className="flex h-full cursor-pointer items-center rounded-md px-3 text-sm font-medium text-muted transition-colors hover:text-foreground has-checked:bg-foreground/[0.08] has-checked:text-foreground has-focus-visible:ring-2 has-focus-visible:ring-accent has-disabled:cursor-not-allowed has-disabled:opacity-60"
+              >
+                <input type="radio" name="mode" value={m} defaultChecked={m === mode} className="sr-only" disabled={pending} />
+                {RULE_MODE_LABELS[m]}
+              </label>
+            ))}
+          </div>
+        </fieldset>
       </div>
 
-      <ConditionsBuilder initial={initial} disabled={pending} />
+      <ConditionsBuilder initial={initial} platformOptions={platformOptions} platforms={platforms} onPlatforms={setPlatforms} disabled={pending} />
 
       {/* Bot rules decide from the request alone; only Suspicious rules reach the
           browser checkpoint, so the device signals show only for that label. */}
       {label === "Suspicious" ? <DeviceSignals initial={initial} disabled={pending} /> : null}
 
-      <label className="mt-4 flex items-center gap-2 text-sm">
-        <input type="checkbox" name="is_active" defaultChecked={rule?.is_active ?? true} className={CHECKBOX_CLASS} disabled={pending} />
-        Active (a paused rule is skipped in the walk)
-      </label>
+      <ExceptionsBlock initial={initial.except} label={label} disabled={pending} />
+
+      <TestPanel formRef={formRef} scoped={platforms.length > 0} disabled={pending} />
 
       {state.error ? (
         <p role="alert" className="mt-4 text-sm text-red-600 dark:text-red-400">
@@ -120,15 +144,15 @@ function FormBody({ rule, onDone }: { rule?: Rule; onDone: () => void }) {
  * before the funnel.
  */
 function DeviceSignals({ initial, disabled }: { initial: ReturnType<typeof ruleConditionsToForm>; disabled: boolean }) {
-  const bit = (name: string, legend: string, value: "" | "0" | "1") => {
+  const bit = (name: string, legend: string, value: "" | "0" | "1", own?: [on: string, off: string]) => {
     const capable = legend === "Touchscreen" || legend === "Mobile hint";
     const tell = name.startsWith("no_") || name === "tz_mismatch" || name === "tz_not_us" || name === "odd_resolution";
     return (
       <Field label={legend} key={name}>
         <select name={name} defaultValue={value} className={SELECT_CLASS} disabled={disabled}>
           <option value="">—</option>
-          <option value="1">{capable ? "capable" : tell ? "fired" : "yes"}</option>
-          <option value="0">{capable ? "not capable" : tell ? "not fired" : "no"}</option>
+          <option value="1">{own ? own[0] : capable ? "capable" : tell ? "fired" : "yes"}</option>
+          <option value="0">{own ? own[1] : capable ? "not capable" : tell ? "not fired" : "no"}</option>
         </select>
       </Field>
     );
@@ -201,6 +225,7 @@ function DeviceSignals({ initial, disabled }: { initial: ReturnType<typeof ruleC
         {bit("no_js", "No JavaScript", initial.noJs)}
         {bit("no_cookie", "Cookies disabled", initial.noCookie)}
         {bit("odd_resolution", "Odd resolution", initial.oddResolution)}
+        {bit("zoomed", "Browser zoom ≠ 100%", initial.zoomed, ["zoomed", "not zoomed"])}
       </div>
       <label className="mt-3 flex items-center gap-2 text-sm">
         <input type="checkbox" name="eval_cookie" value="absent" defaultChecked={initial.evalCookie} className={CHECKBOX_CLASS} disabled={disabled} />
@@ -211,8 +236,22 @@ function DeviceSignals({ initial, disabled }: { initial: ReturnType<typeof ruleC
 }
 
 /** The kinds of condition a rule can use. "URL parameter" can repeat; the others go once. */
-type CondType = "user_agent" | "prefetch" | "ips" | "asns" | "hostname" | "param" | "countries" | "languages" | "devices" | "referrer" | "referrer_absent" | "accept_languages";
+type CondType =
+  | "sub11_in"
+  | "user_agent"
+  | "prefetch"
+  | "ips"
+  | "asns"
+  | "hostname"
+  | "param"
+  | "countries"
+  | "languages"
+  | "devices"
+  | "referrer"
+  | "referrer_absent"
+  | "accept_languages";
 const COND_TYPES: { type: CondType; label: string; repeat?: true }[] = [
+  { type: "sub11_in", label: "Platform" },
   { type: "user_agent", label: "User-Agent" },
   { type: "prefetch", label: "Prefetch" },
   { type: "ips", label: "IP" },
@@ -228,25 +267,12 @@ const COND_TYPES: { type: CondType; label: string; repeat?: true }[] = [
 ];
 const COND_LABEL = Object.fromEntries(COND_TYPES.map((c) => [c.type, c.label])) as Record<CondType, string>;
 
-/** A URL parameter row: "contains"/"not equals"/"absent or equals" is the rule's `param` (one per rule); the others go into `query`. */
-type ParamRowMode = "present" | "absent" | "empty" | "equals" | "not_equals" | "absent_or_equals" | "contains";
-const PARAM_ROW_MODES: ParamRowMode[] = ["present", "absent", "empty", "equals", "not_equals", "absent_or_equals", "contains"];
-const PARAM_ROW_LABELS: Record<ParamRowMode, string> = {
-  present: "present",
-  absent: "absent",
-  empty: "absent or empty",
-  equals: "equals",
-  not_equals: "not equals",
-  absent_or_equals: "absent or equals",
-  contains: "contains",
-};
-/** Modes that post as the rule's single `param` (the rest go into `query`). */
-const PARAM_AS_PARAM: ReadonlySet<ParamRowMode> = new Set(["contains", "not_equals", "absent_or_equals"]);
 type Row = { id: number; type: CondType; key?: string; mode?: ParamRowMode; value?: string };
 
-/** A saved rule's rows: one per condition it has (an old sub1/sub11 condition shows as a URL parameter). */
+/** A saved rule's rows: one per condition it has (an old sub1 condition shows as a URL parameter; an old sub11 is in the platforms). */
 function initialRows(initial: ReturnType<typeof ruleConditionsToForm>): Row[] {
   const rows: Omit<Row, "id">[] = [];
+  if (initial.sub11In.length) rows.push({ type: "sub11_in" });
   if (initial.userAgent) rows.push({ type: "user_agent" });
   if (initial.prefetch) rows.push({ type: "prefetch" });
   if (initial.acceptLanguagesMin !== "" || initial.acceptLanguagesMax !== "") rows.push({ type: "accept_languages" });
@@ -260,7 +286,6 @@ function initialRows(initial: ReturnType<typeof ruleConditionsToForm>): Row[] {
   if (initial.devices.length) rows.push({ type: "devices" });
   if (initial.referrer) rows.push({ type: "referrer" });
   if (initial.referrerAbsent) rows.push({ type: "referrer_absent" });
-  if (initial.sub11) rows.push({ type: "param", key: "sub11", mode: "equals", value: initial.sub11 });
   if (initial.sub1) rows.push({ type: "param", key: "sub1", mode: "equals", value: initial.sub1 });
   return rows.map((r, id) => ({ ...r, id }));
 }
@@ -270,29 +295,32 @@ function initialRows(initial: ReturnType<typeof ruleConditionsToForm>): Row[] {
  * URL parameter, country…) and each row has its fields and a remove button.
  * The rows post the same fields as before (parseRuleConditionsForm): a kind
  * that isn't in the list simply isn't sent. All rows must match (AND).
+ * The Platform row's picks live in the form (`platforms`): the Test panel reads them.
  */
-function ConditionsBuilder({ initial, disabled }: { initial: ReturnType<typeof ruleConditionsToForm>; disabled: boolean }) {
+function ConditionsBuilder({
+  initial,
+  platformOptions,
+  platforms,
+  onPlatforms,
+  disabled,
+}: {
+  initial: ReturnType<typeof ruleConditionsToForm>;
+  platformOptions: string[];
+  platforms: string[];
+  onPlatforms: (platforms: string[]) => void;
+  disabled: boolean;
+}) {
   const [rows, setRows] = useState<Row[]>(() => initialRows(initial));
-  const [menu, setMenu] = useState(false);
   const nextId = useRef(1000);
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!menu) return;
-    const close = (e: MouseEvent) => {
-      if (!menuRef.current?.contains(e.target as Node)) setMenu(false);
-    };
-    document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
-  }, [menu]);
 
   const used = new Set(rows.map((r) => r.type));
   const available = COND_TYPES.filter((c) => c.repeat || !used.has(c.type));
-  const add = (type: CondType) => {
+  const add = (type: CondType) =>
     setRows((cur) => [...cur, type === "param" ? { id: nextId.current++, type, key: "", mode: "present", value: "" } : { id: nextId.current++, type }]);
-    setMenu(false);
+  const remove = (id: number) => {
+    if (rows.some((r) => r.id === id && r.type === "sub11_in")) onPlatforms([]);
+    setRows((cur) => cur.filter((r) => r.id !== id));
   };
-  const remove = (id: number) => setRows((cur) => cur.filter((r) => r.id !== id));
   const patch = (id: number, p: Partial<Row>) => setRows((cur) => cur.map((r) => (r.id === id ? { ...r, ...p } : r)));
   const containsTaken = (id: number) => rows.some((r) => r.id !== id && r.type === "param" && PARAM_AS_PARAM.has(r.mode ?? "present"));
 
@@ -300,6 +328,40 @@ function ConditionsBuilder({ initial, disabled }: { initial: ReturnType<typeof r
   const op = "shrink-0 text-sm text-muted";
   const controls = (r: Row) => {
     switch (r.type) {
+      case "sub11_in": {
+        // The known platforms plus any the rule already names; posts `sub11_in` (comma list).
+        const all = [...new Set([...platformOptions, ...platforms])];
+        return (
+          <>
+            <input type="hidden" name="sub11_in" value={platforms.join(",")} />
+            {all.length ? (
+              <span role="group" aria-label="Platforms" className="flex flex-wrap items-center gap-1.5">
+                {all.map((p) => {
+                  const on = platforms.includes(p);
+                  return (
+                    <button
+                      key={p}
+                      type="button"
+                      aria-pressed={on}
+                      onClick={() => onPlatforms(on ? platforms.filter((x) => x !== p) : [...platforms, p])}
+                      disabled={disabled}
+                      className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-2 text-xs font-medium transition-colors disabled:opacity-60 ${
+                        on ? "border-accent bg-accent/10 text-foreground" : "border-border text-muted hover:text-foreground"
+                      }`}
+                    >
+                      <PlatformTile tag={p} />
+                      {platformLabel(p)}
+                    </button>
+                  );
+                })}
+              </span>
+            ) : (
+              <span className={op}>No platform with clicks lately.</span>
+            )}
+            {all.length && !platforms.length ? <span className={op}>none picked: any platform</span> : null}
+          </>
+        );
+      }
       case "user_agent":
         return (
           <>
@@ -503,31 +565,7 @@ function ConditionsBuilder({ initial, disabled }: { initial: ReturnType<typeof r
       ) : (
         <p className="mt-2 text-xs text-muted">No condition: this rule catches every click.</p>
       )}
-      <div ref={menuRef} className="relative mt-2">
-        <Button size="sm" variant="ghost" onClick={() => setMenu((m) => !m)} disabled={disabled} aria-expanded={menu}>
-          + Add condition
-        </Button>
-        {menu ? (
-          <ul
-            role="menu"
-            className="absolute bottom-full left-0 z-10 mb-1 w-56 overflow-hidden rounded-lg border border-border bg-surface py-1 shadow-lg"
-            onKeyDown={(e) => {
-              if (e.key === "Escape") {
-                e.stopPropagation();
-                setMenu(false);
-              }
-            }}
-          >
-            {available.map((c) => (
-              <li key={c.type}>
-                <button type="button" role="menuitem" onClick={() => add(c.type)} className="w-full px-3 py-1.5 text-left text-sm hover:bg-foreground/5">
-                  {c.label}
-                </button>
-              </li>
-            ))}
-          </ul>
-        ) : null}
-      </div>
+      <AddMenu label="+ Add condition" items={available} onPick={add} disabled={disabled} />
     </fieldset>
   );
 }

@@ -526,6 +526,9 @@ check('fingerprint: no conn_reused when ntcp was sent', !isset($fpNav['env']['co
 $fpNavRe = eval_device_fingerprint(['nre' => 1, 'ntfb' => 100]);
 same('fingerprint: conn reused', 1, $fpNavRe['env']['conn_reused'] ?? null);
 check('fingerprint: no nav_connect_ms on a reused connection', !isset($fpNavRe['env']['nav_connect_ms']));
+// The browser's zoom (zm, %), next to the outer size.
+same('fingerprint: zoom', 90, eval_device_fingerprint(['zm' => 90, 'ow' => 1936, 'oh' => 1048])['hw']['zoom'] ?? null);
+check('fingerprint: no zoom when not measured', !isset($fp['hw']['zoom']));
 // Unknown signals don't appear (unknown ≠ empty), and an empty set is no fingerprint.
 check('fingerprint: missing keys absent', !isset($fp['hw']['color_depth']) && !isset($fp['env']['conn']));
 same('fingerprint: empty signals → null', null, eval_device_fingerprint([]));
@@ -544,3 +547,50 @@ $mreq->evalParams = [];
 same('matched: touch=0 matches', ['No touch'], array_map(fn ($r) => $r['name'], eval_rules_matched($mrules, $mreq, ['mtp' => 0], null)));
 same('matched: touch+wd match both, in order', ['No touch', 'Webdriver'], array_map(fn ($r) => $r['name'], eval_rules_matched($mrules, $mreq, ['mtp' => 0, 'wd' => 1], null)));
 same('matched: touch=1 matches none', [], eval_rules_matched($mrules, $mreq, ['mtp' => 5], null));
+
+// ── zoomed: the browser's zoom isn't 100% — zm (the window's outer width over the viewport's, %) outside 97–105 ──
+check('zoomed: zm=96 is zoomed', eval_conditions_match(['zoomed' => 1], $mreq, ['zm' => 96], null));
+check('zoomed: zm=100 is not', eval_conditions_match(['zoomed' => 0], $mreq, ['zm' => 100], null) && !eval_conditions_match(['zoomed' => 1], $mreq, ['zm' => 100], null));
+check('zoomed: zm=97 and 105 are not (a window frame)', !eval_conditions_match(['zoomed' => 1], $mreq, ['zm' => 97], null) && !eval_conditions_match(['zoomed' => 1], $mreq, ['zm' => 105], null));
+check('zoomed: zm=106 is zoomed', eval_conditions_match(['zoomed' => 1], $mreq, ['zm' => 106], null));
+check('zoomed: no zm is undecidable, either way', !eval_conditions_match(['zoomed' => 1], $mreq, ['mtp' => 0], null) && !eval_conditions_match(['zoomed' => 0], $mreq, ['mtp' => 0], null));
+check('zoomed: zm=0 is undecidable', !eval_conditions_match(['zoomed' => 1], $mreq, ['zm' => 0], null));
+check('zoomed: unknown stays pending for the checkpoint', eval_conditions_match(['zoomed' => 1], $mreq, null, null, true));
+check('zoomed: the request walk skips it quietly', !rule_conditions_match(['zoomed' => 1], $mreq));
+check('zoomed: the script collects zm', str_contains(EVAL_SCRIPT, var_export(eval_obf('zm', EVAL_BUILD_KEY), true)));
+
+// ── sub11_in: the click's platform (the query's sub11, lowercased) is one of the list ──
+$platReq = make_request([]);
+$platReq->evalParams = ['sub11' => 'Taboola'];
+check('sub11_in: in the list, case-insensitive', eval_conditions_match(['sub11_in' => ['facebook', 'taboola']], $platReq, null, null));
+check('sub11_in: not in the list', !eval_conditions_match(['sub11_in' => ['facebook']], $platReq, null, null));
+check('sub11_in: no sub11 is no match', !eval_conditions_match(['sub11_in' => ['taboola']], $mreq, null, null));
+check('sub11_in: a platform none of the rules names skips the checkpoint', !eval_checkpoint_applies([['conditions' => ['sub11_in' => ['facebook'], 'touch' => 0]]], $platReq));
+check('sub11_in: one it names gets it', eval_checkpoint_applies([['conditions' => ['sub11_in' => ['facebook', 'taboola'], 'touch' => 0]]], $platReq));
+
+// ── except on an eval rule: only a DECIDED exception exempts ──
+$exceptRule = ['sub11_in' => ['taboola'], 'touch' => 0, 'except' => [['pointer' => 'fine']]];
+check('except: no exception matches — the rule does', eval_conditions_match($exceptRule, $platReq, ['mtp' => 0, 'ptr' => 'coarse'], null));
+check('except: a signal exception that matches takes it back', !eval_conditions_match($exceptRule, $platReq, ['mtp' => 0, 'ptr' => 'fine'], null));
+check('except: an unknown signal never exempts', eval_conditions_match($exceptRule, $platReq, ['mtp' => 0], null));
+check('except: nor while pending (the checkpoint still applies)', eval_checkpoint_applies([['conditions' => $exceptRule]], $platReq));
+check('except: from a stored entry too', !eval_conditions_match($exceptRule, $platReq, null, ['mtp' => 0, 'ptr' => 'fine']));
+check('except: a nested except is dropped, never followed', !eval_conditions_match(['sub11_in' => ['taboola'], 'touch' => 0, 'except' => [['pointer' => 'fine', 'except' => [['pointer' => 'fine']]]]], $platReq, ['mtp' => 0, 'ptr' => 'fine'], null));
+// A request-side exception is decided before the POST: the checkpoint honours it.
+$usTaboola = static function (string $cc): Request {
+    $r = make_request(['REQUEST_URI' => '/?sub1=' . rawurlencode('x[F23]') . '&sub11=taboola', 'HTTP_CF_IPCOUNTRY' => $cc]);
+    return eval_request_from_query($r);
+};
+$geoExcept = ['sub11_in' => ['taboola'], 'touch' => 0, 'except' => [['countries' => ['CA']]]];
+check('except: a request-side exception skips the checkpoint', !eval_checkpoint_applies([['conditions' => $geoExcept]], $usTaboola('CA')));
+check('except: … only for the clicks it names', eval_checkpoint_applies([['conditions' => $geoExcept]], $usTaboola('US')));
+$exceptGate = [...$gate, 'eval_rules' => [['name' => 'Taboola no touch', 'label' => 'Suspicious', 'reason' => '', 'tags' => [], 'conditions' => $geoExcept]]];
+[, , , , $route] = decide($root, make_request(['REQUEST_URI' => '/?sub1=' . rawurlencode('x[F23]') . '&sub11=taboola', 'HTTP_CF_IPCOUNTRY' => 'CA']), $exceptGate);
+same('except gate: the excepted click goes straight to the funnel', ['GATE', null], [$route['match_type'], $route['_eval'] ?? null]);
+[, , , , $route] = decide($root, make_request(['REQUEST_URI' => '/?sub1=' . rawurlencode('x[F23]') . '&sub11=taboola', 'HTTP_CF_IPCOUNTRY' => 'US']), $exceptGate);
+same('except gate: another gets the checkpoint', 'checkpoint', $route['_eval'] ?? null);
+// A no_js rule's exception: the GET side honours it too.
+$noJsExcept = [['name' => 'No js', 'label' => 'Suspicious', 'reason' => '', 'tags' => [], 'conditions' => ['sub11_in' => ['taboola'], 'no_js' => 1, 'except' => [['countries' => ['CA']]]]]];
+$chkReq = static fn (string $cc): Request => eval_request_from_query(make_request(['REQUEST_URI' => '/?sub11=taboola', 'HTTP_CF_IPCOUNTRY' => $cc, 'HTTP_COOKIE' => EVAL_COOKIE . '=chk']));
+same('except: the no-JS GET flags the others', ['No js'], array_column(eval_no_js_rules($noJsExcept, $chkReq('US')), 'name'));
+same('except: … not the excepted one', [], eval_no_js_rules($noJsExcept, $chkReq('CA')));

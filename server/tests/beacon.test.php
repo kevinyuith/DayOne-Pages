@@ -104,6 +104,10 @@ same('beacon_parse_signals: keeps the new keys (aut, gl, glsw, lng, tp, dc, str)
 check('script: listens to the gyroscope and the accelerometer', str_contains(BEACON_SCRIPT, '"deviceorientation"') && str_contains(BEACON_SCRIPT, '"devicemotion"') && str_contains(BEACON_SCRIPT, 'accelerationIncludingGravity'));
 check('script: sends the motion signals (gy/gm = gyroscope fired/its swing, ac/am = the accelerometer\'s) when hidden or left', str_contains(BEACON_SCRIPT, 'if(_gy)K.gy=1') && str_contains(BEACON_SCRIPT, 'if(_gm>0)K.gm=_gm') && str_contains(BEACON_SCRIPT, 'if(_ac)K.ac=1') && str_contains(BEACON_SCRIPT, 'if(_am>0)K.am=_am'));
 same('beacon_parse_signals: keeps the motion keys (gy, gm, ac, am)', ['gy' => 1, 'gm' => 14, 'ac' => 1, 'am' => 1.25], beacon_parse_signals('{"gy":1,"gm":14,"ac":1,"am":1.25}'));
+// DevTools open (dvt): a docked panel's window gap or a slow console.log. Informational only.
+check('script: detects DevTools (window gap and console timing) and reports the first hit', str_contains(BEACON_SCRIPT, '_dchk') && str_contains(BEACON_SCRIPT, 'outerWidth-innerWidth') && str_contains(BEACON_SCRIPT, 'console.log') && str_contains(BEACON_SCRIPT, 'b(enc({dvt:1}))'));
+check('script: dvt joins the capability object when already set', str_contains(BEACON_SCRIPT, 'if(_dvt)S.dvt=1;'));
+same('beacon_parse_signals: keeps the dvt flag', ['dvt' => 1], beacon_parse_signals('{"dvt":1}'));
 $sgMotion = rawurlencode(json_encode(['mm' => 0, 'ts' => 3, 'gy' => 1, 'gm' => 8, 'ac' => 1, 'am' => 0.5]));
 same('beacon: the motion signals ride the duration notice', ['kind' => 'duration', 'ms' => 3000, 'sg' => ['mm' => 0, 'ts' => 3, 'gy' => 1, 'gm' => 8, 'ac' => 1, 'am' => 0.5]], handle_beacon($post(), "v=$id&d=3000&sg=$sgMotion")[4]);
 // How the page loaded (09/10, the pages' optimization): ttfb/fcp at load, lcp (+ element, own file) when hidden or left.

@@ -54,13 +54,13 @@ const EVAL_NO_JS = 'no_js';
 const EVAL_OWN_CONDITIONS = [
     'eval_cookie', 'touch', 'mobile_hint', 'pointer', 'webdriver', 'automation', 'gl_software', 'platform',
     'iframe', 'tostring_tampered', 'proto_poisoned', 'tz_offset', 'net_rtt_min', 'screens',
-    'nav_ttfb_above', 'coast', 'device_memory', 'plugins', 'chrome_below', 'nav_connect_min',
+    'nav_ttfb_above', 'coast', 'device_memory', 'plugins', 'chrome_below', 'nav_connect_min', 'zoomed',
     // The on/off detectors (1 = the tell fired). no_js is stripped too, but
     // never evaluated from signals — a POST proves JS ran.
     'no_touch', 'chrome_ua', 'no_chrome_object', 'tz_mismatch', 'tz_not_us', 'no_cookie', 'odd_resolution', EVAL_NO_JS,
 ];
 /** The rule keys the checkpoint itself evaluates (never left to conditions_match). */
-const EVAL_RULE_KEYS = ['sub1', 'sub11', 'param'];
+const EVAL_RULE_KEYS = ['sub1', 'sub11', 'sub11_in', 'param', 'except'];
 
 /**
  * Should this click see the checkpoint page? Only when at least one eval
@@ -99,6 +99,26 @@ function eval_checkpoint_applies(array $rules, Request $req): bool
 function eval_no_js_rule(array $rules, Request $req): ?array
 {
     foreach ($rules as $rule) {
+        // One rule at a time: the first match ends the walk, so a later
+        // rule's lookups never run before the response.
+        if (is_array($rule) && eval_no_js_rules([$rule], $req) !== []) {
+            return $rule;
+        }
+    }
+    return null;
+}
+
+/**
+ * Every rule the "no JS" GET confirms (see eval_no_js_rule): it names
+ * `no_js: 1` and the request matches the rest of its conditions. All of them,
+ * in order — the log's rule_matches (gate_rules_matched).
+ *
+ * @return list<array>
+ */
+function eval_no_js_rules(array $rules, Request $req): array
+{
+    $out = [];
+    foreach ($rules as $rule) {
         if (!is_array($rule)) {
             continue;
         }
@@ -109,10 +129,10 @@ function eval_no_js_rule(array $rules, Request $req): ?array
         $rest = $cond;
         unset($rest[EVAL_NO_JS]);
         if (eval_conditions_match($rest, $req, null, eval_signals_for_cookie($req), true)) {
-            return $rule;
+            $out[] = $rule;
         }
     }
-    return null;
+    return $out;
 }
 
 /**
@@ -206,6 +226,7 @@ try{var _gd=W[mlsZWGP(\'YUxES01a\',k)][mlsZWGP(\'SUtaYVlAflxBXktcWldqS11NXEdeWkF
 A(mlsZWGP(\'RltP\',k),((mlsZWGP(\'\',k)+(N[mlsZWGP(\'W11LXG9JS0Ba\',k)]||mlsZWGP(\'\',k)))[mlsZWGP(\'R0BKS1ZhSA==\',k)](mlsZWGP(\'ZktPSkJLXV1tRlxBQ0s=\',k))>=0)?1:0);
 try{A(mlsZWGP(\'TVxa\',k),(W[mlsZWGP(\'TUZcQUNL\',k)]&&W[mlsZWGP(\'TUZcQUNL\',k)][mlsZWGP(\'XFtAWkdDSw==\',k)])?1:0)}catch(e){A(mlsZWGP(\'TVxa\',k),0)}
 A(mlsZWGP(\'QVk=\',k),W[mlsZWGP(\'QVtaS1x5R0paRg==\',k)]|0);A(mlsZWGP(\'QUY=\',k),W[mlsZWGP(\'QVtaS1xmS0dJRlo=\',k)]|0);
+try{var _zo=W[mlsZWGP(\'QVtaS1x5R0paRg==\',k)],_zi=W[mlsZWGP(\'R0BAS1x5R0paRg==\',k)];if(_zo>0&&_zi>0)A(mlsZWGP(\'VEM=\',k),W[mlsZWGP(\'Y09aRg==\',k)][mlsZWGP(\'XEFbQEo=\',k)](_zo/_zi*100))}catch(e){}
 try{A(mlsZWGP(\'QkBJXQ==\',k),((N[mlsZWGP(\'Qk9ASVtPSUtd\',k)]||[])[mlsZWGP(\'REFHQA==\',k)](mlsZWGP(\'Ag==\',k)))[mlsZWGP(\'XUJHTUs=\',k)](0,60))}catch(e){}
 A(mlsZWGP(\'Q1o=\',k),(N[mlsZWGP(\'Q0dDS3pXXktd\',k)]||[])[mlsZWGP(\'QktASVpG\',k)]);
 try{var _b=(U[mlsZWGP(\'TFxPQEpd\',k)]||[])[mlsZWGP(\'Q09e\',k)](function(x){return x[mlsZWGP(\'TFxPQEo=\',k)]});A(mlsZWGP(\'W09M\',k),(_b[mlsZWGP(\'REFHQA==\',k)](mlsZWGP(\'Ag==\',k)))[mlsZWGP(\'XUJHTUs=\',k)](0,60))}catch(e){}
@@ -305,6 +326,7 @@ try{var _gd=W[~D('Object')][~D('getOwnPropertyDescriptor')](W[~D('Navigator')][~
 A(~D('hua'),((~D('')+(N[~D('userAgent')]||~D('')))[~D('indexOf')](~D('HeadlessChrome'))>=0)?1:0);
 try{A(~D('crt'),(W[~D('chrome')]&&W[~D('chrome')][~D('runtime')])?1:0)}catch(e){A(~D('crt'),0)}
 A(~D('ow'),W[~D('outerWidth')]|0);A(~D('oh'),W[~D('outerHeight')]|0);
+try{var _zo=W[~D('outerWidth')],_zi=W[~D('innerWidth')];if(_zo>0&&_zi>0)A(~D('zm'),W[~D('Math')][~D('round')](_zo/_zi*100))}catch(e){}
 try{A(~D('lngs'),((N[~D('languages')]||[])[~D('join')](~D(',')))[~D('slice')](0,60))}catch(e){}
 A(~D('mt'),(N[~D('mimeTypes')]||[])[~D('length')]);
 try{var _b=(U[~D('brands')]||[])[~D('map')](function(x){return x[~D('brand')]});A(~D('uab'),(_b[~D('join')](~D(',')))[~D('slice')](0,60))}catch(e){}
@@ -432,6 +454,7 @@ function eval_device_fingerprint(array $sg): ?array
         'screen' => ($n('sw') !== null && $n('sh') !== null) ? $n('sw') . 'x' . $n('sh') : null,
         'viewport' => ($n('vw') !== null && $n('vh') !== null) ? $n('vw') . 'x' . $n('vh') : null,
         'outer' => ($n('ow') !== null && $n('oh') !== null) ? $n('ow') . 'x' . $n('oh') : null,
+        'zoom' => $n('zm'),
         'color_depth' => $n('cd'),
         'orientation' => $s('sor'),
     ], static fn ($v) => $v !== null);
@@ -540,10 +563,17 @@ function eval_rules_matched(array $rules, Request $req, ?array $signals, ?array 
  *   plugins       navigator.plugins.length is exactly this (0 = none).
  *   chrome_below  the User-Agent's Chrome major version is below this (no Chrome token = no match).
  *   nav_connect_min ms: the checkpoint page's TCP+TLS setup is at least this (a reused connection = undecidable).
+ *   zoomed        1 = the browser's zoom isn't 100%: the window's outer width over the viewport's (zm, %) is
+ *                 outside 97–105. Not measured = undecidable.
  *
- * The rest of the rule (IPs, ASNs, hostname, User-Agent…) goes through the
+ * The sub ids, the platform (`sub11_in`: the sub11, lowercased, is one of the
+ * list) and the generic URL parameter come from the query (evalParams). The
+ * rest of the rule (IPs, ASNs, hostname, User-Agent…) goes through the
  * request walk's own evaluator (rule_conditions_match), so a Suspicious rule
- * takes the same network conditions a Bot rule does.
+ * takes the same network conditions a Bot rule does. The exceptions
+ * (`except`) come last, each with the same signals: when one matches, the
+ * rule doesn't — and only a DECIDED exception exempts (an unknown signal in
+ * it is no match, even in the applies-check).
  *
  * With $allowPending, a signal condition whose value isn't known does NOT
  * fail the rule — it's "pending" (the checkpoint's applies-check). Without
@@ -551,8 +581,8 @@ function eval_rules_matched(array $rules, Request $req, ?array $signals, ?array 
  */
 function eval_conditions_match(array $cond, Request $req, ?array $signals, ?array $stored, bool $allowPending = false): bool
 {
-    // The sub ids (exact, case-insensitive) and the generic URL parameter —
-    // from the request's query (evalParams), the same contract as
+    // The sub ids (exact, case-insensitive), the platform and the generic URL
+    // parameter — from the request's query (evalParams), the same contract as
     // rule_conditions_match. First: they're free, and a click on another
     // platform never pays for this rule's ASN/hostname lookup.
     foreach (['sub1', 'sub11'] as $key) {
@@ -561,6 +591,12 @@ function eval_conditions_match(array $cond, Request $req, ?array $signals, ?arra
         }
         $v = $req->evalParams[$key] ?? null;
         if (!is_string($v) || strcasecmp($v, (string) $cond[$key]) !== 0) {
+            return false;
+        }
+    }
+    if (isset($cond['sub11_in'])) {
+        $v = $req->evalParams['sub11'] ?? null;
+        if (!is_string($v) || !rule_platform_in(mb_strtolower($v), $cond['sub11_in'])) {
             return false;
         }
     }
@@ -688,6 +724,13 @@ function eval_conditions_match(array $cond, Request $req, ?array $signals, ?arra
         if (!$ok) {
             return false;
         }
+    }
+
+    // `except`: every condition matched — an exception that matches too
+    // takes the rule back. Never pending: an exception only exempts when
+    // it's decided.
+    if (rule_excepted($cond, static fn (array $exception): bool => eval_conditions_match($exception, $req, $signals, $stored, false))) {
+        return false;
     }
     return true;
 }
@@ -873,6 +916,10 @@ function eval_signal_values(?array $signals, ?array $stored): array
     if (isset($src['ntcp']) && (int) $src['ntcp'] > 0) $out['nav_connect'] = (int) $src['ntcp'];
     if (isset($src['dm']) && (int) $src['dm'] > 0) $out['device_memory'] = (int) $src['dm'];
     if (array_key_exists('np', $src)) $out['plugins'] = (int) $src['np'];
+    // zoomed: the window's outer width over the viewport's, in % (zm) — ~100
+    // at no zoom (a few px of window frame), off when the page is zoomed in
+    // or out. 0 = not measured.
+    if (isset($src['zm']) && (int) $src['zm'] > 0) $out['zoomed'] = ((int) $src['zm'] < 97 || (int) $src['zm'] > 105) ? 1 : 0;
     // The on/off detectors, derived from the raw signals.
     if (array_key_exists('mtp', $src)) $out['no_touch'] = ((int) $src['mtp'] <= 0) ? 1 : 0;
     if (array_key_exists('chr', $src)) $out['no_chrome_object'] = ((int) $src['chr'] === 1) ? 0 : 1;

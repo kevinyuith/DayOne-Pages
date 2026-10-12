@@ -121,12 +121,16 @@ function log_hit(Request $req, int $status, string $outcome, ?string $domainId, 
         $hostname = reverse_dns($req->ip);
     }
 
-    // Shadow evaluation: EVERY Bot rule whose conditions match this click, not
-    // just the one gate_pick served on. Run here, with the network lookups
-    // already done, so the two hostname Bot rules reuse the cached PTR and
-    // nothing new goes to the network. Stored as rule_matches, to see which
-    // clicks each rule would catch instead of only the one that won the walk.
-    $matches = $gate !== null ? gate_bot_rules_matched($gate, $req) : [];
+    // Shadow evaluation: EVERY rule whose conditions match this click, not
+    // just the one gate_pick served on (gate_rules_matched) — the Bot rules on
+    // the request; the Suspicious ones on the checkpoint's POST (the device's
+    // signals), on the "no JS" GET (no_js: 1) or by the request alone; and the
+    // rules in Monitor, marked `monitor`. Run here, with the network lookups
+    // already done, so the hostname rules reuse the cached PTR and nothing new
+    // goes to the network. Stored as rule_matches, to see which clicks each
+    // rule would catch (and their overlap) instead of only the one that won
+    // the walk.
+    $matches = $gate !== null ? gate_rules_matched($gate, $req) : [];
 
     $net = ['asn' => $asn, 'as_name' => $asName, 'hostname' => $hostname, 'rule_matches' => $matches !== [] ? $matches : null];
     $netChanged = $asn !== $known['asn'] || $asName !== $known['as_name'] || $hostname !== $known['hostname'];

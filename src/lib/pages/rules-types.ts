@@ -24,4 +24,35 @@ export type Rule = {
   conditions: RuleConditions;
   position: number;
   is_active: boolean;
+  /** Monitor mode: an active rule that's evaluated and recorded (rule_matches) but never blocks. */
+  is_monitor: boolean;
+  created_at: string;
+};
+
+/** A rule's state: Active (blocks), Monitor (records only) or Paused (skipped). */
+export const RULE_MODES = ["active", "monitor", "paused"] as const;
+export type RuleMode = (typeof RULE_MODES)[number];
+export const RULE_MODE_LABELS: Record<RuleMode, string> = { active: "Active", monitor: "Monitor", paused: "Paused" };
+export const isRuleMode = (v: string): v is RuleMode => (RULE_MODES as readonly string[]).includes(v);
+export const ruleMode = (r: Pick<Rule, "is_active" | "is_monitor">): RuleMode => (!r.is_active ? "paused" : r.is_monitor ? "monitor" : "active");
+
+/** What pages.rule_backtest says a rule's conditions would have matched (since `since`). */
+export type RuleBacktest = {
+  since: string;
+  total: number;
+  ips: number;
+  caught: number;
+  safe_no_rule: number;
+  checkpoint: number;
+  not_found: number;
+  funnel: number;
+  funnel_loaded: number;
+  funnel_interacted: number;
+  other: number;
+  caught_by: { rule: string; n: number }[];
+  platforms: { platform: string; n: number }[];
+  /** Condition keys a hit can't tell (prefetch, device signals…): the counts are an upper bound. */
+  ignored: string[];
+  /** Conditions a hit only records in part (referrer host, hostname). */
+  approximate: string[];
 };

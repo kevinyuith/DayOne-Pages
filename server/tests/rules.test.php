@@ -290,6 +290,34 @@ check('UA regex', rule_conditions_match(['user_agent' => 'chrome'], $req));
 check('UA + base', rule_conditions_match(['user_agent' => 'chrome', 'countries' => ['BR']], $req));
 check('empty conditions', rule_conditions_match([], $req));
 
+// sub11_in: the click's platform (its sub11, lowercased) is one of the list; no sub11 = no match.
+check('sub11_in: in the list', rule_conditions_match(['sub11_in' => ['taboola', 'fb']], $req));
+check('sub11_in: not in the list', !rule_conditions_match(['sub11_in' => ['taboola', 'tiktok']], $req));
+check('sub11_in: case-insensitive both ways', rule_conditions_match(['sub11_in' => ['Fb']], make_request(['REQUEST_URI' => '/?sub11=fB'])));
+check('sub11_in: no sub11 is no match', !rule_conditions_match(['sub11_in' => ['fb']], make_request()));
+check('sub11_in: an empty sub11 is no match', !rule_conditions_match(['sub11_in' => ['fb']], make_request(['REQUEST_URI' => '/?sub11='])));
+check('sub11_in: URL-decoded', rule_conditions_match(['sub11_in' => ['taboola news']], make_request(['REQUEST_URI' => '/?sub11=Taboola%20News'])));
+check('sub11_in: with the other conditions', !rule_conditions_match(['sub11_in' => ['fb'], 'countries' => ['US']], $req));
+
+// except: the rule matches only when every condition does AND no exception does.
+check('except: an exception that matches takes the rule back', !rule_conditions_match(['sub11_in' => ['fb'], 'except' => [['countries' => ['BR']]]], $req));
+check('except: an exception that does not match leaves the rule', rule_conditions_match(['sub11_in' => ['fb'], 'except' => [['countries' => ['US']]]], $req));
+check('except: any of them (one of two matches)', !rule_conditions_match(['sub11_in' => ['fb'], 'except' => [['countries' => ['US']], ['param' => ['name' => 'net', 'equals' => 'dc9']]]], $req));
+check('except: every condition of an exception must match', rule_conditions_match(['sub11_in' => ['fb'], 'except' => [['countries' => ['BR'], 'user_agent' => 'firefox']]], $req));
+check('except: a rule that does not match stays unmatched', !rule_conditions_match(['sub11_in' => ['tiktok'], 'except' => [['countries' => ['US']]]], $req));
+// A device-signal exception can't be decided by the request: it never exempts on a guess.
+check('except: a device-signal exception never exempts in the request walk', rule_conditions_match(['sub11_in' => ['fb'], 'except' => [['touch' => 1]]], $req));
+check('except: … nor one that mixes it with a matching request condition', rule_conditions_match(['sub11_in' => ['fb'], 'except' => [['countries' => ['BR'], 'zoomed' => 0]]], $req));
+check('except: entries that are not condition sets are ignored', rule_conditions_match(['sub11_in' => ['fb'], 'except' => ['countries', [], null]], $req));
+check('except: a nested except is dropped, never followed', !rule_conditions_match(['sub11_in' => ['fb'], 'except' => [['countries' => ['BR'], 'except' => [['countries' => ['BR']]]]]], $req));
+// Through the gate: the exception lets the click through to the funnel.
+$gateExcept = [...$gate, 'rules' => [['id' => 'r1', 'name' => 'FB bad UA', 'label' => 'Bot', 'tags' => [], 'conditions' => ['sub11_in' => ['facebook'], 'user_agent' => 'scraperxyz', 'except' => [['countries' => ['US']]]]]]];
+$fbBad = '/?' . http_build_query(['sub1' => 'x[F23]', 'sub11' => 'Facebook']);
+[, , , , $route] = decide($root, make_request(['REQUEST_URI' => $fbBad, 'HTTP_USER_AGENT' => 'x ScraperXYZ', 'HTTP_CF_IPCOUNTRY' => 'BR']), $gateExcept);
+same('except gate: no exception, the rule flags', ['GATE-SAFE', 'FB bad UA'], [$route['match_type'], $route['_rule'] ?? null]);
+[, , , , $route] = decide($root, make_request(['REQUEST_URI' => $fbBad, 'HTTP_USER_AGENT' => 'x ScraperXYZ', 'HTTP_CF_IPCOUNTRY' => 'US']), $gateExcept);
+same('except gate: the exception sends the click on', ['GATE', null], [$route['match_type'], $route['_rule'] ?? null]);
+
 // A device-signal condition only exists after the checkpoint: the request
 // walk never matches the rule, and says nothing in the log (it used to log
 // every such rule on every clean click as an unknown condition).
@@ -336,7 +364,7 @@ same('prefetch rule: the click itself goes to the funnel', ['GATE', 'F23'], [$ro
 $gateShadow = [
     'gate_slugs' => ['/'],
     'rules' => [
-        ['name' => 'UA scraper', 'label' => 'Bot', 'reason' => 'scraper UA', 'tags' => ['scrape'], 'conditions' => ['user_agent' => 'scraperxyz']],
+        ['id' => 'b0000000-0000-4000-8000-000000000001', 'name' => 'UA scraper', 'label' => 'Bot', 'reason' => 'scraper UA', 'tags' => ['scrape'], 'conditions' => ['user_agent' => 'scraperxyz']],
         ['name' => 'Yahoo sub9', 'label' => 'Bot', 'reason' => 'yahoo', 'tags' => ['Taboola'], 'conditions' => ['param' => ['name' => 'sub9', 'contains' => 'yahoo']]],
         ['name' => 'One language', 'label' => 'Bot', 'tags' => [], 'conditions' => ['accept_languages' => ['max' => 1]]],
         ['name' => 'Suspicious device', 'label' => 'Suspicious', 'tags' => [], 'conditions' => ['param' => ['name' => 'sub9', 'contains' => 'yahoo']]],
@@ -348,9 +376,66 @@ $multi = make_request(['REQUEST_URI' => '/?sub9=yahoo-mail', 'HTTP_USER_AGENT' =
 $matched = gate_bot_rules_matched($gateShadow, $multi);
 same('shadow: every matching Bot rule, in walk order', ['UA scraper', 'Yahoo sub9', 'One language'], array_map(fn ($r) => $r['name'], $matched));
 same('shadow: each carries label/reason/tags', ['Bot', 'yahoo', ['Taboola']], [$matched[1]['label'], $matched[1]['reason'], $matched[1]['tags']]);
+same('shadow: each carries the rule id', 'b0000000-0000-4000-8000-000000000001', $matched[0]['id']);
+same('shadow: no id in the gate data (an old cache) → empty', '', $matched[1]['id']);
 check('shadow: Suspicious rules are not evaluated', !in_array('Suspicious device', array_map(fn ($r) => $r['name'], $matched), true));
 // A clean click (not yahoo, real browser languages, no scraper UA) trips no Bot rule.
 same('shadow: a clean click matches no Bot rule', [], gate_bot_rules_matched($gateShadow, make_request(['REQUEST_URI' => '/?sub9=wavebrowser-wavebrowser', 'HTTP_ACCEPT_LANGUAGE' => 'en-US,en'])));
+
+// ── gate_rules_matched: the log's full rule_matches — Bot, Suspicious (POST / no-JS GET / request alone), Monitor ──
+$susReq = ['id' => 's1', 'name' => 'Taboola one language', 'label' => 'Suspicious', 'reason' => 'one language', 'tags' => [], 'conditions' => ['sub11_in' => ['taboola'], 'accept_languages' => ['max' => 1]]];
+$susTouch = ['id' => 's2', 'name' => 'Taboola no touch', 'label' => 'Suspicious', 'reason' => 'no touch', 'tags' => ['Taboola'], 'conditions' => ['sub11_in' => ['taboola'], 'touch' => 0]];
+$susNoJs = ['id' => 's3', 'name' => 'Taboola no js', 'label' => 'Suspicious', 'reason' => 'No JavaScript', 'tags' => [], 'conditions' => ['sub11_in' => ['taboola'], 'no_js' => 1]];
+$gateAll = [
+    'gate_slugs' => ['/'],
+    'rules' => [
+        ['id' => 'b1', 'name' => 'UA scraper', 'label' => 'Bot', 'reason' => 'scraper UA', 'tags' => ['scrape'], 'conditions' => ['user_agent' => 'scraperxyz']],
+        $susReq, $susTouch, $susNoJs,
+    ],
+    'eval_rules' => [$susReq, $susTouch, $susNoJs],
+    'monitor_rules' => [
+        ['id' => 'm1', 'name' => 'Monitor scraper', 'label' => 'Bot', 'reason' => '', 'tags' => [], 'conditions' => ['user_agent' => 'scraper']],
+        ['id' => 'm2', 'name' => 'Monitor zoomed', 'label' => 'Suspicious', 'reason' => 'zoom', 'tags' => [], 'conditions' => ['sub11_in' => ['taboola'], 'zoomed' => 1]],
+        ['id' => 'm3', 'name' => 'Monitor no js', 'label' => 'Suspicious', 'reason' => '', 'tags' => [], 'conditions' => ['no_js' => 1]],
+    ],
+    'funnels' => $gate['funnels'],
+];
+$ids = static fn (array $matches): array => array_map(static fn (array $m): string => $m['id'] . (!empty($m['monitor']) ? ' (monitor)' : ''), $matches);
+$taboola = '/?' . http_build_query(['sub1' => 'x[F23]', 'sub11' => 'Taboola']);
+// A GET: the Bot rule, the Suspicious rule the request alone decides, the Bot monitor rule.
+$getAll = make_request(['REQUEST_URI' => $taboola, 'HTTP_USER_AGENT' => 'x ScraperXYZ', 'HTTP_ACCEPT_LANGUAGE' => 'en']);
+same('all rules: a GET — Bot, Suspicious by the request, Monitor', ['b1', 's1', 'm1 (monitor)'], $ids(gate_rules_matched($gateAll, $getAll)));
+same('all rules: an entry is {id, name, label, reason, tags}', ['id' => 's1', 'name' => 'Taboola one language', 'label' => 'Suspicious', 'reason' => 'one language', 'tags' => []], gate_rules_matched($gateAll, $getAll)[1]);
+same('all rules: a monitor entry is marked', ['id' => 'm1', 'name' => 'Monitor scraper', 'label' => 'Bot', 'reason' => '', 'tags' => [], 'monitor' => true], gate_rules_matched($gateAll, $getAll)[2]);
+// The checkpoint's POST: the signals decide the Suspicious rules (and the monitor ones).
+$postAll = make_request(['REQUEST_URI' => $taboola, 'HTTP_ACCEPT_LANGUAGE' => 'en-US,en']);
+$postAll->evalSignals = ['mtp' => 0, 'zm' => 90];
+same('all rules: the POST — the signals decide, Monitor too', ['s2', 'm2 (monitor)'], $ids(gate_rules_matched($gateAll, $postAll)));
+$postAll->evalSignals = ['mtp' => 5, 'zm' => 100];
+same('all rules: a POST that passed matches nothing', [], gate_rules_matched($gateAll, $postAll));
+// The "no JS" GET (the chk cookie, never the POST): the rules that name no_js: 1.
+$noJsAll = make_request(['REQUEST_URI' => $taboola, 'HTTP_ACCEPT_LANGUAGE' => 'en-US,en', 'HTTP_COOKIE' => EVAL_COOKIE . '=chk']);
+same('all rules: the no-JS GET — every no_js rule, Monitor too', ['s3', 'm3 (monitor)'], $ids(gate_rules_matched($gateAll, $noJsAll)));
+same('all rules: no-JS — the first one is still what the gate serves', 'Taboola no js', eval_no_js_rule($gateAll['eval_rules'], eval_request_from_query($noJsAll))['name'] ?? null);
+// Without the chk cookie a GET decides no device signal and no no_js rule.
+same('all rules: a clean GET matches nothing', [], gate_rules_matched($gateAll, make_request(['REQUEST_URI' => $taboola, 'HTTP_ACCEPT_LANGUAGE' => 'en-US,en'])));
+// A cache from before Monitor: no monitor_rules — the rest as before.
+same('all rules: no monitor_rules (an old cache)', ['b1', 's1'], $ids(gate_rules_matched(array_diff_key($gateAll, ['monitor_rules' => true]), $getAll)));
+
+// A rule in Monitor never serves: it doesn't flag the click, and a Suspicious
+// one never sends it to the checkpoint — only gate_rules_matched reads them.
+$gateMonitor = [...$gateAll, 'rules' => [], 'eval_rules' => [
+    ['id' => 's9', 'name' => 'Facebook no touch', 'label' => 'Suspicious', 'reason' => '', 'tags' => [], 'conditions' => ['sub11_in' => ['facebook'], 'touch' => 0]],
+]];
+[, , $body, , $route] = decide($root, make_request(['REQUEST_URI' => $taboola, 'HTTP_USER_AGENT' => 'x ScraperXYZ']), $gateMonitor);
+same('monitor: a matching Bot monitor rule does not flag', ['GATE', null, null], [$route['match_type'], $route['_rule'] ?? null, $route['_eval'] ?? null]);
+check('monitor: the funnel page', str_contains((string) $body, 'F23-'));
+check('monitor: active, the Suspicious rule would send the click to the checkpoint', eval_checkpoint_applies($gateMonitor['monitor_rules'], eval_request_from_query(make_request(['REQUEST_URI' => $taboola]))));
+[, , , , $route] = decide($root, make_request(['REQUEST_URI' => $taboola]), $gateMonitor);
+same('monitor: in Monitor it does not', ['GATE', null], [$route['match_type'], $route['_eval'] ?? null]);
+[, , , , $route] = decide($root, make_request(['REQUEST_URI' => $taboola]), [...$gateMonitor, 'eval_rules' => []]);
+same('monitor: with no active eval rule, no checkpoint', ['GATE', null], [$route['match_type'], $route['_eval'] ?? null]);
+same('monitor: but the log sees it', ['m1 (monitor)'], $ids(gate_rules_matched($gateMonitor, make_request(['REQUEST_URI' => $taboola, 'HTTP_USER_AGENT' => 'x ScraperXYZ']))));
 
 // ── helpers ──
 $refs = gate_content_refs($gate);

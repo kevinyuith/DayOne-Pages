@@ -800,11 +800,13 @@ export type HitLogRow = HitRow & {
   rule_reason: string | null;
   rule_tags: string[] | null;
   /**
-   * EVERY active Bot rule whose conditions matched this request (shadow evaluation
-   * by the delivery server), not only the one that served (`rule`/`rule_label`) — the
-   * gate bars on the first match, so this shows the overlap. Suspicious rules excluded.
+   * EVERY rule whose conditions matched this request (shadow evaluation by the
+   * delivery server), not only the one that served (`rule`/`rule_label`) — the gate
+   * bars on the first match, so this shows the overlap: the Bot rules, the Suspicious
+   * ones on a checkpoint POST (or its no-JS GET), then the Monitor rules (`monitor`).
+   * `id` = the rule's id; older rows have names only.
    */
-  rule_matches: { name: string; label: string; reason: string; tags: string[] }[] | null;
+  rule_matches: { id?: string; name: string; label: string; reason: string; tags: string[]; monitor?: boolean }[] | null;
   /** Why a click didn't go to a funnel: by the slug/sub1, or by the domain's status; null otherwise. */
   gate_reason: "slug_not_allowed" | "no_funnel_token" | "funnel_not_live" | "domain_disabled" | "domain_locked" | "domain_unlocked" | null;
   /** The funnel code of the sub1's [F…] token, when there was one. */
@@ -852,10 +854,11 @@ export type HitLogRow = HitRow & {
  * A page of hits, newest to oldest. Cursor pagination:
  * `beforeId` = id of the last one on the previous page (the created_at index follows
  * the same order as the id, which is IDENTITY). Fetches one extra to know if there's a next page.
- * `filters` = the Logs screen's filters (hit-filters.ts).
+ * `filters` = the Logs screen's filters (hit-filters.ts); `matchedRuleId` = only the
+ * hits whose rule_matches has that rule (any stage, Monitor included).
  */
 export async function listHits(
-  opts: { domainId?: string | null; beforeId?: number | null; limit?: number; filters?: HitFilters } = {},
+  opts: { domainId?: string | null; beforeId?: number | null; limit?: number; filters?: HitFilters; matchedRuleId?: string | null } = {},
 ): Promise<{ rows: HitLogRow[]; hasMore: boolean }> {
   const limit = opts.limit ?? 100;
   const db = supabaseService();
@@ -893,6 +896,8 @@ export async function listHits(
   else if (f.vpn) q = q.eq("vpn_kind", f.vpn);
   // rule_tags is a jsonb array: containment, so ["Crawler","TikTok"] matches the flow "Crawler".
   if (f.flow) q = q.contains("rule_tags", JSON.stringify([f.flow]));
+  // One rule among every rule that matched (rule_matches, a jsonb array of objects): containment by its id.
+  if (opts.matchedRuleId) q = q.contains("rule_matches", JSON.stringify([{ id: opts.matchedRuleId }]));
   const { data, error } = await q;
   throwIf(error, "listHits");
 
