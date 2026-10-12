@@ -440,10 +440,27 @@ function unwrapIfOnlyLander(doc: Document): void {
   const rest = pageElements(doc);
   const active = rest.filter(hasCode);
   if (active.length === 1 && kindOf(active[0]) === "main") {
+    const id = active[0].getAttribute(PAGE_ATTR);
     rest.filter((el) => el !== active[0]).forEach((el) => el.remove());
     active[0].replaceWith(...Array.from(active[0].childNodes));
     doc.body?.removeAttribute(FUNNEL_MODE_ATTR);
+    if (id) unscopeStyles(doc, id);
   }
+}
+
+/**
+ * CSS scoped to the unwrapped section (`[data-dop-page="p_x"] .a{…}` — a pasted
+ * page's `body`/`html` rules became the section when the page turned into a step)
+ * would match nothing once the section is gone, and the page would lose its
+ * styles. The section's content now sits in the <body>, so the scope goes back
+ * to `body` (the ancestors in front of it are always `html…`).
+ */
+function unscopeStyles(doc: Document, id: string): void {
+  const scope = new RegExp(`\\[${PAGE_ATTR}=(["']?)${id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\1\\]`, "g");
+  doc.querySelectorAll("style").forEach((style) => {
+    const css = style.textContent ?? "";
+    if (css.includes(id)) style.textContent = css.replace(scope, "body");
+  });
 }
 
 export function setTriggers(doc: Document, id: string, triggers: BackTrigger[]): void {
