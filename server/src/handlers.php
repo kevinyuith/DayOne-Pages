@@ -89,5 +89,7 @@ function handle_purge(Request $req, ?string $rawBody = null): array
         return [400, ['Content-Type' => 'application/json', 'Cache-Control' => 'no-store'], '{"error":"invalid host"}'];
     }
     $n = purge_host($host);
+    // The VSLs' CTA blocks (cta.php) are kept per page, not per host: all of them are asked again.
+    cta_draw_purge();
     return [200, ['Content-Type' => 'application/json', 'Cache-Control' => 'no-store'], json_encode(['purged' => $n, 'host' => $host])];
 }

@@ -181,6 +181,8 @@ const TRACKER_DOT_JS = <<<'JS'
  *   time watched in it) as vturb_id and under every name of the player config's
  *   `conversion`. No answer in time → the
  *   page's reserve (<template data-dop-cta-reserve>), with no cta_id: it wasn't drawn.
+ *   &cta=3 = the test link (?dop_cta=<cta id> on the page): that CTA of the funnel, a
+ *   draft too, at once (&preview= to /_dop/cta), outside the draw: no cookie, no cta_id.
  *
  * Also preserved: UTM/click-ID capture (sessionStorage dot_attr), dotid cookie
  * (1 day), ?dotid= propagation on external links, send retries, pagehide beacon.
@@ -271,9 +273,13 @@ const TRACKER_DOT_JS = <<<'JS'
   var CTA_TIMEOUT = 2000;      // max wait (ms) for /_dop/cta before the reserve
   var CTA_LEAD = 3;            // seconds before the pitch the CTA is fetched and laid out hidden (its images load)
   var ctaMode = (function () {
-    var m = mySrc.match(/[?&]cta=([12])(?:[&#]|$)/);
+    var m = mySrc.match(/[?&]cta=([123])(?:[&#]|$)/);
     return m ? +m[1] : 0;
   })();
+  // &cta=3 = the test link (?dop_cta=<cta id> on the page): THAT CTA at once, outside the draw — the
+  // server sets no cookie and the events carry no cta_id (a test isn't a view of the CTA).
+  var ctaPreview = ctaMode === 3 && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(query.get('dop_cta') || '')
+    ? query.get('dop_cta') : null;
   var ctaId = null;            // the drawn CTA, once it's shown: every event from then on carries it
   var ctaPending = null;       // the drawn CTA while it waits hidden for the pitch
   var ctaPromise = null;
@@ -673,7 +679,8 @@ const TRACKER_DOT_JS = <<<'JS'
   function ctaFetch(hidden) {
     if (!ctaMode) return null;
     if (ctaPromise) return ctaPromise;
-    var url = '/_dop/cta?page=' + encodeURIComponent(pageId || '') + '&video=' + encodeURIComponent(videoId || '');
+    var url = '/_dop/cta?page=' + encodeURIComponent(pageId || '') + '&video=' + encodeURIComponent(videoId || '') +
+      (ctaPreview ? '&preview=' + ctaPreview : '');
     var asked = fetch(url, { credentials: 'same-origin', signal: timeoutSignal(CTA_TIMEOUT) })
       .then(function (res) { return res.status === 200 ? res.json() : null; })
       .then(function (d) {
@@ -683,8 +690,8 @@ const TRACKER_DOT_JS = <<<'JS'
     var late = new Promise(function (done) { setTimeout(function () { done(null); }, CTA_TIMEOUT); });
     ctaPromise = Promise.race([asked, late]).then(function (c) {
       if (c && ctaShow(c.html, c.id, hidden)) {
-        ctaPending = c.id;
-      } else if (!c) {
+        ctaPending = ctaPreview ? null : c.id;
+      } else if (!c && !ctaPreview) {
         var t = document.querySelector('template[data-dop-cta-reserve]');
         if (t) ctaShow(t.innerHTML, null, hidden);
       }
@@ -692,12 +699,12 @@ const TRACKER_DOT_JS = <<<'JS'
     });
     return ctaPromise;
   }
-  // A returning visitor (&cta=2): the CTA at once, as soon as the player is in the page.
+  // A returning visitor (&cta=2) or the test link (&cta=3): the CTA at once, as soon as the player is in the page.
   function ctaAtOnce() {
     var c = ctaFetch(false);
     if (c) c.then(ctaReveal);
   }
-  if (ctaMode === 2) {
+  if (ctaMode === 2 || ctaMode === 3) {
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ctaAtOnce);
     else ctaAtOnce();
   }

@@ -276,8 +276,9 @@ function serve_slug(array $route, Request $req): array
 
     // The funnel's CTA at the pitch (cta.php): the drawn video on CTA mode "server" → the tracker
     // asks /_dop/cta for it (&cta=), with the largest-share CTA as the reserve in the page.
-    $cta = $beacon ? cta_page_mode($route, $video, $req->cookies) : null;
-    $ctaTag = $cta !== null ? '-c' . $cta['mode'] . ($cta['reserve'] !== null ? substr($cta['reserve']['hash'], 0, 8) : '') : '';
+    // The test link (?dop_cta=<cta id>): that CTA at once, outside the draw (&cta=3).
+    $cta = $beacon ? cta_page_mode($route, $video, $req->cookies, cta_preview_id($req->rawQuery), $pageId) : null;
+    $ctaTag = $cta !== null ? '-c' . $cta['mode'] . $cta['tag'] : '';
 
     // The funnel's tracker (track.php): the served step's dot.js in the <head> — ONLY on a funnel
     // page the gate served (beacon), as the served step's kind (a page with steps) or the Lander
