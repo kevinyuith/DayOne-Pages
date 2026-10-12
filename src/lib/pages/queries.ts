@@ -54,7 +54,7 @@ type SiteRow = {
   slugs: SiteSlugSummary[];
 };
 
-/** The pages in domains.site, without HTML (pages.domain_pages_summary). `null` = every domain. */
+/** The pages in domains.page, without HTML (pages.domain_pages_summary). `null` = every domain. */
 async function sitePages(domainIds: string[] | null): Promise<SiteRow[]> {
   const { data, error } = await supabaseService().rpc("domain_pages_summary", { p_domain_ids: domainIds });
   throwIf(error, "domain_pages_summary");
@@ -72,7 +72,7 @@ export async function listDomains(): Promise<Domain[]> {
 export type PageOption = PageRef & { slugs: Pick<PageSlugSummary, "id" | "slug" | "is_active">[] };
 
 /**
- * A domain's page (a template copy stored in domains.site). In the slugs,
+ * A domain's page (a template copy stored in domains.page). In the slugs,
  * `id` is the path itself: it's unique within the page.
  */
 export type DomainPage = PageOption & {
@@ -92,7 +92,7 @@ async function templateNames(ids: string[]): Promise<Map<string, string>> {
   const names = new Map<string, string>();
   const unique = [...new Set(ids)];
   if (unique.length === 0) return names;
-  const { data, error } = await supabaseService().from("pages").select("id,name").in("id", unique);
+  const { data, error } = await supabaseService().from("page_content").select("id,name").in("id", unique);
   throwIf(error, "templateNames");
   for (const p of (data as { id: string; name: string }[] | null) ?? []) names.set(p.id, p.name);
   return names;
@@ -128,7 +128,7 @@ export type PageListItem = Page & {
   copies_count: number;
 };
 
-/** A page from pages.pages without the HTML (pages.pages_summary). */
+/** A page from pages.page_content without the HTML (pages.pages_summary). */
 type PageSummaryRow = {
   id: string;
   scope: "TEMPLATE" | "DOMAIN" | "FUNNEL";
@@ -145,7 +145,7 @@ type PageSummaryRow = {
   slugs: SiteSlugSummary[];
 };
 
-/** Pages without the HTML (the `slugs` column of pages.pages carries the HTML: never `select("*")` on it). */
+/** Pages without the HTML (the `slugs` column of pages.page_content carries the HTML: never `select("*")` on it). */
 async function pagesSummary(ids: string[] | null, scope: PageSummaryRow["scope"] | null): Promise<PageSummaryRow[]> {
   const { data, error } = await supabaseService().rpc("pages_summary", { p_ids: ids, p_scope: scope });
   throwIf(error, "pages_summary");
@@ -566,7 +566,7 @@ export type DomainPageEditorData = {
 };
 
 /**
- * A page from domains.site opened in the editor, at the requested slug (or the
+ * A page from domains.page opened in the editor, at the requested slug (or the
  * root, or the first one). null if the domain, the page or the slug doesn't exist.
  */
 export async function getDomainPageForEditor(domainId: string, pageId: string, slugPath: string | null): Promise<DomainPageEditorData | null> {
@@ -900,11 +900,11 @@ export async function listHits(
   const raw = (data as unknown as Raw[] | null) ?? [];
   const rows = raw.slice(0, limit);
 
-  // page_id has no FK (the page may have been deleted), so the name comes from a second read, of pages.pages.
+  // page_id has no FK (the page may have been deleted), so the name comes from a second read, of pages.page_content.
   const pageIds = [...new Set(rows.map((r) => r.page_id).filter((id): id is string => id !== null))];
   const pageNames = new Map<string, string>();
   if (pageIds.length > 0) {
-    const named = await db.from("pages").select("id, name").in("id", pageIds);
+    const named = await db.from("page_content").select("id, name").in("id", pageIds);
     throwIf(named.error, "listHits (pages)");
     for (const p of (named.data as Pick<Page, "id" | "name">[] | null) ?? []) pageNames.set(p.id, p.name);
   }
@@ -926,8 +926,8 @@ export async function countOverview(): Promise<Overview> {
   const [d, da, p, domainPages] = await Promise.all([
     db.from("domains").select("id", head),
     db.from("domains").select("id", head).eq("status", "ACTIVE"),
-    db.from("pages").select("id", head).eq("scope", "TEMPLATE"),
-    db.from("pages").select("id", head).eq("scope", "DOMAIN"),
+    db.from("page_content").select("id", head).eq("scope", "TEMPLATE"),
+    db.from("page_content").select("id", head).eq("scope", "DOMAIN"),
   ]);
   return {
     domains: d.count ?? 0,

@@ -160,8 +160,8 @@ export async function verifyDomain(id: string): Promise<VerifyResult> {
   }
 }
 
-/** The domain's default page: one of its pages (domains.site), or none (404). */
-// ── Domain pages (domains.site) ────────────────────────────────────────────
+/** The domain's default page: one of its pages (domains.page), or none (404). */
+// ── Domain pages (domains.page) ────────────────────────────────────────────
 
 /**
  * Copies a template to the domain. The copy belongs to the domain: editing one
@@ -208,7 +208,7 @@ export async function previewTemplateVariation(input: VariationInput): Promise<A
 
   const db = supabaseService();
   try {
-    const page = await db.from("pages").select("name, slugs").eq("id", input.templateId).eq("scope", "TEMPLATE").maybeSingle();
+    const page = await db.from("page_content").select("name, slugs").eq("id", input.templateId).eq("scope", "TEMPLATE").maybeSingle();
     if (page.error) throw new Error(page.error.message);
     const template = page.data as { name: string; slugs: Record<string, { content: string }> } | null;
     const slugs = Object.entries(template?.slugs ?? {}).map(([slug, v]) => ({ slug, content: v.content }));

@@ -3,7 +3,7 @@ import { setShare } from "./traffic";
 
 /**
  * The % of the A/B test between the pages of a funnel, in the database (`weight`
- * of each page in pages.funnels.site). The math lives in traffic.ts; this only
+ * of each page in pages.funnels.page). The math lives in traffic.ts; this only
  * reads and writes what changed.
  *
  * Only a PUBLISHED page gets traffic, so only published pages hold a share and

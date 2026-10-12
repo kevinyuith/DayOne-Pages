@@ -37,7 +37,7 @@ the open folder is kept in the URL (`/templates?folder=<id>`), with a breadcrumb
   parent folder.
 - **Search** goes across all folders and shows where each result lives.
 
-In the database: `pages.folders` (`parent_id`, `color`) and `pages.pages.folder_id`
+In the database: `pages.folders` (`parent_id`, `color`) and `pages.page_content.folder_id`
 (`supabase/migrations/20260921_folders.sql`). The delivery server does not know
 folders exist — they only organize the dashboard.
 
@@ -174,7 +174,7 @@ path:
 
 1. Normalizes host and path, looks up the `routes/<host>/<path>` cache (< 30 s, SWR); the HTML lives on disk by hash (`pages.content_get` for the missing ones).
 2. The **rules walk** (`position` order): the first rule whose conditions all match marks the click with its **label** and it gets the domain's page **at the requested slug** (the HTML of that slug; 404 when no page has it).
-3. **Clean click** (no rule matched) on an **allowed slug** (`/` or one of the domain's `gate_slugs`) → the funnel named in the **`sub1`**'s `[F…]` token (e.g. `[F23]` → the funnel F23): its A/B test (weights live in `pages.funnels.site`) picks the page, sticky in the `dop_pg` cookie.
+3. **Clean click** (no rule matched) on an **allowed slug** (`/` or one of the domain's `gate_slugs`) → the funnel named in the **`sub1`**'s `[F…]` token (e.g. `[F23]` → the funnel F23): its A/B test (weights live in `pages.funnels.page`) picks the page, sticky in the `dop_pg` cookie.
 4. Clean click with no `[F…]` token, or on a slug that isn't allowed → the domain's page at the requested slug (404 when no page has it).
 5. Supabase down: serves the expired copy (`X-Cache: STALE`) for up to 7 days; no copy, 503.
 

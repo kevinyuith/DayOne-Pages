@@ -54,7 +54,7 @@ import { CreatePageForm } from "./create-page-form";
  * make; the screen filters, and search is local and spans all folders. Every
  * mutation is a server action that revalidates `/templates`.
  *
- * A folder is the path its templates keep (pages.pages.folder): a NEW folder
+ * A folder is the path its templates keep (pages.page_content.folder): a NEW folder
  * has no template yet, so the screen keeps it (for the browser session, across
  * folders) until a template goes into it. Renaming/moving/deleting a folder
  * with templates goes to the database; one that is still empty only changes here.

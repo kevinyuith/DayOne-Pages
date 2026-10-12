@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 
 /**
  * Pages screen: cards in folders, modeled on hidepages. The folders come from
- * the templates' paths (pages.pages.folder); the open one from
+ * the templates' paths (pages.page_content.folder); the open one from
  * `?folder=<path>` — any valid path opens (a new folder has no template yet),
  * an invalid one falls back to the root without error.
  */

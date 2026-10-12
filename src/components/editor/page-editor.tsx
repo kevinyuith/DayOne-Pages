@@ -75,7 +75,7 @@ import {
 /**
  * What the editor does with the page, without knowing where it lives: template
  * (pages/page_slugs, templates/actions.ts), funnel page (pages.funnels,
- * funnels/actions.ts) or domain page (domains.site,
+ * funnels/actions.ts) or domain page (domains.page,
  * domains/[id]/pages/actions.ts). They come ready-made (with `.bind`) from the route.
  */
 export type EditorActions = {

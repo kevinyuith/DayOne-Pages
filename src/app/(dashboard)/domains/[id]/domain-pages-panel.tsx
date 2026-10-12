@@ -15,7 +15,7 @@ import { copyTemplateToDomain, copyTemplateVariation, previewTemplateVariation, 
 
 /**
  * The domain's pages: template copies that only this domain serves
- * (domains.site). Editing one doesn't change the template, and changing the
+ * (domains.page). Editing one doesn't change the template, and changing the
  * template doesn't change the copy. From here: copy a template, open it in the
  * editor, change the template (replaces the copy) and remove one.
  */

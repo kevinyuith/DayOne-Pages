@@ -22,7 +22,7 @@ Cloudflare ──HTTP:80──► nginx (catch-all) ──► php-fpm ──► 
 ```
 
 Content is addressed by hash (sha256 of the HTML, computed by the database in
-`pages.pages.slugs`): a hash never changes content, so the file on disk never
+`pages.page_content.slugs`): a hash never changes content, so the file on disk never
 needs to be invalidated. Every 30 s the server only rechecks the decision
 (which pages, conditions, draw) — a few bytes, no HTML — and only downloads
 HTML when a new hash shows up (edited page). With `SWR=1` (the default) and php-fpm, the recheck happens after the

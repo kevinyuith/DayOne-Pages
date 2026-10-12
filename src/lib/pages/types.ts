@@ -62,7 +62,7 @@ export function isDomainStatus(v: unknown): v is DomainStatus {
 }
 
 /**
- * A page (pages.pages): a template, a domain's page or a funnel's page.
+ * A page (pages.page_content): a template, a domain's page or a funnel's page.
  * The slugs and the HTML live in the row's own `slugs` column.
  */
 export type Page = {
@@ -79,7 +79,7 @@ export type Page = {
 
 /**
  * A folder of the Templates screen. Folders aren't stored: a template keeps its
- * folder as a path (pages.pages.folder, "Funnels/F23/White") and the screen
+ * folder as a path (pages.page_content.folder, "Funnels/F23/White") and the screen
  * derives the tree from the paths (folders.ts). `id` is the full path.
  */
 export type Folder = {
@@ -131,7 +131,7 @@ export function isPageKind(v: unknown): v is PageKind {
   return typeof v === "string" && (PAGE_KINDS as readonly string[]).includes(v);
 }
 
-/** The kinds a template (pages.pages) can have: all but FUNNEL. */
+/** The kinds a template (pages.page_content) can have: all but FUNNEL. */
 export const TEMPLATE_KINDS = PAGE_KINDS.filter((k): k is Exclude<PageKind, "FUNNEL"> => k !== "FUNNEL");
 export function isTemplateKind(v: unknown): v is Exclude<PageKind, "FUNNEL"> {
   return typeof v === "string" && (TEMPLATE_KINDS as readonly string[]).includes(v);

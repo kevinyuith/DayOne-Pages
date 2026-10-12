@@ -16,7 +16,7 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
 }
 
 /**
- * The editor opened on a domain page (domains.site). The slug comes in
+ * The editor opened on a domain page (domains.page). The slug comes in
  * `?slug=/path` (without it, the root or the first one). The preview swaps
  * the placeholders for this domain's data.
  */

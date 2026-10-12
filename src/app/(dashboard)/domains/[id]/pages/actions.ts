@@ -10,7 +10,7 @@ import { supabaseService } from "@/lib/supabase/service";
 import type { SaveEditorInput, SaveEditorResult } from "../../../templates/actions";
 
 /**
- * The editor opened on a domain page (domains.site). Same rules and same
+ * The editor opened on a domain page (domains.page). Same rules and same
  * response shape as the template actions (templates/actions.ts), so the
  * PageEditor doesn't need to know where the page comes from. Here a slug's id
  * is the path itself.

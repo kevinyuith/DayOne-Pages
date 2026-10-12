@@ -1,5 +1,5 @@
 /**
- * The % of the A/B test between the pages of a funnel (`weight` in pages.funnels.site):
+ * The % of the A/B test between the pages of a funnel (`weight` in pages.funnels.page):
  * integers from 0 to 100 that ALWAYS sum to 100. Changing one page redistributes
  * the rest among the others in the proportion they already had; a page joining
  * or leaving rescales the others. The same math runs on the screen (preview) and

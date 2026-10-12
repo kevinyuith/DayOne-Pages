@@ -40,14 +40,14 @@ const NAME_MIN = 2;
 const NAME_MAX = 120;
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-/** A slug as it goes into `pages.pages.slugs` (the database fills in content_hash and dates). */
+/** A slug as it goes into `pages.page_content.slugs` (the database fills in content_hash and dates). */
 type SlugInput = { title: string | null; content: string; content_type?: string; is_active?: boolean };
 type StoredSlugs = Record<string, SlugInput>;
 
 /** A template's slugs (with the HTML). null if it doesn't exist. */
 async function templateSlugs(templateId: string): Promise<{ name: string; kind: PageKind; notes: string | null; folder: string | null; slugs: StoredSlugs } | null> {
   const { data, error } = await supabaseService()
-    .from("pages")
+    .from("page_content")
     .select("name, kind, notes, folder, slugs")
     .eq("id", templateId)
     .eq("scope", "TEMPLATE")
@@ -58,7 +58,7 @@ async function templateSlugs(templateId: string): Promise<{ name: string; kind: 
 
 /** A funnel page's slugs (with the HTML). null if it doesn't exist. */
 async function funnelPageSlugs(pageId: string): Promise<{ name: string; slugs: StoredSlugs } | null> {
-  const { data, error } = await supabaseService().from("pages").select("name, slugs").eq("id", pageId).eq("scope", "FUNNEL").maybeSingle();
+  const { data, error } = await supabaseService().from("page_content").select("name, slugs").eq("id", pageId).eq("scope", "FUNNEL").maybeSingle();
   if (error) throw new Error(error.message);
   return (data as { name: string; slugs: StoredSlugs } | null) ?? null;
 }
@@ -180,7 +180,7 @@ export async function createPage(prev: CreatePageState, fd: FormData): Promise<C
 
   let pageId: string;
   try {
-    const { data, error } = await db.from("pages").insert({ scope: "TEMPLATE", name, kind, status: "DRAFT", folder, notes, slugs }).select("id").single();
+    const { data, error } = await db.from("page_content").insert({ scope: "TEMPLATE", name, kind, status: "DRAFT", folder, notes, slugs }).select("id").single();
     if (error) throw new Error(error.message);
     pageId = (data as { id: string }).id;
   } catch (cause) {
@@ -360,7 +360,7 @@ export async function deleteSlug(pageId: string, slug: string): Promise<ActionRe
 export async function deletePage(pageId: string): Promise<ActionResult> {
   const db = supabaseService();
   try {
-    const { error } = await db.from("pages").delete().eq("id", pageId).eq("scope", "TEMPLATE");
+    const { error } = await db.from("page_content").delete().eq("id", pageId).eq("scope", "TEMPLATE");
     if (error) throw new Error(error.message);
     revalidateLibrary();
     revalidatePath("/domains", "layout");
@@ -376,7 +376,7 @@ export async function renamePage(pageId: string, rawName: string): Promise<Actio
   const name = rawName.trim();
   if (name.length < NAME_MIN || name.length > NAME_MAX) return fail(`Enter a name of ${NAME_MIN} to ${NAME_MAX} characters.`);
   try {
-    const { error } = await supabaseService().from("pages").update({ name }).eq("id", pageId).eq("scope", "TEMPLATE");
+    const { error } = await supabaseService().from("page_content").update({ name }).eq("id", pageId).eq("scope", "TEMPLATE");
     if (error) throw new Error(error.message);
     revalidateLibrary();
     return { ok: true };
@@ -389,7 +389,7 @@ export async function renamePage(pageId: string, rawName: string): Promise<Actio
 export async function movePage(pageId: string, folder: string | null): Promise<ActionResult> {
   if (folder !== null && !isFolderPath(folder)) return fail("Invalid folder.");
   try {
-    const { error } = await supabaseService().from("pages").update({ folder }).eq("id", pageId).eq("scope", "TEMPLATE");
+    const { error } = await supabaseService().from("page_content").update({ folder }).eq("id", pageId).eq("scope", "TEMPLATE");
     if (error) throw new Error(error.message);
     revalidateLibrary();
     return { ok: true };
@@ -410,7 +410,7 @@ export async function duplicatePage(pageId: string): Promise<ActionResult<{ page
     if (!src) return fail("Page not found.");
     const name = `${src.name} (copy)`.slice(0, NAME_MAX);
     const created = await supabaseService()
-      .from("pages")
+      .from("page_content")
       .insert({ scope: "TEMPLATE", name, kind: src.kind, status: "DRAFT", notes: src.notes, folder: src.folder, slugs: copySlugs(src.slugs) })
       .select("id")
       .single();
@@ -423,7 +423,7 @@ export async function duplicatePage(pageId: string): Promise<ActionResult<{ page
 }
 
 // ── Folders ───────────────────────────────────────────────────────────────────
-// A folder is the path its templates keep (pages.pages.folder); there is no
+// A folder is the path its templates keep (pages.page_content.folder); there is no
 // folder row. A new folder lives on the screen until a template goes into it.
 // Renaming, moving and deleting one rewrite its templates' paths in the
 // database, in one statement (pages.template_folder_move / _delete).

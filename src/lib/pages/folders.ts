@@ -2,7 +2,7 @@ import type { Folder } from "./types";
 
 /**
  * Folder tree of the /templates screen. Folders aren't stored: each template
- * keeps its folder as a path (pages.pages.folder, "Funnels/F23/White"; null =
+ * keeps its folder as a path (pages.page_content.folder, "Funnels/F23/White"; null =
  * the root) and the tree comes from the paths — a folder exists while a
  * template is in it (the screen keeps a new, still empty one in the session).
  * A folder's `id` is its full path. The screen builds what it needs: a folder's

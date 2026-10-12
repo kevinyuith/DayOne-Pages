@@ -1,6 +1,6 @@
 <?php
 /**
- * The funnel's CTA under the VSL (pages.cta — the owner's plan of 11/10/2026):
+ * The funnel's CTA under the VSL (pages.cta_content — the owner's plan of 11/10/2026):
  * the block of bundles, drawn by THIS server when the VSL reaches the pitch,
  * not when the page opens, so the draw counts only who got there.
  *
@@ -57,7 +57,7 @@ declare(strict_types=1);
 defined('DAYONE_ENTRY') || (http_response_code(404) && exit);
 
 const CTA_PATH = '/_dop/cta';
-/** Cookie of the CTA draw: the CTAs (pages.cta ids) already drawn for the visitor, this funnel's first. */
+/** Cookie of the CTA draw: the CTAs (pages.cta_content ids) already drawn for the visitor, this funnel's first. */
 const CTA_COOKIE = 'dop_cta';
 const CTA_MAX_IDS = 10;
 /** How long /_dop/cta waits for an HTML that isn't on disk yet. */
@@ -89,7 +89,7 @@ function cta_list(mixed $ctas): array
     return $out;
 }
 
-/** A design's jar style (pages.cta.jar_style), or null. */
+/** A design's jar style (pages.cta_content.jar_style), or null. */
 function cta_jar_style(mixed $style): ?string
 {
     return is_string($style) && preg_match('/^[a-z0-9][a-z0-9_-]{0,39}$/', $style) === 1 ? $style : null;
