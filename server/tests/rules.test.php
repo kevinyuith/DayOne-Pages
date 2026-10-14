@@ -273,6 +273,11 @@ check('slug not allowed', !gate_slug_allowed('/outra', ['/oferta']));
 same('funnel code: [F23]', 'F23', gate_funnel_code('[CA] [FB] [F23]'));
 same('funnel code: lowercase', 'F7', gate_funnel_code('x[f7]y'));
 same('funnel code: none', null, gate_funnel_code('plain'));
+same('funnel code: |F78|', 'F78', gate_funnel_code('|MGID_BR_001||CONTA_01||F78||MAX||DSK||ID||2026/10/10|'));
+same('funnel code: pipe lowercase', 'F7', gate_funnel_code('x|f7|y'));
+same('funnel code: brackets win over pipes', 'F23', gate_funnel_code('[F23] |F78|'));
+same('funnel code: pipe needs both pipes', null, gate_funnel_code('|F78 or F78|'));
+same('funnel code: bare F78 is nothing', null, gate_funnel_code('MGID F78 2026'));
 
 // ── rule_conditions_match ──
 $req = make_request(['REQUEST_URI' => '/?' . http_build_query(['sub1' => 'Camp-X', 'sub11' => 'FB', 'net' => 'dc9']), 'HTTP_USER_AGENT' => 'Mozilla Chrome/120', 'HTTP_CF_IPCOUNTRY' => 'br']);

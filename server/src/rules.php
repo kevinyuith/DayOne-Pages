@@ -355,16 +355,17 @@ function gate_slug_allowed(string $path, mixed $gateSlugs): bool
 }
 
 /**
- * The funnel code in a sub1: the first token between brackets that is F + one
- * or more digits, case-insensitive ([F23], [f7]…). Returned uppercase, without
- * the brackets; null when the sub1 has no such token.
+ * The funnel code in a sub1: the first token delimited by brackets or pipes
+ * that is F + one or more digits, case-insensitive ([F23], |f7|…). Returned
+ * uppercase, without the delimiters; null when the sub1 has no such token.
  */
 function gate_funnel_code(string $sub1): ?string
 {
-    if ($sub1 === '' || preg_match('/\[\s*(f\d+)\s*\]/i', $sub1, $m) !== 1) {
+    if ($sub1 === '' || preg_match('/\[\s*(f\d+)\s*\]|\|\s*(f\d+)\s*\|/i', $sub1, $m) !== 1) {
         return null;
     }
-    return strtoupper($m[1]);
+    $code = $m[1] !== '' ? $m[1] : $m[2];
+    return strtoupper($code);
 }
 
 /**
