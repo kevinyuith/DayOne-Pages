@@ -66,7 +66,7 @@ function track_origin(?string $kind): ?string
  * served page's id (&page_id=), the VSL video the response drew
  * (&video_id=), if it drew one, and the CTA mode (&cta=, cta.php).
  */
-function track_url(string $origin, ?string $pageId = null, ?string $videoId = null, ?int $cta = null): string
+function track_url(string $origin, ?string $pageId = null, ?string $videoId = null, ?int $cta = null, array $extra = []): string
 {
     $q = ['v' => tracker_version(TRACKER_FILES[TRACKER_PATH]), 'origin' => $origin];
     if ($pageId !== null) {
@@ -78,6 +78,10 @@ function track_url(string $origin, ?string $pageId = null, ?string $videoId = nu
     // The funnel's CTA (cta.php): 1 = ask /_dop/cta at the pitch, 2 = at once (a returning visitor).
     if ($cta !== null) {
         $q['cta'] = $cta;
+    }
+    // A vendor upsell step (upsell.php): its offer's and downsells' codes (&o=, &ds=), to tell the answers apart.
+    foreach ($extra as $k => $v) {
+        $q[$k] = $v;
     }
     return TRACKER_PATH . '?' . http_build_query($q, '', '&');
 }
@@ -95,9 +99,9 @@ function track_has_own_tag(string $html): bool
 }
 
 /** The step's tracker, right after <head> (the earliest spot); without a <head>, before </body> or at the end. */
-function track_inject(string $html, string $origin, ?string $pageId = null, ?string $videoId = null, ?int $cta = null): string
+function track_inject(string $html, string $origin, ?string $pageId = null, ?string $videoId = null, ?int $cta = null, array $extra = []): string
 {
-    $script = '<script data-dop-track async src="' . htmlspecialchars(track_url($origin, $pageId, $videoId, $cta), ENT_QUOTES) . '"></script>';
+    $script = '<script data-dop-track async src="' . htmlspecialchars(track_url($origin, $pageId, $videoId, $cta, $extra), ENT_QUOTES) . '"></script>';
     if (preg_match('/<head\b[^>]*>/i', $html, $m, PREG_OFFSET_CAPTURE) === 1) {
         $at = (int) $m[0][1] + strlen($m[0][0]);
         return substr_replace($html, $script, $at, 0);
@@ -184,6 +188,25 @@ const TRACKER_DOT_JS = <<<'JS'
  *   &cta=3 = the test link (?dop_cta=<cta id> on the page): that CTA of the funnel, a
  *   draft too, at once (&preview= to /_dop/cta), outside the draw: no cookie, no cta_id.
  *
+ * VENDOR UPSELLS (DayOne Pages, upsell.php): a vendor page's upsell funnel serves its steps with
+ *   this script as origin vendor_up1…vendor_up5 and vendor_thank_you — a page_view per step, at
+ *   once. On an upsell step every click on an offer's accept button (PagAmerican's data-pag-yes /
+ *   data-pag-offer, or data-dop-accept) or decline button (data-pag-no, data-dop-decline, or a
+ *   button or link that reads "No thanks…") goes as a beacon: upsell_accept / upsell_decline on
+ *   the step's offer, downsell_accept / downsell_decline on a downsell's (origin + _ds1, _ds2…),
+ *   the offer code in product_option. The server writes the step's codes in this script's URL
+ *   (&o= the offer, &ds= the downsells, in order) to tell them apart; a code it doesn't know is
+ *   the step's own offer. Once per answer and code on the page. The answer's metadata says what
+ *   the buyer was served ({upsell: {s step, g group, fl flow, p page version, ds slot}}, from &u=).
+ *
+ * VENDOR LANDING (DayOne Pages, upsell.php vendor_route_mark): the vendor page's landing (its
+ *   folder's root: "/", "/bg"…) has this script as origin vendor_front — a page_view at once.
+ *   On every vendor route (vendor_front, vendor_up1…, vendor_thank_you) whose product is linked to
+ *   its core product, the server writes &product_id=<core product> and &step=<origin> in this
+ *   script's URL: every event then carries product_id and step, top-level and in _metadata (dot
+ *   keeps _metadata as the event's metadata; with it, the request headers dot would otherwise keep
+ *   are left out — the cookies still go).
+ *
  * Also preserved: UTM/click-ID capture (sessionStorage dot_attr), dotid cookie
  * (1 day), ?dotid= propagation on external links, send retries, pagehide beacon.
  *
@@ -269,6 +292,12 @@ const TRACKER_DOT_JS = <<<'JS'
     var m = document.cookie.match(/(?:^|;\s*)page_id=([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:;|$)/);
     return m ? m[1] : null;
   })();
+  // ---- vendor routes: the product's core id and the step, from this script's own URL (see the header) ----
+  var vendorProduct = (function () {
+    var p = mySrc.match(/[?&]product_id=([a-z0-9][a-z0-9_-]{0,99})(?:[&#]|$)/);
+    var st = mySrc.match(/[?&]step=(vendor_[a-z0-9_]{1,30})(?:[&#]|$)/);
+    return p && st ? { product_id: p[1], step: st[1] } : null;
+  })();
   // ---- cta: the funnel's CTA under the VSL, drawn by the server at the pitch (see the header) ----
   var CTA_TIMEOUT = 2000;      // max wait (ms) for /_dop/cta before the reserve
   var CTA_LEAD = 3;            // seconds before the pitch the CTA is fetched and laid out hidden (its images load)
@@ -301,7 +330,8 @@ const TRACKER_DOT_JS = <<<'JS'
       } catch (e) {}
     });
   }
-  function buildPayload(eventName, extra) {
+  // `meta` goes in the event's metadata (_metadata, as JSON); a vendor route's product and step too.
+  function buildPayload(eventName, extra, meta) {
     var payload = {
       event: eventName,
       origin: origin,
@@ -315,6 +345,12 @@ const TRACKER_DOT_JS = <<<'JS'
     if (ctaId) payload.cta_id = ctaId;
     for (var k in attrs) payload[k] = attrs[k];
     if (extra) { for (var k2 in extra) payload[k2] = extra[k2]; }
+    if (vendorProduct) {
+      payload.product_id = vendorProduct.product_id;
+      payload.step = vendorProduct.step;
+      meta = Object.assign({ product_id: vendorProduct.product_id, step: vendorProduct.step, cookies: document.cookie || null }, meta || {});
+    }
+    if (meta) payload._metadata = JSON.stringify(meta);
     return payload;
   }
   // Aborts a send that hangs. Without this a stuck isolate keeps the promise
@@ -741,6 +777,51 @@ const TRACKER_DOT_JS = <<<'JS'
     window.addEventListener('load', sendPageView, { once: true });
     loadTimer = setTimeout(sendPageView, LOAD_TIMEOUT); // stuck-asset safety cap
     window.addEventListener('pagehide', sendPageView, { once: true }); // left before "load"
+  }
+  // ---- vendor upsells: the buyer's answer to each offer (see the header) ----
+  if (/^vendor_up[1-5]$/.test(origin)) {
+    var srcQuery = (function () { try { return new URL(mySrc, window.location.href).searchParams; } catch (e) { return null; } })();
+    var upOffer = (srcQuery && srcQuery.get('o')) || '';
+    var upDownsells = srcQuery && srcQuery.get('ds') ? srcQuery.get('ds').split(',') : [];
+    // what the server served this buyer: group|flow|page version — dot keeps it in the event's metadata
+    var upServed = srcQuery && srcQuery.get('u') ? srcQuery.get('u').split('|') : [];
+    var NO_THANKS = /\bno[\s,.!-]*thanks?\b|\bno thank you\b|\bi'?ll pass\b|\bnot interested\b/i;
+    var answered = {};
+    // The offer a button answers: its own data-pag-offer, else the nearest block (below <body>) that has one.
+    var offerOf = function (el) {
+      if (el.getAttribute('data-pag-offer')) return el.getAttribute('data-pag-offer');
+      for (var n = el.parentNode; n && n !== document.body && n.querySelector; n = n.parentNode) {
+        var o = n.querySelector('[data-pag-offer]');
+        if (o) return o.getAttribute('data-pag-offer') || '';
+      }
+      return '';
+    };
+    var answer = function (kind, code) {
+      if (answered[kind + '|' + code]) return;
+      answered[kind + '|' + code] = true;
+      var slot = code && code !== upOffer ? upDownsells.indexOf(code) : -1;
+      var p = buildPayload((slot >= 0 ? 'downsell_' : 'upsell_') + kind, { product_option: code || null },
+        upServed.length === 3 ? { upsell: { s: origin.slice(7), g: upServed[0], fl: upServed[1], p: upServed[2], ds: slot >= 0 ? slot + 1 : null } } : null);
+      if (slot >= 0) p.origin = origin + '_ds' + (slot + 1);
+      sendSync(p);
+    };
+    document.addEventListener('click', function (ev) {
+      if (!ev.isTrusted) return;
+      var path = ev.composedPath ? ev.composedPath() : [ev.target];
+      for (var i = 0; i < path.length; i++) {
+        var n = path[i];
+        if (!n || n.nodeType !== 1 || !n.getAttribute) continue;
+        if (n.hasAttribute('data-pag-no') || n.hasAttribute('data-dop-decline')
+            || ((n.tagName === 'BUTTON' || n.tagName === 'A') && !n.hasAttribute('data-pag-yes') && NO_THANKS.test(n.textContent || ''))) {
+          answer('decline', offerOf(n));
+          return;
+        }
+        if (n.hasAttribute('data-pag-yes') || n.hasAttribute('data-dop-accept') || n.hasAttribute('data-pag-offer')) {
+          answer('accept', offerOf(n));
+          return;
+        }
+      }
+    }, true);
   }
   // ---- scroll_depth: how far down this step the visitor read ----
   // The deepest the bottom of the screen got, % of the page's height (the first

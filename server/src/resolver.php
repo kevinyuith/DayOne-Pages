@@ -179,6 +179,12 @@ function refresh_routes(string $host, string $path, ?int $timeoutMs = null): ?ar
                 $refs[$ref['page_id'] . '|/'] = $ref;
             }
         }
+        // The page versions a vendor page's upsell funnel may serve at a step (upsell.php).
+        foreach (upsell_content_refs($rulesData) as $ref) {
+            if (!cache_has_content($ref['hash'])) {
+                $refs[$ref['page_id'] . '|' . $ref['slug']] = ['page_id' => $ref['page_id'], 'slug' => $ref['slug']];
+            }
+        }
     }
     if ($refs) {
         $got = supabase_content_get(array_values($refs), $timeoutMs);
@@ -210,7 +216,8 @@ function refresh_routes(string $host, string $path, ?int $timeoutMs = null): ?ar
     }
     // In use: the cleanup leaves them alone (the routes' and the gate's). One
     // without its delivery version gets its files after the response (assets.php).
-    foreach (array_merge(route_content_ids($routes), is_array($rulesData) ? gate_content_ids($rulesData) : []) as $id) {
+    $upsellIds = is_array($rulesData) ? array_column(upsell_content_refs($rulesData), 'hash') : [];
+    foreach (array_merge(route_content_ids($routes), is_array($rulesData) ? gate_content_ids($rulesData) : [], $upsellIds) as $id) {
         cache_touch_content($id);
         if (!is_file(content_built_file($id))) {
             assets_queue($id);

@@ -43,7 +43,7 @@ function placeholderCompletions(values: Record<string, string> | null) {
   return (ctx: CompletionContext): CompletionResult | null => {
     const line = ctx.state.doc.lineAt(ctx.pos);
     const at = openPlaceholderAt(line.text.slice(0, ctx.pos - line.from));
-    const items = at ? suggestPlaceholders(at.query) : [];
+    const items = at ? suggestPlaceholders(at.query, values) : [];
     if (!at || !items.length) return null;
     return {
       from: line.from + at.from,

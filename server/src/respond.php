@@ -48,11 +48,20 @@ const PRIVATE_NO_CACHE = 'private, no-cache';
 function decide(array $routes, Request $req, ?array $gate = null): array
 {
     if ($gate !== null) {
+        // A vendor page's upsell step (upsell.php): the upsell page, offers and VSL this buyer
+        // gets become the vendor page's route at this path, before the gate decides.
+        [$routes, $visitorCookie] = upsell_routes($routes, $gate, $req);
         $gateRoute = gate_pick($routes, $gate, $req);
         // The gate decides everything: its route, or a 404 when it has none
         // (no domain page at this slug and no funnel to serve).
         if ($gateRoute !== null) {
-            return decide_route($gateRoute, $req);
+            // A vendor page's landing (its folder's root) gets the vendor's tracker too (upsell.php).
+            $gateRoute = vendor_route_mark($gateRoute, $gate, $req);
+            $decided = decide_route($gateRoute, $req);
+            if ($decided !== null && $visitorCookie !== null && isset($gateRoute['_upsell'])) {
+                $decided[1]['Set-Cookie'] = [...(array) ($decided[1]['Set-Cookie'] ?? []), $visitorCookie];
+            }
+            return $decided;
         }
         if ($req->path === '/robots.txt') {
             return [...robots_default(), 'served', null];
@@ -192,7 +201,9 @@ function serve_slug(array $route, Request $req): array
     // An HTML page carries the load notice (beacon.php) and the ETag gets the
     // script version.
     $beacon = beacon_applies($route, $req);
-    $tag = $beacon ? BEACON_ETAG : '';
+    // The notice itself (signals, load, interaction…) also goes on a vendor page's upsell step.
+    $notice = beacon_notice_applies($route, $req);
+    $tag = $notice ? BEACON_ETAG : '';
     // The funnel page the gate served (the page_id cookie's id, app.php): {{page_id}} and the
     // trackers' URLs carry it, so it goes into the ETag (the pages of a split may share a hash).
     $pageId = $beacon ? page_id_value($route['page_id'] ?? null) : null;
@@ -202,13 +213,23 @@ function serve_slug(array $route, Request $req): array
     $values = placeholder_values($route, $req);
     $ptag = placeholders_etag($values);
 
+    // A vendor page's upsell step (upsell.php): what this buyer got goes into the ETag, and the
+    // vendor's tracker (origin vendor_up1… / vendor_thank_you) goes in the page (below).
+    $upsell = is_array($route['_upsell'] ?? null) ? $route['_upsell'] : null;
+    $utag = upsell_etag($upsell);
+    // A vendor page's landing (upsell.php vendor_route_mark): the tracker as vendor_front. On it and on an
+    // upsell step, the tracker's URL carries the product's core id: its origin and product go into the ETag.
+    $vendor = is_array($route['_vendor'] ?? null) ? $route['_vendor'] : null;
+    $mark = $upsell ?? ($html ? $vendor : null);
+    $wtag = vendor_etag($mark);
+
     // A slug the cache already flagged as "no funnel steps": the ETag
     // is just the hash and the 304 goes out without reading the content from
     // disk. Old cache (without the flag) or funnel: reads the content, because
     // the step goes into the ETag.
     // A VSL split also reads the content: the drawn video goes into the ETag.
     // A funnel page the gate served always has the tracker version in the ETag (below).
-    if (($route['funnel'] ?? null) === false && empty($route['vsl'])) {
+    if (($route['funnel'] ?? null) === false && empty($route['vsl']) && $mark === null) {
         $headers['ETag'] = '"' . $hash . $atag . $pidTag . $ptag . $tag . ($beacon ? track_etag() : '') . '"';
         if ($req->ifNoneMatch !== null && etag_matches($req->ifNoneMatch, $headers['ETag'])) {
             return [304, $headers, null];
@@ -285,10 +306,13 @@ function serve_slug(array $route, Request $req): array
     // (one without) —, unless the page has a tracker tag of its own. The version goes into the ETag.
     // A page with steps served outside the gate (a domain/safe page) gets no tracker: a real click
     // on it, when it's a pre-lander slug, is marked server-side instead (dot.php, origin pre_lander).
-    $track = $beacon;
-    $trackOrigin = $track && !track_has_own_tag($body) ? track_origin($funnel['kind'] ?? null) : null;
-    $etag = '"' . $hash . $atag . $abTag . ($funnel ? '-' . $funnel['step'] : '') . $vslTag . $ctaTag . $pidTag . $ptag . $tag . ($track ? track_etag() : '') . '"';
-    if ($funnel || $abTag !== '' || $vslTag !== '') {
+    // A vendor route (an upsell step, the landing) gets the vendor's tracker, origin vendor_up1… / vendor_front.
+    $track = $beacon || $mark !== null;
+    $trackOrigin = $track && !track_has_own_tag($body) ? ($mark !== null ? (string) $mark['origin'] : track_origin($funnel['kind'] ?? null)) : null;
+    // The vendor page's id goes in its tracker's URL (dot's page_id), like a funnel page's.
+    $trackPageId = $mark !== null ? page_id_value($route['page_id'] ?? null) : $pageId;
+    $etag = '"' . $hash . $atag . $abTag . ($funnel ? '-' . $funnel['step'] : '') . $vslTag . $ctaTag . $pidTag . $utag . $wtag . $ptag . $tag . ($track ? track_etag() : '') . '"';
+    if ($funnel || $abTag !== '' || $vslTag !== '' || $upsell !== null) {
         $headers['Vary'] .= ', Cookie';
     }
     $headers['ETag'] = $etag;
@@ -299,7 +323,7 @@ function serve_slug(array $route, Request $req): array
 
     $body = page_id_placeholder_apply($body, $pageId) ?? $body;
     $body = placeholders_apply($body, $values, $headers['Content-Type']);
-    if ($beacon) {
+    if ($notice) {
         $body = beacon_inject($body);
     }
     if ($cta !== null && $cta['reserve_html'] !== null) {
@@ -308,7 +332,7 @@ function serve_slug(array $route, Request $req): array
         $body = $trackOrigin !== null ? cta_reserve_inject($body, $cta['reserve_html']) : cta_slot_inject($body, $cta['reserve_html']);
     }
     if ($trackOrigin !== null) {
-        $body = track_inject($body, $trackOrigin, $pageId, $video, $cta['mode'] ?? null);
+        $body = track_inject($body, $trackOrigin, $trackPageId, $video, $cta['mode'] ?? null, [...upsell_track_params($upsell), ...vendor_track_params($mark)]);
     }
     return [200, $headers, $body, ['video' => $video]];
 }

@@ -8,9 +8,11 @@
 
 /**
  * Page kinds. FUNNEL = funnel page (Funnel screen) and its copies on the
- * domains; a template is never FUNNEL (TEMPLATE_KINDS).
+ * domains; UPSELL = a vendor page an upsell funnel serves as a step's page
+ * version (scope VENDOR only, never on a domain's list). A template is never
+ * FUNNEL nor UPSELL (TEMPLATE_KINDS).
  */
-export const PAGE_KINDS = ["PRESELL", "ADVERTORIAL", "VSL", "CHECKOUT", "SAFE", "OTHER", "FUNNEL"] as const;
+export const PAGE_KINDS = ["PRESELL", "ADVERTORIAL", "VSL", "CHECKOUT", "SAFE", "OTHER", "FUNNEL", "UPSELL"] as const;
 export type PageKind = (typeof PAGE_KINDS)[number];
 export const PAGE_KIND_LABELS: Record<PageKind, string> = {
   PRESELL: "Presell",
@@ -20,6 +22,7 @@ export const PAGE_KIND_LABELS: Record<PageKind, string> = {
   SAFE: "Institutional",
   OTHER: "Other",
   FUNNEL: "Funnel",
+  UPSELL: "Upsell",
 };
 
 export const PAGE_STATUSES = ["DRAFT", "PUBLISHED", "ARCHIVED"] as const;
@@ -30,7 +33,7 @@ export const PAGE_STATUS_LABELS: Record<PageStatus, string> = {
   ARCHIVED: "Archived",
 };
 
-/** Who a domain is for. A label: serving does not depend on it. */
+/** Who a domain is for. Only a VENDOR domain can list a vendor page (pages.domains_page_check); otherwise serving does not depend on it. */
 export const DOMAIN_TYPES = ["MEDIA_BUYER", "VENDOR"] as const;
 export type DomainType = (typeof DOMAIN_TYPES)[number];
 export const DOMAIN_TYPE_LABELS: Record<DomainType, string> = {
@@ -39,6 +42,24 @@ export const DOMAIN_TYPE_LABELS: Record<DomainType, string> = {
 };
 export function isDomainType(v: unknown): v is DomainType {
   return typeof v === "string" && (DOMAIN_TYPES as readonly string[]).includes(v);
+}
+
+/**
+ * The checkout platform a vendor page sells through (pages.page_content.platform,
+ * and the keys of pages.products.checkout_links). The core's site packages call
+ * them pa, cb, bg, cp and dg.
+ */
+export const VENDOR_PLATFORMS = ["PAGAMERICAN", "CLICKBANK", "BUYGOODS", "CARTPANDA", "DIGISTORE24"] as const;
+export type VendorPlatform = (typeof VENDOR_PLATFORMS)[number];
+export const VENDOR_PLATFORM_LABELS: Record<VendorPlatform, string> = {
+  PAGAMERICAN: "PagAmerican",
+  CLICKBANK: "ClickBank",
+  BUYGOODS: "BuyGoods",
+  CARTPANDA: "CartPanda",
+  DIGISTORE24: "Digistore24",
+};
+export function isVendorPlatform(v: unknown): v is VendorPlatform {
+  return typeof v === "string" && (VENDOR_PLATFORMS as readonly string[]).includes(v);
 }
 
 /**
@@ -131,9 +152,10 @@ export function isPageKind(v: unknown): v is PageKind {
   return typeof v === "string" && (PAGE_KINDS as readonly string[]).includes(v);
 }
 
-/** The kinds a template (pages.page_content) can have: all but FUNNEL. */
-export const TEMPLATE_KINDS = PAGE_KINDS.filter((k): k is Exclude<PageKind, "FUNNEL"> => k !== "FUNNEL");
-export function isTemplateKind(v: unknown): v is Exclude<PageKind, "FUNNEL"> {
+/** The kinds a template (pages.page_content) can have: all but FUNNEL and UPSELL. */
+export type TemplateKind = Exclude<PageKind, "FUNNEL" | "UPSELL">;
+export const TEMPLATE_KINDS = PAGE_KINDS.filter((k): k is TemplateKind => k !== "FUNNEL" && k !== "UPSELL");
+export function isTemplateKind(v: unknown): v is TemplateKind {
   return typeof v === "string" && (TEMPLATE_KINDS as readonly string[]).includes(v);
 }
 export function isPageStatus(v: unknown): v is PageStatus {

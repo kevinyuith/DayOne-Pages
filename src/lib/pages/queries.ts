@@ -1,7 +1,7 @@
 import { supabaseService } from "@/lib/supabase/service";
 import { scanFunnel, type ScannedVersion } from "./funnel-scan";
 import type { HitFilters } from "./hit-filters";
-import type { Domain, Page, PageKind, PageRef, PageSlug, PageSlugSummary, PageStatus } from "./types";
+import type { Domain, DomainType, Page, PageKind, PageRef, PageSlug, PageSlugSummary, PageStatus } from "./types";
 import type { VturbStandIn } from "./vturb";
 
 /**
@@ -63,8 +63,11 @@ async function sitePages(domainIds: string[] | null): Promise<SiteRow[]> {
 
 const pageRef = (r: SiteRow): PageRef => ({ id: r.page_id, name: r.name, kind: r.kind, status: r.status });
 
-export async function listDomains(): Promise<Domain[]> {
-  const { data, error } = await supabaseService().from("domains").select(DOMAIN_COLUMNS).order("domain");
+/** Every domain, or only those of one type (the Vendor screen lists the VENDOR ones). */
+export async function listDomains(type?: DomainType): Promise<Domain[]> {
+  let query = supabaseService().from("domains").select(DOMAIN_COLUMNS);
+  if (type) query = query.eq("type", type);
+  const { data, error } = await query.order("domain");
   throwIf(error, "listDomains");
   return (data ?? []) as unknown as Domain[];
 }
@@ -131,7 +134,7 @@ export type PageListItem = Page & {
 /** A page from pages.page_content without the HTML (pages.pages_summary). */
 type PageSummaryRow = {
   id: string;
-  scope: "TEMPLATE" | "DOMAIN" | "FUNNEL";
+  scope: "TEMPLATE" | "DOMAIN" | "FUNNEL" | "VENDOR";
   name: string;
   kind: PageKind;
   status: PageStatus;

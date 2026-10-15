@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { PageEditor } from "@/components/editor/page-editor";
 import { placeholderValues } from "@/lib/pages/placeholders";
 import { getDomainPageForEditor, listTemplates } from "@/lib/pages/queries";
+import { vendorPlaceholderValues } from "@/lib/pages/vendor";
 import { removeDomainPage } from "../../../actions";
 import { createDomainSlug, deleteDomainSlug, renameDomainSlug, saveDomainPage, toggleDomainSlug } from "../actions";
 
@@ -18,11 +19,16 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
 /**
  * The editor opened on a domain page (domains.page). The slug comes in
  * `?slug=/path` (without it, the root or the first one). The preview swaps
- * the placeholders for this domain's data.
+ * the placeholders for this domain's data (and, on a vendor page, its
+ * product's checkout links and bundles).
  */
 export default async function DomainPageEditorPage({ params, searchParams }: { params: Params; searchParams: SearchParams }) {
   const [{ id, pageId }, { slug }] = await Promise.all([params, searchParams]);
-  const [data, templates] = await Promise.all([getDomainPageForEditor(id, pageId, typeof slug === "string" ? slug : null), listTemplates()]);
+  const [data, templates, vendor] = await Promise.all([
+    getDomainPageForEditor(id, pageId, typeof slug === "string" ? slug : null),
+    listTemplates(),
+    vendorPlaceholderValues(pageId),
+  ]);
   if (!data) notFound();
 
   return (
@@ -35,7 +41,7 @@ export default async function DomainPageEditorPage({ params, searchParams }: { p
       domains={[data.domain.domain]}
       scope="domain"
       // Preview as an English-speaking visitor; live, lang/language/date follow the visitor's browser.
-      placeholders={placeholderValues({ domain: data.domain.domain, stored: data.domain.placeholders, path: data.slug.slug, lang: "en" })}
+      placeholders={placeholderValues({ domain: data.domain.domain, stored: data.domain.placeholders, vendor, path: data.slug.slug, lang: "en" })}
       templates={templates.map((t) => ({ id: t.id, name: t.name }))}
       actions={{
         save: saveDomainPage.bind(null, id),

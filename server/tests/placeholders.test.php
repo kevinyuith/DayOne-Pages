@@ -94,3 +94,34 @@ check('ETag = hash + placeholders', preg_match('/^"ph1' . ASSETS_ETAG . '-p[0-9a
 same('304 with the same ETag', 304, $status);
 [$status] = serve_slug(['placeholders' => ['company.llc' => 'Other LLC', 'domain' => 'ex.com']] + $route, make_request(['HTTP_ACCEPT_LANGUAGE' => 'es', 'HTTP_IF_NONE_MATCH' => $headers['ETag']]));
 same('domain data changed → 200', 200, $status);
+
+// A vendor page's {{checkout.<key>}}: pages.resolve merges its product's checkout links on its
+// platform into the route's placeholders (20261013a). They are replaced like any other value
+// (escaped in HTML: & becomes &amp; inside the href), a key with no value stays as written, and
+// the verifier pattern keeps them (only company.* is held back); a changed link changes the ETag.
+$vendorRoute = ['slug' => '/', 'placeholders' => ['domain' => 'shop.example', 'checkout.front2' => 'https://pay.pagamerican.app/pICWHjcp?aff=AFF1&b=2', 'checkout.up1' => 'VKWHeu02']];
+$vendorValues = placeholder_values($vendorRoute, make_request(['REQUEST_URI' => '/?utm=1']), $noon);
+same(
+    'checkout links replaced, unknown checkout key intact',
+    '<a href="https://pay.pagamerican.app/pICWHjcp?aff=AFF1&amp;b=2">Buy</a><button data-pag-offer="VKWHeu02"></button>{{checkout.front6}}',
+    placeholders_apply('<a href="{{checkout.front2}}">Buy</a><button data-pag-offer="{{ checkout.up1 }}"></button>{{checkout.front6}}', $vendorValues, 'text/html'),
+);
+same('verifier pattern: checkout links still replaced', 'VKWHeu02', placeholder_values($vendorRoute, $cfReq, $noon)['checkout.up1'] ?? null);
+$vendorChanged = ['placeholders' => ['checkout.up1' => 'sAPIwVyJ'] + $vendorRoute['placeholders']] + $vendorRoute;
+check('etag changes with a checkout link', placeholders_etag($vendorValues) !== placeholders_etag(placeholder_values($vendorChanged, make_request(['REQUEST_URI' => '/?utm=1']), $noon)));
+
+// A vendor page's {{product.name}} / {{product.kit<N>.<field>}} (20261015d): pages.resolve merges its
+// product's bundles into the route's placeholders like checkout.*; replaced like any value, a key with
+// no value stays as written, and a changed value changes the ETag. The same cases run on the TS side
+// (scripts/check-vendor.mts, vendor-cases.json).
+$vendorCases = json_decode((string) file_get_contents(__DIR__ . '/vendor-cases.json'), true);
+foreach ($vendorCases['placeholders'] as $i => $c) {
+    same("shared placeholder case $i (PHP = TS)", $c['expected'], placeholders_apply($c['html'], $c['values'], 'text/html; charset=utf-8'));
+}
+$productRoute = ['slug' => '/bg', 'placeholders' => ['domain' => 'shop.example', 'product.name' => 'HONEYPEAKDROPS', 'product.kit6.price' => '$49', 'product.kit6.bottles' => '6 BOTTLES']];
+$productValues = placeholder_values($productRoute, make_request(['REQUEST_URI' => '/bg?utm=1']), $noon);
+same('product kit values replaced, a kit with no value intact', '6 BOTTLES at $49 · HONEYPEAKDROPS · {{product.kit3.price}}',
+    placeholders_apply('{{product.kit6.bottles}} at {{product.kit6.price}} · {{ product.name }} · {{product.kit3.price}}', $productValues, 'text/html'));
+same('verifier pattern: product values still replaced', '$49', placeholder_values($productRoute, $cfReq, $noon)['product.kit6.price'] ?? null);
+$productChanged = ['placeholders' => ['product.kit6.price' => '$39'] + $productRoute['placeholders']] + $productRoute;
+check('etag changes with a product value', placeholders_etag($productValues) !== placeholders_etag(placeholder_values($productChanged, make_request(['REQUEST_URI' => '/bg?utm=1']), $noon)));

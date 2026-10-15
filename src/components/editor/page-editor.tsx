@@ -61,7 +61,7 @@ import {
   type PageStatus,
 } from "@/lib/pages/types";
 import type { ActionResult } from "@/lib/action-result";
-import { AUTO_PLACEHOLDERS, PLACEHOLDER_FIELDS, applyPlaceholders, placeholderToken } from "@/lib/pages/placeholders";
+import { applyPlaceholders, placeholderOptions, placeholderToken } from "@/lib/pages/placeholders";
 import { withVturbPreview, type VturbStandIn } from "@/lib/pages/vturb";
 import { APP_TZ } from "@/lib/time-zone";
 import {
@@ -128,6 +128,7 @@ export function PageEditor({
   placeholders,
   templates = [],
   vturbStandIn = null,
+  startInPreview = false,
 }: {
   page: Page;
   slugs: PageSlugSummary[];
@@ -135,14 +136,16 @@ export function PageEditor({
   domains: string[];
   actions: EditorActions;
   nav: EditorNav;
-  /** Template (library), funnel page (pages.funnels) or a domain's page. */
-  scope: "template" | "funnel" | "domain";
+  /** Template (library), funnel page (pages.funnels), a domain's page or a vendor funnel's upsell page. */
+  scope: "template" | "funnel" | "domain" | "upsell";
   /** Placeholder values in the preview (domain page). Template: null, the preview shows the raw placeholders. */
   placeholders: Record<string, string> | null;
   /** Templates that can become a funnel sample ("From a template…"). */
   templates?: { id: string; name: string }[];
   /** The video a VTurb player with {{video_id}} is drawn with on the canvas and in the Preview (vturb.ts). */
   vturbStandIn?: VturbStandIn | null;
+  /** Opens in Preview (the Upsells screen's Preview link). */
+  startInPreview?: boolean;
 }) {
   const router = useRouter();
   const slugHref = useCallback((id: string) => nav.slugHref.replace("{slug}", encodeURIComponent(id)), [nav.slugHref]);
@@ -157,7 +160,7 @@ export function PageEditor({
   const [message, setMessage] = useState<{ tone: "success" | "danger" | "warning"; text: string } | null>(null);
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
 
-  const [previewing, setPreviewing] = useState(false);
+  const [previewing, setPreviewing] = useState(startInPreview);
   const [device, setDevice] = useState<Device>("desktop");
   const [previewBase, setPreviewBase] = useState<string>(domains[0] ?? "");
   const [selection, setSelection] = useState<SelectionInfo | null>(null);
@@ -384,7 +387,9 @@ export function PageEditor({
         ? `Delete the template "${page.name}" and all its slugs? The copies domains already have won't change.`
         : scope === "funnel"
           ? `Remove the page "${page.name}" from the funnel? Its HTML will be lost. Copies on domains stay, but stop getting traffic.`
-          : `Remove the page "${page.name}" from this domain? Its HTML will be lost.`;
+          : scope === "upsell"
+            ? `Delete the upsell page "${page.name}"? Its HTML will be lost.`
+            : `Remove the page "${page.name}" from this domain? Its HTML will be lost.`;
     if (!window.confirm(question)) return;
     startBusy(async () => {
       const r = await actions.deletePage();
@@ -521,6 +526,8 @@ export function PageEditor({
           <span className="text-xs text-muted" title="Page exclusive to this domain. The template doesn't change when you edit here.">
             · page on {domains[0]}
           </span>
+        ) : scope === "upsell" ? (
+          <span className="text-xs text-muted">· upsell page</span>
         ) : (
           <span className="text-xs text-muted" title="Domains get copies. Editing here doesn't change the copies that already exist.">
             · {scope === "funnel" ? "funnel" : "template"}
@@ -711,6 +718,7 @@ export function PageEditor({
               slugPath={slug.slug}
               onKind={setKind}
               onStatus={setStatus}
+              servedHint={scope === "upsell" ? (status === "ARCHIVED" ? "An archived upsell page is not served." : null) : status !== "PUBLISHED" ? "Only Published pages are served on domains." : null}
               onDeletePage={onDeletePage}
               busy={busy}
             />
@@ -739,6 +747,7 @@ function PageSettings({
   onStatus,
   onDeletePage,
   busy,
+  servedHint,
 }: {
   name: string;
   kind: PageKind;
@@ -748,6 +757,8 @@ function PageSettings({
   onStatus: (s: PageStatus) => void;
   onDeletePage: () => void;
   busy: boolean;
+  /** Why the page isn't served with this status (null = it is). */
+  servedHint: string | null;
 }) {
   return (
     <div className="flex flex-col gap-4">
@@ -758,8 +769,8 @@ function PageSettings({
       </label>
       <label className="flex flex-col gap-1.5">
         <span className="text-xs font-medium text-muted">Type</span>
-        {kind === "FUNNEL" ? (
-          <span className="rounded-md bg-foreground/5 px-2 py-1.5 text-xs">{PAGE_KIND_LABELS.FUNNEL}</span>
+        {kind === "FUNNEL" || kind === "UPSELL" ? (
+          <span className="rounded-md bg-foreground/5 px-2 py-1.5 text-xs">{PAGE_KIND_LABELS[kind]}</span>
         ) : (
           <select value={kind} onChange={(e) => onKind(e.target.value as PageKind)} className={`${SELECT_BASE} w-full`}>
             {TEMPLATE_KINDS.map((k) => (
@@ -778,9 +789,7 @@ function PageSettings({
           <option value="ARCHIVED">{PAGE_STATUS_LABELS.ARCHIVED}</option>
         </select>
       </label>
-      {status !== "PUBLISHED" ? (
-        <p className="text-xs text-amber-700 dark:text-amber-400">Only Published pages are served on domains.</p>
-      ) : null}
+      {servedHint ? <p className="text-xs text-amber-700 dark:text-amber-400">{servedHint}</p> : null}
       <Button size="sm" variant="danger" onClick={onDeletePage} disabled={busy} className="mt-2 w-full">
         Delete page
       </Button>
@@ -794,10 +803,8 @@ function PageSettings({
  */
 function PlaceholdersMenu({ values }: { values: Record<string, string> | null }) {
   const [copied, setCopied] = useState<string | null>(null);
-  const rows = [
-    ...PLACEHOLDER_FIELDS.map((f) => ({ key: f.key, label: f.label, hint: f.example })),
-    ...AUTO_PLACEHOLDERS.map((f) => ({ key: f.key, label: f.label, hint: f.note })),
-  ];
+  // The company fields, the automatic ones and the page's own (a vendor page's product.*, checkout.*).
+  const rows = placeholderOptions(values);
   const copy = (key: string) => {
     void navigator.clipboard?.writeText(placeholderToken(key)).then(() => {
       setCopied(key);

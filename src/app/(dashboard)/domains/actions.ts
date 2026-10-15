@@ -22,6 +22,7 @@ import { supabaseService } from "@/lib/supabase/service";
 
 function revalidateDomain(id?: string) {
   revalidatePath("/domains");
+  revalidatePath("/vendor");
   if (id) revalidatePath(`/domains/${id}`);
   revalidatePath("/");
 }
@@ -353,16 +354,25 @@ export async function savePlaceholders(domainId: string, prev: PlaceholdersFormS
 }
 
 const SLUG_RE = /^\/([a-z0-9._~-]+(\/[a-z0-9._~-]+)*)?$/;
+/** "*" + a tail: every path that is the tail or ends with it (*\/up1 = /up1, /cp/up1…). Only a vendor domain takes them (it is born with these). */
+const SLUG_TAIL_RE = /^\*(\/[a-z0-9._~-]+)+$/;
 
 /** The domain's allowed slugs (gate_slugs): the whole set where a clean click goes to the funnel of its sub1 — "/" included when it's there. */
 export async function saveGateSlugs(domainId: string, slugs: string[]): Promise<ActionResult<{ slugs: string[] }>> {
   if (!UUID_RE.test(domainId)) return fail("Invalid domain.");
   const clean = Array.from(new Set(slugs.map((s) => s.trim()).filter(Boolean)));
-  const bad = clean.find((s) => !SLUG_RE.test(s));
-  if (bad) return fail(`Invalid slug "${bad}". Use the format /oferta (lowercase, no trailing slash).`);
+  const bad = clean.find((s) => !SLUG_RE.test(s) && !SLUG_TAIL_RE.test(s));
+  if (bad) return fail(`Invalid slug "${bad}". Use the format /oferta (lowercase, no trailing slash); a vendor domain also takes */up1 for every path ending in /up1.`);
   // Canonical order, like the database check: "/" first, then as typed.
   clean.sort((a, b) => (a === "/" ? -1 : b === "/" ? 1 : 0));
   try {
+    // pages.domains_gate_slugs_check: a tail is a vendor domain's only — every other domain keeps plain slugs.
+    const tail = clean.find((s) => SLUG_TAIL_RE.test(s));
+    if (tail) {
+      const current = await supabaseService().from("domains").select("type").eq("id", domainId).maybeSingle();
+      if (current.error) throw new Error(current.error.message);
+      if ((current.data as { type: string | null } | null)?.type !== "VENDOR") return fail(`"${tail}" is a tail: only a vendor domain takes them. Use plain slugs like /oferta.`);
+    }
     const { data, error } = await supabaseService().from("domains").update({ gate_slugs: clean }).eq("id", domainId).select("domain").single();
     if (error) throw new Error(error.message);
     revalidateDomain(domainId);
@@ -378,6 +388,8 @@ export async function setDomainType(id: string, type: DomainType): Promise<Actio
   if (!UUID_RE.test(id) || !isDomainType(type)) return fail("Invalid type.");
   try {
     const { error } = await supabaseService().from("domains").update({ type }).eq("id", id);
+    // pages.domains_page_check: a domain that serves vendor pages stays VENDOR.
+    if (error?.code === CHECK_VIOLATION) return fail("This domain serves vendor pages: take them off before changing its type.");
     if (error) throw new Error(error.message);
     revalidateDomain(id);
     return { ok: true };

@@ -38,6 +38,27 @@ export function PagesIcon(props: IconProps) {
   );
 }
 
+export function StoreIcon(props: IconProps) {
+  return (
+    <svg {...baseProps(props)}>
+      <path d="M4 9.5 5.5 4h13L20 9.5" />
+      <path d="M4 9.5a2.67 2.67 0 0 0 5.33 0 2.67 2.67 0 0 0 5.34 0 2.67 2.67 0 0 0 5.33 0" />
+      <path d="M5 11.5V20h14v-8.5" />
+      <path d="M10 20v-5h4v5" />
+    </svg>
+  );
+}
+
+export function StairsIcon(props: IconProps) {
+  return (
+    <svg {...baseProps(props)}>
+      <path d="M4 19h4v-4h4v-4h4V7h4" />
+      <path d="M16 3h4v4" />
+      <path d="M14 9l6-6" />
+    </svg>
+  );
+}
+
 export function GridIcon(props: IconProps) {
   return (
     <svg {...baseProps(props)}>

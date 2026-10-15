@@ -7,6 +7,12 @@
  *   resolve (column `placeholders` = pages.domains.placeholders + `domain`)
  *   and stay in the routes cache along with the route; `company.name` is the
  *   legal name without the legal suffix (company_name());
+ * - `checkout.<key>` (a vendor page only) also comes in that column: pages.resolve
+ *   merges the page's product checkout links on its platform
+ *   (pages.products.checkout_links) — nothing here knows them apart; and so do
+ *   `product.name` and `product.kit<N>.<field>` (bottles, supply, image, price,
+ *   total, full_total, save: the product's bundles, pages.products.cta_placeholders
+ *   — 20261015d), on a vendor page and its upsell steps;
  * - automatic, on every visit: `url` (https://domain + path, no query),
  *   `slug` (served path), `lang` and `language` (first language of
  *   Accept-Language; without it, English), `date` (today in New York,

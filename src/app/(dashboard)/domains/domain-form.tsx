@@ -4,12 +4,13 @@ import { useActionState } from "react";
 import { Button } from "@/components/ui/button";
 import { Field, INPUT_CLASS, SELECT_CLASS } from "@/components/ui/field";
 import type { TemplateOption } from "@/lib/pages/queries";
-import { DOMAIN_TYPES, DOMAIN_TYPE_LABELS, PAGE_KIND_LABELS } from "@/lib/pages/types";
+import { DOMAIN_TYPES, DOMAIN_TYPE_LABELS, PAGE_KIND_LABELS, type DomainType } from "@/lib/pages/types";
 import { addDomain, type DomainFormState } from "./actions";
 
 const INITIAL: DomainFormState = { attempt: 0 };
 
-export function DomainForm({ templates }: { templates: TemplateOption[] }) {
+/** `type` fixes the domain's type (the Vendor screen adds VENDOR domains); without it the form asks. */
+export function DomainForm({ templates, type }: { templates: TemplateOption[]; type?: DomainType }) {
   const [state, action, pending] = useActionState(addDomain, INITIAL);
 
   return (
@@ -19,18 +20,22 @@ export function DomainForm({ templates }: { templates: TemplateOption[] }) {
         <Field label="Domain" className="min-w-0 sm:flex-1">
           <input name="domain" required placeholder="example.com" disabled={pending} className={INPUT_CLASS} autoCapitalize="off" spellCheck={false} />
         </Field>
-        <Field label="Type" className="sm:w-40">
-          <select name="type" required defaultValue="" disabled={pending} className={SELECT_CLASS}>
-            <option value="" disabled>
-              Choose…
-            </option>
-            {DOMAIN_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {DOMAIN_TYPE_LABELS[t]}
+        {type ? (
+          <input type="hidden" name="type" value={type} />
+        ) : (
+          <Field label="Type" className="sm:w-40">
+            <select name="type" required defaultValue="" disabled={pending} className={SELECT_CLASS}>
+              <option value="" disabled>
+                Choose…
               </option>
-            ))}
-          </select>
-        </Field>
+              {DOMAIN_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {DOMAIN_TYPE_LABELS[t]}
+                </option>
+              ))}
+            </select>
+          </Field>
+        )}
         <Field label="Template (becomes the domain page)" className="sm:w-64">
           <select name="template_id" defaultValue="" disabled={pending} className={SELECT_CLASS}>
             <option value="">— choose later —</option>

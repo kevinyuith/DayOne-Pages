@@ -10,9 +10,10 @@ import { saveGateSlugs } from "../actions";
  * The domain's allowed slugs: the paths where a clean click goes to the
  * funnel of its sub1 — "/" included when it's in the list. Take "/" out to
  * keep the root on the safe page. Any slug not in the list shows the domain's
- * page at that slug (the safe page), or 404 when no page has it.
+ * page at that slug (the safe page), or 404 when no page has it. Only a vendor
+ * domain takes tails (*\/up1 = every path ending in /up1).
  */
-export function GateSlugsForm({ domainId, slugs }: { domainId: string; slugs: string[] }) {
+export function GateSlugsForm({ domainId, slugs, vendor }: { domainId: string; slugs: string[]; vendor: boolean }) {
   const router = useRouter();
   const [text, setText] = useState(slugs.join(", "));
   const [error, setError] = useState<string | null>(null);
@@ -45,11 +46,13 @@ export function GateSlugsForm({ domainId, slugs }: { domainId: string; slugs: st
       </p>
       <div className="mt-3 flex flex-wrap items-end gap-3">
         <label className="flex min-w-64 flex-1 flex-col gap-1">
-          <span className="text-xs font-medium text-muted">Allowed slugs (comma-separated, / included when allowed)</span>
+          <span className="text-xs font-medium text-muted">
+            Allowed slugs (comma-separated, / included when allowed{vendor ? "; */up1 = every path ending in /up1" : ""})
+          </span>
           <input
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder="/, /oferta, /obrigado"
+            placeholder={vendor ? "*/up1, */up2, */thank-you" : "/, /oferta, /obrigado"}
             className={`${INPUT_CLASS} font-mono`}
             disabled={pending}
             aria-label="Allowed slugs"

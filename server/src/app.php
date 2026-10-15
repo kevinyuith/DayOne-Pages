@@ -151,13 +151,14 @@ function dayone_handle(): void
             $route['_step'] = true;
         }
     }
-    // Page served: visit id in the cookie, for the load notice (beacon.php).
+    // Page served: visit id in the cookie, for the load notice (beacon.php) — a funnel page the
+    // gate served, or a vendor page's upsell step.
     $visitId = null;
-    if ($outcome === 'served' && $route !== null && beacon_applies($route, $req)) {
+    if ($outcome === 'served' && $route !== null && beacon_notice_applies($route, $req)) {
         $visitId = beacon_new_visit_id();
         $headers['Set-Cookie'] = [...(array) ($headers['Set-Cookie'] ?? []), beacon_cookie($visitId)];
         // The funnel page the visitor got (the split's pick), for the page's tracker: see beacon.php.
-        $pageCookie = page_id_cookie((string) ($route['page_id'] ?? ''));
+        $pageCookie = beacon_applies($route, $req) ? page_id_cookie((string) ($route['page_id'] ?? '')) : null;
         if ($pageCookie !== null) {
             $headers['Set-Cookie'][] = $pageCookie;
         }

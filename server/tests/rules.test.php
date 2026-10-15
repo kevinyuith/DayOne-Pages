@@ -270,6 +270,15 @@ check('/ not special: not in the list', !gate_slug_allowed('/', []));
 check('slug allowed: in the list', gate_slug_allowed('/oferta', ['/oferta']));
 check('slug allowed: case-insensitive', gate_slug_allowed('/OFERTA', ['/oferta']));
 check('slug not allowed', !gate_slug_allowed('/outra', ['/oferta']));
+// `*/<tail>`: the path is <tail> or ends with it (a vendor domain's gate slugs, 20261013b).
+$vendorSlugs = ['*/up1', '*/up2', '*/up3', '*/up4', '*/up5', '*/thank-you'];
+check('suffix: the tail itself', gate_slug_allowed('/up1', $vendorSlugs));
+check('suffix: under a platform folder', gate_slug_allowed('/cp/up1', $vendorSlugs));
+check('suffix: deeper, case-insensitive', gate_slug_allowed('/Offer/BG/Thank-You', $vendorSlugs));
+check('suffix: not a mere ending of the segment', !gate_slug_allowed('/xup1', $vendorSlugs));
+check('suffix: not a longer segment', !gate_slug_allowed('/up1v2', $vendorSlugs));
+check('suffix: something after the tail', !gate_slug_allowed('/up1/b', $vendorSlugs));
+check('suffix: the root is not allowed', !gate_slug_allowed('/', $vendorSlugs));
 same('funnel code: [F23]', 'F23', gate_funnel_code('[CA] [FB] [F23]'));
 same('funnel code: lowercase', 'F7', gate_funnel_code('x[f7]y'));
 same('funnel code: none', null, gate_funnel_code('plain'));

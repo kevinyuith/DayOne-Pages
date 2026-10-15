@@ -209,6 +209,13 @@ export const VisualCanvas = forwardRef<
     setSuggestState(s);
   }, []);
 
+  // The page's own placeholders (a vendor page's product.*, checkout.*) join the list: read through a ref,
+  // so a new values object doesn't rebuild the canvas (refreshSuggest is a dependency of its setup).
+  const placeholderValuesRef = useRef(placeholderValues);
+  useEffect(() => {
+    placeholderValuesRef.current = placeholderValues;
+  }, [placeholderValues]);
+
   /** Rereads the text before the caret of the element being edited and opens/closes/updates the list. */
   const refreshSuggest = useCallback(
     (el: HTMLElement) => {
@@ -218,7 +225,7 @@ export const VisualCanvas = forwardRef<
       const node = r?.startContainer;
       if (!r || !r.collapsed || !node || node.nodeType !== 3 || !el.contains(node)) return setSuggest(null);
       const at = openPlaceholderAt((node.nodeValue ?? "").slice(0, r.startOffset));
-      const items = at ? suggestPlaceholders(at.query) : [];
+      const items = at ? suggestPlaceholders(at.query, placeholderValuesRef.current) : [];
       if (!at || !items.length) return setSuggest(null);
       const box = r.getBoundingClientRect();
       const anchor = box.height ? box : el.getBoundingClientRect();

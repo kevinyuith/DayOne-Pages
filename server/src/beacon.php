@@ -158,6 +158,27 @@ function beacon_applies(array $route, Request $req): bool
     return str_starts_with(strtolower($type), 'text/html') && is_logged_path($req->path);
 }
 
+/**
+ * Does this response carry the load notice — load, interaction, time on page,
+ * read depth and the device/behavior signals (pages.hits.signals) — and the
+ * dop_v visit cookie? A funnel's page the gate served (beacon_applies), a
+ * vendor page's upsell step (upsell.php: Upsell 1…5 and the Thank you page;
+ * the owner, 14/10) and a vendor page's landing (vendor_route_mark, 15/10),
+ * HTML only. The rest of a funnel page's extras (the page_id cookie, the CTA
+ * at the pitch) stay beacon_applies' only.
+ */
+function beacon_notice_applies(array $route, Request $req): bool
+{
+    if (beacon_applies($route, $req)) {
+        return true;
+    }
+    if (!is_array($route['_upsell'] ?? null) && !is_array($route['_vendor'] ?? null)) {
+        return false;
+    }
+    $type = (string) ($route['content_type'] ?? '') ?: 'text/html';
+    return str_starts_with(strtolower($type), 'text/html') && is_logged_path($req->path);
+}
+
 /** The cookie that carries the funnel page's id. */
 const PAGE_ID_NAME = 'page_id';
 /** The placeholder that becomes the same id. */

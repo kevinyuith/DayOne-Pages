@@ -64,7 +64,7 @@ export default async function DomainDetailPage({ params }: { params: Params }) {
           </div>
         </div>
 
-        <GateSlugsForm domainId={domain.id} slugs={domain.gate_slugs} />
+        <GateSlugsForm key={`${domain.type}:${domain.gate_slugs.join()}`} domainId={domain.id} slugs={domain.gate_slugs} vendor={domain.type === "VENDOR"} />
       </section>
 
       <div className="mb-6">

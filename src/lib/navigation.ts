@@ -1,5 +1,5 @@
 import type { ComponentType, SVGProps } from "react";
-import { DashboardIcon, FilterIcon, FunnelIcon, GlobeIcon, LogsIcon, PagesIcon, GearIcon } from "@/components/icons";
+import { DashboardIcon, FilterIcon, FunnelIcon, GlobeIcon, LogsIcon, PagesIcon, GearIcon, StairsIcon, StoreIcon } from "@/components/icons";
 
 export type NavItem = {
   href: string;
@@ -24,6 +24,8 @@ export const navGroups: NavGroup[] = [
       { href: "/domains", label: "Domains", description: "Point domains and route each path.", icon: GlobeIcon },
       { href: "/rules", label: "Rules", description: "Traffic rules on /: the first match decides the click's route.", icon: FilterIcon },
       { href: "/funnels", label: "Funnel", description: "Your funnel.", icon: FunnelIcon },
+      { href: "/vendor", label: "Vendor", description: "The product's own funnel.", icon: StoreIcon },
+      { href: "/upsells", label: "Upsells", description: "Upsell 1–5 and the Thank you page of a vendor page.", icon: StairsIcon },
       { href: "/logs", label: "Logs", description: "Every request, one row each.", icon: LogsIcon },
       { href: "/settings", label: "Settings", description: "AI and DNS settings.", icon: GearIcon },
     ],

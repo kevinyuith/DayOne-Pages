@@ -1,0 +1,58 @@
+{
+  "_comment": "Vendor page rules that must be the same in PHP (server/tests/upsell.test.php, placeholders.test.php), TS (scripts/check-vendor.mts: vendor-paths.ts, product-values.ts, placeholders.ts) and SQL (pages.vendor_page_folder, pages.product_placeholder_values, pages.upsell_config_check).",
+  "folders": [
+    { "slugs": ["/bg", "/bg/contact.html", "/bg/privacy.html", "/bg/up1", "/bg/up1v2"], "folder": "/bg" },
+    { "slugs": ["/cp", "/cp/up1", "/cp/up1/b"], "folder": "/cp" },
+    { "slugs": ["/", "/thank-you", "/vip", "/vip/sw.js"], "folder": "" },
+    { "slugs": ["/bg/up1", "/cp/up1"], "folder": "" },
+    { "slugs": ["/vip", "/vip/manifest.json"], "folder": "/vip" },
+    { "slugs": [], "folder": "" }
+  ],
+  "step_paths": [
+    { "canonical": "/up1", "folder": "/bg", "aliases": ["/bg/up1v2"], "paths": ["/up1", "/bg/up1", "/bg/up1v2"] },
+    { "canonical": "/thank-you", "folder": "/bg", "aliases": [], "paths": ["/thank-you", "/bg/thank-you"] },
+    { "canonical": "/up2", "folder": "", "aliases": ["/cp/up2v2", "/cp/up2v2/b"], "paths": ["/up2", "/cp/up2v2", "/cp/up2v2/b"] },
+    { "canonical": "/up1", "folder": "/bg", "aliases": ["/bg/up1"], "paths": ["/up1", "/bg/up1"] }
+  ],
+  "aliases": [
+    { "canonical": "/up1", "alias": "/bg/up1v2", "ok": true },
+    { "canonical": "/up1", "alias": "/bg/up1", "ok": true },
+    { "canonical": "/up1", "alias": "/cp/up1/b", "ok": true },
+    { "canonical": "/thank-you", "alias": "/bg/obrigado.html", "ok": true },
+    { "canonical": "/up1", "alias": "/up1", "ok": false },
+    { "canonical": "/up1", "alias": "/up2", "ok": false },
+    { "canonical": "/up1", "alias": "/bg/up2", "ok": false },
+    { "canonical": "/up2", "alias": "/bg/thank-you", "ok": false },
+    { "canonical": "/up1", "alias": "/BG/up1v2", "ok": false },
+    { "canonical": "/up1", "alias": "bg/up1v2", "ok": false },
+    { "canonical": "/up1", "alias": "/bg/up1v2/", "ok": false },
+    { "canonical": "/up1", "alias": "/", "ok": false },
+    { "canonical": "/up1", "alias": "/bg/up 1", "ok": false }
+  ],
+  "configs": [
+    { "steps": [{ "canonical": "/up1", "aliases": ["/bg/up1v2"] }, { "canonical": "/up2", "aliases": ["/bg/up2v2"] }], "ok": true },
+    { "steps": [{ "canonical": "/up1", "aliases": ["/bg/x"] }, { "canonical": "/up2", "aliases": ["/bg/x"] }], "ok": false },
+    { "steps": [{ "canonical": "/up1", "aliases": ["/bg/x", "/bg/x"] }], "ok": false },
+    { "steps": [{ "canonical": "/up1", "aliases": ["/a1", "/a2", "/a3", "/a4", "/a5", "/a6", "/a7", "/a8", "/a9", "/a10", "/a11"] }], "ok": false }
+  ],
+  "product_values": [
+    {
+      "cta": { "product": "HONEYPEAKDROPS", "kits": { "6": { "bottles": "6 BOTTLES", "price": "$49", "save": "$780", "checkout": "x" }, "2": { "supply": "60 Day Supply" }, "x": { "price": "$1" }, "10": { "total": "$400" } } },
+      "values": { "product.name": "HONEYPEAKDROPS", "product.kit6.bottles": "6 BOTTLES", "product.kit6.price": "$49", "product.kit6.save": "$780", "product.kit2.supply": "60 Day Supply", "product.kit10.total": "$400" }
+    },
+    { "cta": {}, "values": {} },
+    { "cta": { "kits": { "1": { "image": "https://cdn.example/1.webp", "price": 5 } } }, "values": { "product.kit1.image": "https://cdn.example/1.webp" } }
+  ],
+  "placeholders": [
+    {
+      "html": "<b>{{product.name}}</b> <span>{{ product.kit6.price }}</span> {{product.kit3.price}} <img src=\"{{product.kit6.image}}\">",
+      "values": { "product.name": "Honey & Peak", "product.kit6.price": "$49", "product.kit6.image": "https://cdn.example/6.webp?a=1&b=2" },
+      "expected": "<b>Honey &amp; Peak</b> <span>$49</span> {{product.kit3.price}} <img src=\"https://cdn.example/6.webp?a=1&amp;b=2\">"
+    },
+    {
+      "html": "<a href=\"{{checkout.up1}}\">{{product.kit6.save}}</a>{{product.kit6.save.x}}",
+      "values": { "checkout.up1": "VKWHeu02", "product.kit6.save": "" },
+      "expected": "<a href=\"VKWHeu02\"></a>{{product.kit6.save.x}}"
+    }
+  ]
+}

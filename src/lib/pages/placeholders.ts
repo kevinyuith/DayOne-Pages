@@ -1,5 +1,6 @@
 import { APP_TZ, localDateKey } from "@/lib/time-zone";
 import { companyName } from "./company-name";
+import { PRODUCT_KIT_FIELDS, PRODUCT_KIT_FIELD_LABELS, type ProductKitField } from "./product-values";
 
 /**
  * {{key}} placeholders in pages, replaced with the domain's and the visit's data.
@@ -19,7 +20,10 @@ import { companyName } from "./company-name";
  * legal suffix (company-name.ts). The automatic ones come from the visit: `url` and
  * `slug` from the served path, `lang`, `language` and the language of `date` from
  * the visitor's Accept-Language (without it, English), `date` and `year` from the
- * day in New York.
+ * day in New York. A vendor page also has `checkout.<key>`: its product's checkout
+ * links on its platform (checkout-links.ts), and `product.name` /
+ * `product.kit<N>.<field>`: its product's bundles (product-values.ts) — both
+ * merged by pages.resolve; the editor offers them when the page has them.
  */
 
 export const PLACEHOLDER_FIELDS = [
@@ -99,6 +103,43 @@ export const PLACEHOLDER_OPTIONS: PlaceholderOption[] = [
   ...AUTO_PLACEHOLDERS.map((f) => ({ key: f.key, label: f.label, hint: f.note })),
 ];
 
+/** A page's own placeholders (not in PLACEHOLDER_OPTIONS) the editor also offers: a vendor page's product, checkout and upsell values. */
+const PAGE_KEY_RE = /^(?:product|checkout|upsell)\./;
+
+function pageOptionLabel(key: string): string {
+  if (key === "product.name") return "Product name";
+  const kit = /^product\.kit(\d+)\.(\w+)$/.exec(key);
+  if (kit) return `Kit ${kit[1]} · ${PRODUCT_KIT_FIELD_LABELS[kit[2] as ProductKitField] ?? kit[2]}`;
+  if (key.startsWith("checkout.")) return `Checkout ${key.slice(9)}`;
+  if (key === "upsell.offer") return "Upsell offer";
+  return `Upsell ${key.slice(7)}`;
+}
+
+/** Product first (name, then each kit's fields in order), then checkout, then upsell. */
+function pageOptionRank(key: string): [number, number, number, string] {
+  if (key === "product.name") return [0, 0, 0, key];
+  const kit = /^product\.kit(\d+)\.(\w+)$/.exec(key);
+  if (kit) return [1, Number(kit[1]), PRODUCT_KIT_FIELDS.indexOf(kit[2] as ProductKitField), key];
+  return [key.startsWith("checkout.") ? 2 : 3, 0, 0, key];
+}
+
+/**
+ * Every placeholder the editor offers for a page: PLACEHOLDER_OPTIONS, then the
+ * page's own values among `values` (a vendor page's {{product.kit6.price}},
+ * {{checkout.up1}}…; null = none), with their value as the hint.
+ */
+export function placeholderOptions(values?: Record<string, string> | null): PlaceholderOption[] {
+  if (!values) return PLACEHOLDER_OPTIONS;
+  const own = Object.keys(values)
+    .filter((k) => PAGE_KEY_RE.test(k))
+    .sort((a, b) => {
+      const [x, y] = [pageOptionRank(a), pageOptionRank(b)];
+      return x[0] - y[0] || x[1] - y[1] || x[2] - y[2] || x[3].localeCompare(y[3]);
+    })
+    .map((key) => ({ key, label: pageOptionLabel(key), hint: values[key] || "(empty)" }));
+  return own.length ? [...PLACEHOLDER_OPTIONS, ...own] : PLACEHOLDER_OPTIONS;
+}
+
 /** If the text before the cursor ends in an open "{{", where it starts and how much of the key was typed. */
 export function openPlaceholderAt(before: string): { from: number; query: string } | null {
   const m = /\{\{\s*([a-z0-9_.]*)$/i.exec(before);
@@ -107,12 +148,16 @@ export function openPlaceholderAt(before: string): { from: number; query: string
 
 const fold = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
-/** The options for what was typed: key (or the part after the dot) starting with it; then key or name containing it. */
-export function suggestPlaceholders(query: string): PlaceholderOption[] {
+/**
+ * The options for what was typed: key (or the part after the dot) starting with it; then key or name
+ * containing it. `values` adds the page's own placeholders (placeholderOptions).
+ */
+export function suggestPlaceholders(query: string, values?: Record<string, string> | null): PlaceholderOption[] {
+  const options = placeholderOptions(values);
   const q = fold(query);
-  if (!q) return PLACEHOLDER_OPTIONS;
-  const starts = PLACEHOLDER_OPTIONS.filter((o) => o.key.startsWith(q) || o.key.slice(o.key.lastIndexOf(".") + 1).startsWith(q));
-  const contains = PLACEHOLDER_OPTIONS.filter((o) => !starts.includes(o) && (o.key.includes(q) || fold(o.label).includes(q)));
+  if (!q) return options;
+  const starts = options.filter((o) => o.key.startsWith(q) || o.key.slice(o.key.lastIndexOf(".") + 1).startsWith(q));
+  const contains = options.filter((o) => !starts.includes(o) && (o.key.includes(q) || fold(o.label).includes(q)));
   return [...starts, ...contains];
 }
 
@@ -142,10 +187,18 @@ export function longDate(isoDate: string, lang: string): string {
 }
 
 /**
- * A visit's values: the ones saved on the domain (text only) + the automatic ones.
- * `path` is the served path; `lang` the visitor's language (the preview uses "en").
+ * A visit's values: the ones saved on the domain (text only), a vendor page's
+ * `checkout.<key>` and `product.*` (vendorPlaceholderValues) + the automatic
+ * ones. `path` is the served path; `lang` the visitor's language (the preview uses "en").
  */
-export function placeholderValues(opts: { domain: string; stored: unknown; path: string; lang?: string; now?: Date }): Record<string, string> {
+export function placeholderValues(opts: {
+  domain: string;
+  stored: unknown;
+  vendor?: Record<string, string>;
+  path: string;
+  lang?: string;
+  now?: Date;
+}): Record<string, string> {
   const values: Record<string, string> = {};
   const { stored } = opts;
   if (stored && typeof stored === "object" && !Array.isArray(stored)) {
@@ -153,6 +206,7 @@ export function placeholderValues(opts: { domain: string; stored: unknown; path:
       if (typeof v === "string") values[k] = v;
     }
   }
+  Object.assign(values, opts.vendor);
   values["company.name"] = companyName(values["company.llc"] ?? "");
   const lang = opts.lang || "en";
   const today = localDateKey((opts.now ?? new Date()).getTime(), APP_TZ);

@@ -95,6 +95,8 @@ function log_hit(Request $req, int $status, string $outcome, ?string $domainId, 
         'p_is_vpn'        => $anon['is_vpn'] ?? null,
         'p_vpn_kind'      => $anon['kind'] ?? null,
         'p_vpn_name'      => $anon['name'] ?? null,
+        // A vendor page's upsell step: what this buyer got (upsell.php; pages.hits.upsell).
+        'p_upsell'        => is_array($route['_upsell']['hit'] ?? null) ? $route['_upsell']['hit'] : null,
     ];
     $id = supabase_log_hit($params);
     // Supabase didn't answer, or answered 5xx: the hit goes to the spool

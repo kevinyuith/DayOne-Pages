@@ -96,7 +96,7 @@ export function PlaceholderField({
   const refresh = (el: FieldEl) => {
     const caret = el.selectionStart ?? el.value.length;
     const at = el.selectionEnd === caret ? openPlaceholderAt(el.value.slice(0, caret)) : null;
-    const items = at ? suggestPlaceholders(at.query) : [];
+    const items = at ? suggestPlaceholders(at.query, values) : [];
     setOpen(at && items.length ? { from: at.from, caret, items, index: 0 } : null);
   };
 

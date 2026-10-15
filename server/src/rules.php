@@ -143,7 +143,9 @@ function gate_pick(array $routes, array $gate, Request $req): ?array
     // 2) Clean traffic. The funnel only takes over on an allowed slug (one of
     //    the domain's gate_slugs — "/" included when it's there); any other
     //    slug gets the domain's page. An UNLOCKED domain allows every slug.
-    if ($status !== 'UNLOCKED' && !gate_slug_allowed($req->path, $gate['gate_slugs'] ?? null)) {
+    //    An upsell step's alias (a vendor domain's, upsell.php) is allowed like its step.
+    if ($status !== 'UNLOCKED' && !gate_slug_allowed($req->path, $gate['gate_slugs'] ?? null)
+        && !gate_slug_allowed((string) upsell_step_canonical($gate, $req->path), $gate['gate_slugs'] ?? null)) {
         return gate_flag_route($domainPage, GATE_SAFE_MATCH, ['_gate_reason' => 'slug_not_allowed']);
     }
     $params = [];
@@ -343,11 +345,25 @@ function gate_always_404(string $domainId, string $path, string $reason, ?string
     return $route;
 }
 
-/** Is this slug allowed to go to the funnel? The gate_slugs are the whole set — "/" included when it's there. */
+/**
+ * Is this slug allowed to go to the funnel? The gate_slugs are the whole set — "/" included when it's there.
+ * An entry that is "*" followed by /<tail> allows every path that is <tail> or ends with it: a vendor
+ * domain is born with the tails /up1 … /up5 and /thank-you (and no "/"), so /up1, /cp/up1 and
+ * /bg/thank-you all go (20261013b). gate_pick also allows an upsell step's alias (/bg/up1v2) when
+ * its step's path is allowed (upsell_step_canonical, 20261015c).
+ */
 function gate_slug_allowed(string $path, mixed $gateSlugs): bool
 {
     foreach (is_array($gateSlugs) ? $gateSlugs : [] as $slug) {
-        if (is_string($slug) && strcasecmp($slug, $path) === 0) {
+        if (!is_string($slug)) {
+            continue;
+        }
+        if (str_starts_with($slug, '*/')) {
+            $tail = strtolower(substr($slug, 1));
+            if (str_ends_with(strtolower($path), $tail)) {
+                return true;
+            }
+        } elseif (strcasecmp($slug, $path) === 0) {
             return true;
         }
     }
