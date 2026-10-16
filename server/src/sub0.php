@@ -18,6 +18,14 @@
  * stays intact. The destination is always https: every domain has Cloudflare
  * in front.
  *
+ * The 302 also sets `dop_www` on the bare domain and every subdomain
+ * (`Domain=x.com`: a cookie set on www. without it would stay on www.), so the
+ * bare hit tells an ad click from a shared link: its value is the sub0 that
+ * went into the URL (`1` without a campaign). The hit keeps the Cookie header
+ * (`pages.hits.cookies`): a bare hit whose sub0 is the cookie's came through
+ * www. in this browser; one with a sub0 and no such cookie is the address bar's
+ * URL opened elsewhere — shared, or another browser (in-app → Safari).
+ *
  * Token: base64url(nonce 12 B ‖ ciphertext ‖ tag 16 B), AES-256-GCM with key
  * SHA-256(SUB0_KEY), which defaults to "DAYONE". The plaintext is the unix
  * timestamp in seconds ("1790000000"), so the token is 51 characters long.
@@ -31,6 +39,9 @@ const SUB0_PARAM = 'sub0';
 const SUB0_CIPHER = 'aes-256-gcm';
 /** Campaign parameters that make sub0 be generated (one is enough, with a value). */
 const SUB0_TRIGGERS = ['sub1', 'utm_campaign', 'campaign'];
+/** The www entry's cookie, on the bare domain: the sub0 it got, or `1`. */
+const WWW_COOKIE = 'dop_www';
+const WWW_COOKIE_MAX_AGE = 30 * 86400;
 
 /**
  * The 302 for the www entry, or null when the request goes on as normal.
@@ -43,13 +54,20 @@ function www_entry_redirect(Request $req, string $outcome, ?array $route): ?arra
         return null;
     }
     $query = $req->rawQuery;
+    $entry = '1';
     if (query_has_any($query, SUB0_TRIGGERS)) {
-        $sub0 = SUB0_PARAM . '=' . sub0_encrypt(time(), config()['sub0_key']);
-        $query = query_insert_before(query_without($query, SUB0_PARAM), $sub0, 'sub1');
+        $entry = sub0_encrypt(time(), config()['sub0_key']);
+        $query = query_insert_before(query_without($query, SUB0_PARAM), SUB0_PARAM . '=' . $entry, 'sub1');
     }
     $path = $req->rawPath !== '' ? $req->rawPath : '/';
     $location = "https://{$req->host}$path" . ($query !== '' ? "?$query" : '');
-    return [302, ['Location' => $location, 'Cache-Control' => 'no-store'], ''];
+    return [302, ['Location' => $location, 'Cache-Control' => 'no-store', 'Set-Cookie' => [www_cookie($req->host, $entry)]], ''];
+}
+
+/** `dop_www` for the bare domain and its subdomains ($host is the one without www.). */
+function www_cookie(string $host, string $entry): string
+{
+    return WWW_COOKIE . "=$entry; Domain=$host; Path=/; Max-Age=" . WWW_COOKIE_MAX_AGE . '; Secure; HttpOnly; SameSite=Lax';
 }
 
 /** Does the raw query have any of these parameters with a non-empty value? Case-insensitive name. */

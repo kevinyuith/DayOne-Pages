@@ -42,6 +42,10 @@ check('www: without www, original path and query, sub0 at the end', str_starts_w
 check('www: sub0 = now', abs(($sub0Of($r[1]['Location'] ?? '') ?? 0) - time()) <= 2);
 same('www: sub0 only once', 1, substr_count($r[1]['Location'] ?? '', 'sub0='));
 same('www: no-store', 'no-store', $r[1]['Cache-Control'] ?? null);
+// The entry's cookie, on the bare domain: the sub0 that went into the URL.
+parse_str((string) parse_url($r[1]['Location'] ?? '', PHP_URL_QUERY), $q);
+same('www: cookie = the sub0, on the bare domain and its subdomains', ['dop_www=' . ($q['sub0'] ?? '') . '; Domain=example.com; Path=/; Max-Age=2592000; Secure; HttpOnly; SameSite=Lax'], $r[1]['Set-Cookie'] ?? null);
+same('www without campaign: cookie = 1', 'dop_www=1; Domain=example.com', implode(';', array_slice(explode(';', (www_entry_redirect(make_request(['HTTP_HOST' => 'www.Example.com', 'REQUEST_URI' => '/?utm_source=fb']), 'served', $serve)[1]['Set-Cookie'][0] ?? '')), 0, 2)));
 
 // Only generates sub0 with a campaign: sub1, utm_campaign or campaign, with a value.
 $loc = static fn (string $uri) => www_entry_redirect(make_request(['HTTP_HOST' => 'www.example.com', 'REQUEST_URI' => $uri]), 'served', $serve)[1]['Location'] ?? '';
