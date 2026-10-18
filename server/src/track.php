@@ -162,6 +162,8 @@ const TRACKER_DOT_JS = <<<'JS'
  * EXT_CLICK_ID: the platform's click id, picked from the URL in the same order
  *   the server's click event picks it (dot.php CLICK_ID_PARAMS), goes in every
  *   event, so dot ties the browser's events to that click (Taboola's tblci too).
+ *   On a link, `{clickid}` becomes it (else the dotid) at the visitor's touch or
+ *   click — a network's own click-id field, e.g. Everflow's `?sub2={clickid}`.
  *
  * PAGE_ID: every event carries the funnel page the server served (the A/B
  *   split's pick) — dot's page_id column. The server writes it in this script's
@@ -330,6 +332,33 @@ const TRACKER_DOT_JS = <<<'JS'
       } catch (e) {}
     });
   }
+  // CLICK ID ON A LINK (18/10/2026): `{clickid}` on a link — written, or URL-encoded as decorateLinks leaves it inside
+  // a checkout link's u= — becomes the visitor's click id, the platform's (ext_click_id, above) or else the dotid, on
+  // the visitor's touch, click or long press, before the navigation (found on the composed path: the player's call to
+  // action is in its shadow DOM). For a network that takes the click id in a field of its own and sends it back in its
+  // postback — Everflow's sub2: `<tracking link>?sub2={clickid}`, its postback `ext_click_id={sub2}` to dot's
+  // conversions —, where the platform's own click id ties the sale to the ad like any other. Only a link that has the
+  // token changes; no id yet (no click id in the URL, no dotid) leaves it as written.
+  var CLICK_ID_TOKEN = /\{clickid\}|%7Bclickid%7D/gi;
+  function clickIdOnLink(href) {
+    if (!href || href.search(CLICK_ID_TOKEN) < 0) return href;
+    var id = attrs.ext_click_id || dotid;
+    return id ? href.replace(CLICK_ID_TOKEN, encodeURIComponent(id)) : href;
+  }
+  function clickIdOnEvent(ev) {
+    var path = ev.composedPath ? ev.composedPath() : [ev.target];
+    for (var i = 0; i < path.length; i++) {
+      var n = path[i];
+      if (!n || n.tagName !== 'A' || !n.getAttribute) continue;
+      var href = n.getAttribute('href') || '';
+      var filled = clickIdOnLink(href);
+      if (filled !== href) n.setAttribute('href', filled);
+      return;
+    }
+  }
+  ['pointerdown', 'touchstart', 'mousedown', 'click', 'auxclick', 'contextmenu'].forEach(function (t) {
+    document.addEventListener(t, clickIdOnEvent, true);
+  });
   // `meta` goes in the event's metadata (_metadata, as JSON); a vendor route's product and step too.
   function buildPayload(eventName, extra, meta) {
     var payload = {
