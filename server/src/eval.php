@@ -54,7 +54,7 @@ const EVAL_NO_JS = 'no_js';
 const EVAL_OWN_CONDITIONS = [
     'eval_cookie', 'touch', 'mobile_hint', 'pointer', 'webdriver', 'automation', 'gl_software', 'platform',
     'iframe', 'tostring_tampered', 'proto_poisoned', 'tz_offset', 'net_rtt_min', 'screens',
-    'nav_ttfb_above', 'coast', 'device_memory', 'plugins', 'chrome_below', 'nav_connect_min', 'zoomed',
+    'nav_ttfb_above', 'coast', 'device_memory', 'cores', 'battery', 'charging', 'plugins', 'chrome_below', 'nav_connect_min', 'zoomed',
     // The on/off detectors (1 = the tell fired). no_js is stripped too, but
     // never evaluated from signals — a POST proves JS ran.
     'no_touch', 'chrome_ua', 'no_chrome_object', 'tz_mismatch', 'tz_not_us', 'no_cookie', 'odd_resolution', EVAL_NO_JS,
@@ -560,6 +560,9 @@ function eval_rules_matched(array $rules, Request $req, ?array $signals, ?array 
  *   nav_ttfb_above ms: the checkpoint page's time to first byte is above this (strictly). No timing = undecidable.
  *   coast         'east' | 'west': the browser's IANA zone is on that US coast (eval_coast). No zone = undecidable.
  *   device_memory the browser's navigator.deviceMemory (GB) is exactly this. Not reported = undecidable.
+ *   cores         navigator.hardwareConcurrency is exactly this. Not reported = undecidable.
+ *   battery       Battery API level (whole percent) is exactly this. Not reported = undecidable.
+ *   charging      Battery API charging state (1 or 0). Not reported = undecidable.
  *   plugins       navigator.plugins.length is exactly this (0 = none).
  *   chrome_below  the User-Agent's Chrome major version is below this (no Chrome token = no match).
  *   nav_connect_min ms: the checkpoint page's TCP+TLS setup is at least this (a reused connection = undecidable).
@@ -715,7 +718,7 @@ function eval_conditions_match(array $cond, Request $req, ?array $signals, ?arra
             $ok = match ($key) {
                 'pointer' => is_string($want) && strcasecmp((string) $got, $want) === 0,
                 'coast' => is_string($want) && $got === $want,
-                'device_memory', 'plugins' => (int) $got === (int) $want,
+                'device_memory', 'cores', 'battery', 'charging', 'plugins' => (int) $got === (int) $want,
                 'platform' => is_string($want) && $want !== '' && stripos((string) $got, $want) !== false,
                 'tz_offset' => (int) $got === (int) $want,
                 default => ((int) $got === 1) === ((int) $want === 1),
@@ -915,6 +918,13 @@ function eval_signal_values(?array $signals, ?array $stored): array
     if (isset($src['ntfb']) && (int) $src['ntfb'] > 0) $out['nav_ttfb'] = (int) $src['ntfb'];
     if (isset($src['ntcp']) && (int) $src['ntcp'] > 0) $out['nav_connect'] = (int) $src['ntcp'];
     if (isset($src['dm']) && (int) $src['dm'] > 0) $out['device_memory'] = (int) $src['dm'];
+    if (isset($src['hc']) && (int) $src['hc'] > 0) $out['cores'] = (int) $src['hc'];
+    if (array_key_exists('bat', $src) && is_numeric($src['bat']) && (int) $src['bat'] >= 0 && (int) $src['bat'] <= 100) {
+        $out['battery'] = (int) $src['bat'];
+    }
+    if (array_key_exists('batc', $src) && is_numeric($src['batc']) && in_array((int) $src['batc'], [0, 1], true)) {
+        $out['charging'] = (int) $src['batc'];
+    }
     if (array_key_exists('np', $src)) $out['plugins'] = (int) $src['np'];
     // zoomed: the window's outer width over the viewport's, in % (zm) — ~100
     // at no zoom (a few px of window frame), off when the page is zoomed in

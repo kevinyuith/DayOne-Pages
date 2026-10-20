@@ -352,6 +352,28 @@ check('nav_ttfb_above: 250 does not', !eval_conditions_match(['nav_ttfb_above' =
 check('nav_ttfb_above: no timing is undecidable', !eval_conditions_match(['nav_ttfb_above' => 300], $req, ['mtp' => 0], null));
 check('nav_ttfb_above: unknown stays pending for the checkpoint', eval_conditions_match(['nav_ttfb_above' => 300], $req, null, null, true));
 check('nav_ttfb_above: from a stored entry', eval_conditions_match(['nav_ttfb_above' => 225], $req, null, ['ntfb' => 275]));
+$googleMobileReq = $rttReq('198.51.100.40', $mobileUA);
+$googleMobileReq->evalParams = ['sub11' => 'Google'];
+$rttMemo['198.51.100.40'] = ['asn' => 21928, 'asn_at' => time()];
+$rttMemo['198.51.100.41'] = ['asn' => 7922, 'asn_at' => time()];
+$googleOtherAsnReq = $rttReq('198.51.100.41', $mobileUA);
+$googleOtherAsnReq->evalParams = ['sub11' => 'Google'];
+$googleAsns = [21928, 7018, 18859, 22742];
+$googleSignalRule = [
+    'sub11_in' => ['google'],
+    'asns' => $googleAsns,
+    'devices' => ['mobile'],
+    'cores' => 8,
+    'battery' => 100,
+    'charging' => 1,
+    'nav_ttfb_above' => 340,
+];
+check('Google device rule: all conditions match on a listed ASN', eval_conditions_match($googleSignalRule, $googleMobileReq, ['hc' => 8, 'bat' => 100, 'batc' => 1, 'ntfb' => 341], null));
+check('Google device rule: TTFB exactly 340 does not match', !eval_conditions_match($googleSignalRule, $googleMobileReq, ['hc' => 8, 'bat' => 100, 'batc' => 1, 'ntfb' => 340], null));
+check('Google device rule: battery must be exactly 100%', !eval_conditions_match($googleSignalRule, $googleMobileReq, ['hc' => 8, 'bat' => 99, 'batc' => 1, 'ntfb' => 341], null));
+check('Google device rule: another platform does not match', !eval_conditions_match($googleSignalRule, $req, ['hc' => 8, 'bat' => 100, 'batc' => 1, 'ntfb' => 341], null));
+check('Google device rule: an ASN outside the selected list does not match', !eval_conditions_match($googleSignalRule, $googleOtherAsnReq, ['hc' => 8, 'bat' => 100, 'batc' => 1, 'ntfb' => 400], null));
+check('Google device rule: unavailable signals stay pending', eval_conditions_match($googleSignalRule, $googleMobileReq, null, null, true));
 same('coast: the zone helper', ['east', 'east', 'west', 'west', null, null], [eval_coast('america/new_york'), eval_coast('america/detroit'), eval_coast('america/los_angeles'), eval_coast('america/phoenix'), eval_coast('america/chicago'), eval_coast('europe/madrid')]);
 check('coast: east zone matches east', eval_conditions_match(['coast' => 'east'], $req, ['tze' => 'america/new_york'], null));
 check('coast: west zone does not match east', !eval_conditions_match(['coast' => 'east'], $req, ['tze' => 'america/los_angeles'], null));
@@ -484,7 +506,7 @@ same('payload: a suffixed field name parses', ['mtp' => 5], $suffixed[1]);
 // ── The device fingerprint: the same signals, structured for pages.hits.device_fingerprint ──
 $fp = eval_device_fingerprint([
     'uab' => 'Chromium,Google Chrome', 'mob' => 0, 'upf' => 'macOS',
-    'hc' => 18, 'dm' => 32, 'mtp' => 0, 'ptr' => 'fine', 'dpr' => 2,
+    'hc' => 18, 'dm' => 32, 'mtp' => 0, 'ptr' => 'fine', 'dpr' => 2, 'bat' => 100, 'batc' => 1,
     'sw' => 1800, 'sh' => 1169, 'vw' => 1793, 'vh' => 930, 'ow' => 1793, 'oh' => 1051,
     'tze' => 'America/Sao_Paulo', 'tz' => 180, 'lngs' => 'pt-BR,pt,en-US', 'lng' => 'pt-BR',
     'crt' => 1, 'mt' => 2, 'np' => 5, 'vc' => 'pt-BR,en-US', 'cke' => 1, 'stok' => 1,
@@ -494,6 +516,9 @@ $fp = eval_device_fingerprint([
 check('fingerprint: versioned', ($fp['v'] ?? null) === 1);
 same('fingerprint: touch not capable', 0, $fp['hw']['touch_capable'] ?? null);
 same('fingerprint: touch points', 0, $fp['hw']['touch_points'] ?? null);
+same('fingerprint: CPU cores', 18, $fp['hw']['cores'] ?? null);
+same('fingerprint: battery', 100, $fp['env']['battery'] ?? null);
+same('fingerprint: charging', 1, $fp['env']['charging'] ?? null);
 same('fingerprint: screen', '1800x1169', $fp['hw']['screen'] ?? null);
 same('fingerprint: viewport', '1793x930', $fp['hw']['viewport'] ?? null);
 same('fingerprint: outer', '1793x1051', $fp['hw']['outer'] ?? null);

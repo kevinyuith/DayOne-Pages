@@ -195,6 +195,13 @@ function DeviceSignals({ initial, disabled }: { initial: ReturnType<typeof ruleC
         <Field label="Device memory (GB)" hint="navigator.deviceMemory, exact. Not reported never matches.">
           <input name="device_memory" defaultValue={initial.deviceMemory} inputMode="numeric" placeholder="32" className={INPUT_CLASS} disabled={disabled} />
         </Field>
+        <Field label="CPU cores" hint="navigator.hardwareConcurrency, exact. Not reported never matches.">
+          <input name="cores" defaultValue={initial.cores} inputMode="numeric" placeholder="8" className={INPUT_CLASS} disabled={disabled} />
+        </Field>
+        <Field label="Battery (%)" hint="Battery level, exact whole percentage. Not reported never matches.">
+          <input name="battery" defaultValue={initial.battery} inputMode="numeric" placeholder="100" className={INPUT_CLASS} disabled={disabled} />
+        </Field>
+        {bit("charging", "Charging", initial.charging, ["charging", "not charging"])}
         <Field label="Plugins (count)" hint="navigator.plugins.length, exact. 0 = none.">
           <input name="plugins" defaultValue={initial.plugins} inputMode="numeric" placeholder="0" className={INPUT_CLASS} disabled={disabled} />
         </Field>

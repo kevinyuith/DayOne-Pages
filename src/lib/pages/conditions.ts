@@ -157,6 +157,9 @@ const ruleConditionsShape = conditionsSchema.extend({
   coast: z.enum(["east", "west"]).optional(),
   // device_memory (GB, navigator.deviceMemory) and plugins (navigator.plugins.length) are exact; chrome_below is the Chrome major version under which a UA matches; nav_connect_min is the checkpoint page's TCP+TLS setup in ms.
   device_memory: z.number().int().min(1).max(1024).optional(),
+  cores: z.number().int().min(1).max(1024).optional(),
+  battery: z.number().int().min(0).max(100).optional(),
+  charging: z.union([z.literal(0), z.literal(1)]).optional(),
   plugins: z.number().int().min(0).max(1000).optional(),
   chrome_below: z.number().int().min(1).max(1000).optional(),
   nav_connect_min: z.number().int().min(1).max(10000).optional(),
@@ -466,6 +469,8 @@ export function parseRuleConditionsForm(fd: FormData): { ok: true; value: RuleCo
   if (coast === "east" || coast === "west") raw.coast = coast;
   for (const [field, min, max, label] of [
     ["device_memory", 1, 1024, "Device memory must be whole GB, 1–1024."],
+    ["cores", 1, 1024, "CPU cores must be a whole number, 1–1024."],
+    ["battery", 0, 100, "Battery must be a whole percentage, 0–100."],
     ["plugins", 0, 1000, "Plugins must be a whole count, 0–1000."],
     ["chrome_below", 1, 1000, "Chrome version must be a whole major version, 1–1000."],
     ["nav_connect_min", 1, 10000, "Connect time must be whole milliseconds, 1–10000."],
@@ -475,6 +480,8 @@ export function parseRuleConditionsForm(fd: FormData): { ok: true; value: RuleCo
     if (!/^\d{1,5}$/.test(v) || Number(v) < min || Number(v) > max) return { ok: false, reason: label };
     raw[field] = Number(v);
   }
+  const charging = bit("charging");
+  if (charging !== undefined) raw.charging = charging;
   const screens = Array.from(new Set(String(fd.get("screens") ?? "").toLowerCase().replace(/×/g, "x").split(/[\s,;]+/).filter(Boolean)));
   if (screens.length) {
     const bad = screens.find((s) => !SCREEN_RE.test(s));
@@ -590,6 +597,9 @@ export function ruleConditionsToForm(c: RuleConditions | null | undefined): Retu
   navTtfbAbove: string;
   coast: "" | "east" | "west";
   deviceMemory: string;
+  cores: string;
+  battery: string;
+  charging: "" | "0" | "1";
   plugins: string;
   chromeBelow: string;
   navConnectMin: string;
@@ -653,6 +663,9 @@ export function ruleConditionsToForm(c: RuleConditions | null | undefined): Retu
     navTtfbAbove: c?.nav_ttfb_above !== undefined ? String(c.nav_ttfb_above) : "",
     coast: c?.coast ?? "",
     deviceMemory: c?.device_memory !== undefined ? String(c.device_memory) : "",
+    cores: c?.cores !== undefined ? String(c.cores) : "",
+    battery: c?.battery !== undefined ? String(c.battery) : "",
+    charging: bit(c?.charging),
     plugins: c?.plugins !== undefined ? String(c.plugins) : "",
     chromeBelow: c?.chrome_below !== undefined ? String(c.chrome_below) : "",
     navConnectMin: c?.nav_connect_min !== undefined ? String(c.nav_connect_min) : "",
@@ -724,6 +737,9 @@ export function summarizeRuleConditions(c: RuleConditions | null | undefined): s
     c.nav_ttfb_above !== undefined ? `Checkpoint TTFB > ${c.nav_ttfb_above} ms` : "",
     c.coast ? `Coast ${c.coast}` : "",
     c.device_memory !== undefined ? `Device memory = ${c.device_memory} GB` : "",
+    c.cores !== undefined ? `CPU cores = ${c.cores}` : "",
+    c.battery !== undefined ? `Battery = ${c.battery}%` : "",
+    onOff(c.charging, "Charging", "Not charging"),
     c.plugins !== undefined ? `Plugins = ${c.plugins}` : "",
     c.chrome_below !== undefined ? `Chrome < ${c.chrome_below}` : "",
     c.nav_connect_min !== undefined ? `Connect ≥ ${c.nav_connect_min} ms` : "",
