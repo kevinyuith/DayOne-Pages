@@ -105,7 +105,7 @@ function config(): array
         'hits_timeout'      => $int('HITS_TIMEOUT', 5),
         // Click events for dayone-main's tracker (dot.php): every page request with a platform click id.
         'dot_clicks'        => $int('DOT_CLICKS', 1) === 1,
-        'dot_url'           => (string) $get('DOT_URL', 'https://cdn.dayone.click/functions/v1/dot'),
+        'dot_url'           => (string) $get('DOT_URL', 'https://api.directdayone.com/functions/v1/dot'),
         'dot_timeout'       => $int('DOT_TIMEOUT', 8),
         'sub0_key'          => (string) $get('SUB0_KEY', 'DAYONE'),
     ];

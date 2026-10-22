@@ -119,7 +119,7 @@ function track_inject(string $html, string $origin, ?string $pageId = null, ?str
 const TRACKER_DOT_JS = <<<'JS'
 /**
  * dot.js — the funnel's tracker, served by DayOne Pages on the funnel's own domain (/_dop/dot.js)
- * Endpoint: https://cdn.dayone.click/functions/v1/dot
+ * Endpoint: https://api.directdayone.com/functions/v1/dot
  *
  * ORIGIN: the step it's on, from this script's own URL (?origin=pre_lander or
  *   lander; lander without one). The same code for both steps — it replaces
@@ -234,7 +234,7 @@ const TRACKER_DOT_JS = <<<'JS'
  */
 (function () {
   'use strict';
-  var ENDPOINT = 'https://cdn.dayone.click/functions/v1/dot';
+  var ENDPOINT = 'https://api.directdayone.com/functions/v1/dot';
   var REQUEST_TIMEOUT = 5000;  // max wait (ms) for a single send before aborting
   // Attribution parameters captured from the URL and persisted for the session
   var ATTRIBUTION_PARAMS = [

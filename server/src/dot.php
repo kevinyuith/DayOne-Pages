@@ -1,7 +1,7 @@
 <?php
 /**
  * Click events for dayone-main's tracker, the "dot" edge function
- * (DOT_URL, https://cdn.dayone.click/functions/v1/dot).
+ * (DOT_URL, https://api.directdayone.com/functions/v1/dot).
  *
  * Every page request (.html, .php or no extension) whose URL carries a
  * platform click id (CLICK_ID_PARAMS: ref_id, ext_click_id, gclid, wbraid,

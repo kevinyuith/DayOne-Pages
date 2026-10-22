@@ -84,7 +84,7 @@ same('gclid + wbraid: ext_click_id is gclid, wbraid goes too', ['G1', 'W1'], arr
 same('?dotid= wins over the cookie', '11111111-22222222-33333333-09252103', dot_click_payload($dotReq('/?fbclid=x&dotid=11111111-22222222-33333333-09252103', ['HTTP_COOKIE' => 'dotid=aebe26bd-d0245268-71fa28c5-09252103']), [], [])['dotid']);
 check('a malformed dotid is dropped (dot makes one)', !array_key_exists('dotid', dot_click_payload($dotReq('/?fbclid=x', ['HTTP_COOKIE' => 'dotid=<script>']), [], [])));
 same('http when Cloudflare says the visitor came by http', 'http://shop.example/?fbclid=x', dot_click_payload($dotReq('/?fbclid=x'), [], ['HTTP_CF_VISITOR' => '{"scheme":"http"}'])['url']);
-check('config: on by default, the real endpoint', config()['dot_url'] === 'https://cdn.dayone.click/functions/v1/dot');
+check('config: on by default, the real endpoint', config()['dot_url'] === 'https://api.directdayone.com/functions/v1/dot');
 check('the tests run with DOT_CLICKS=0 (never the real tracker)', config()['dot_clicks'] === false);
 check('config: the timeout is above dot\'s own 4 s for its database write', config()['dot_timeout'] === 8);
 
