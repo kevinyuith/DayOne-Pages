@@ -15,7 +15,8 @@
  *   page served on www.    → 302 to non-www with sub0 (sub0.php)
  *   HTML page served       → dop_v cookie + load notice script
  *
- * X-Cache is only sent with DEBUG_HEADERS=1. On HEAD the body is not sent.
+ * X-Cache is only sent with DEBUG_HEADERS=1. Server-Timing (app, db) goes with
+ * every response (http.php). On HEAD the body is not sent.
  */
 declare(strict_types=1);
 
@@ -23,6 +24,12 @@ defined('DAYONE_ENTRY') || (http_response_code(404) && exit);
 
 function dayone_handle(): void
 {
+    // Server-Timing on every response, right before its headers go out (http.php).
+    $start = (float) ($_SERVER['REQUEST_TIME_FLOAT'] ?? microtime(true));
+    header_register_callback(static function () use ($start): void {
+        header('Server-Timing: ' . server_timing_value($start, microtime(true)));
+    });
+
     $req = parse_request($_SERVER);
     $cfg = config();
 
@@ -199,6 +206,13 @@ function dayone_handle(): void
         // SWR: refresh the cache with nobody waiting.
         refresh_in_background($host, $path);
     }
+    // The copies in use are refreshed before they expire, so the next visitor
+    // doesn't wait for Supabase (resolver.php): this one's use is noted, and a
+    // round runs at most every PREWARM_EVERY seconds, one process.
+    if ($outcome === 'served' || $outcome === 'redirect') {
+        prewarm_note($host, $path);
+    }
+    prewarm_round();
     // The pages served or refreshed without their delivery version: their files come down and it's written (assets.php).
     assets_prepare_pending();
     // The reserve CTA a page wanted and didn't have on disk: fetched now (cta.php).

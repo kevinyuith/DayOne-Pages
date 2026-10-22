@@ -177,6 +177,29 @@ function send_response(int $status, array $headers, ?string $body, bool $head): 
     }
 }
 
+/**
+ * Server-Timing (22/10): how long this server took, for the browser to measure
+ * against its own time to first byte (the checkpoint sends both — eval.php),
+ * so a slow page tells the network apart from the server. `app` = from the
+ * request reaching PHP to its headers going out; `db` = the part of it spent
+ * waiting for Supabase's decision (resolver.php), only when there was a wait.
+ * Durations only, in ms: nothing that identifies the server. Sent with every
+ * response (app.php registers it before anything goes out).
+ */
+function server_timing_add(string $name, float $ms): void
+{
+    $GLOBALS['dop_server_timing'][$name] = ($GLOBALS['dop_server_timing'][$name] ?? 0.0) + max(0.0, $ms);
+}
+
+function server_timing_value(float $start, float $now): string
+{
+    $parts = ['app;dur=' . number_format(max(0.0, ($now - $start) * 1000), 1, '.', '')];
+    foreach ($GLOBALS['dop_server_timing'] ?? [] as $name => $ms) {
+        $parts[] = $name . ';dur=' . number_format((float) $ms, 1, '.', '');
+    }
+    return implode(', ', $parts);
+}
+
 /** A minimal page for 404/503/block. No detail that identifies the server. */
 function plain_page(string $title, string $text): string
 {

@@ -547,6 +547,13 @@ same('fingerprint: wd_getter spoofed', 'spoofed', $fpWd['bot']['wd_getter'] ?? n
 $fpNav = eval_device_fingerprint(['ntcp' => 175, 'ntfb' => 225]);
 same('fingerprint: nav connect', 175, $fpNav['env']['nav_connect_ms'] ?? null);
 same('fingerprint: nav ttfb', 225, $fpNav['env']['nav_ttfb_ms'] ?? null);
+// The server's share of that TTFB, from the page's Server-Timing (nsv/ndb/nwb).
+$fpSrv = eval_device_fingerprint(['ntfb' => 225, 'nsv' => 12, 'ndb' => 48, 'nwb' => 61]);
+same('fingerprint: server ms (Server-Timing app)', 12, $fpSrv['env']['nav_server_ms'] ?? null);
+same('fingerprint: db wait ms (Server-Timing db)', 48, $fpSrv['env']['nav_db_ms'] ?? null);
+same('fingerprint: front proxy ms (Server-Timing web)', 61, $fpSrv['env']['nav_web_ms'] ?? null);
+check('fingerprint: no Server-Timing, no server ms', !isset($fpNav['env']['nav_server_ms']) && !isset($fpNav['env']['nav_db_ms']));
+check('checkpoint script reads the Server-Timing', str_contains(EVAL_SCRIPT, eval_obf('serverTiming', EVAL_BUILD_KEY)) && str_contains(EVAL_SCRIPT, eval_obf('nsv', EVAL_BUILD_KEY)));
 check('fingerprint: no conn_reused when ntcp was sent', !isset($fpNav['env']['conn_reused']));
 $fpNavRe = eval_device_fingerprint(['nre' => 1, 'ntfb' => 100]);
 same('fingerprint: conn reused', 1, $fpNavRe['env']['conn_reused'] ?? null);

@@ -23,6 +23,9 @@
  * is served right away — an outage doesn't hold each visitor for the time limit.
  * It's the same resolve the background refresh made, so Supabase gets no more
  * calls; only the visitor who arrives after a quiet spell waits for it (~20 ms).
+ *
+ * The copies in use don't wait for a visitor to expire: a round after a
+ * response refreshes them shortly before (prewarm_round, at the end; 22/10).
  */
 declare(strict_types=1);
 
@@ -56,7 +59,9 @@ function resolve_routes(string $host, string $path, ?callable $refresh = null, ?
     $lock = try_lock("$host|$path");
     if ($lock !== null) {
         try {
+            $t = microtime(true);
             $fresh = $refresh($host, $path, $fallback ? $cfg['revalidate_timeout_ms'] : null);
+            server_timing_add('db', (microtime(true) - $t) * 1000);
             if ($fresh !== null) {
                 supabase_breaker_close();
                 return ['routes' => $fresh, 'gate' => gate_last_refresh_data(), 'xcache' => 'MISS', 'refresh' => false];
@@ -78,6 +83,7 @@ function resolve_routes(string $host, string $path, ?callable $refresh = null, ?
     }
     for ($i = 0; $i < 20; $i++) {
         usleep(100_000);
+        server_timing_add('db', 100.0);
         ['state' => $s, 'entry' => $e] = cache_get_routes($host, $path);
         if ($s === 'FRESH' && cache_has_all_content($e['routes'])) {
             return ['routes' => $e['routes'], 'gate' => $e['gate'] ?? null, 'xcache' => 'HIT', 'refresh' => false];
@@ -267,6 +273,156 @@ function refresh_in_background(string $host, string $path): void
         } else {
             supabase_breaker_trip();
         }
+    } finally {
+        unlock($lock);
+    }
+}
+
+/*
+ * Keeping the copies warm (22/10). An expired copy makes its visitor wait for
+ * Supabase before the response (~55 ms; on 22/10 one visit in five arrived on
+ * an expired copy — a domain with a click a minute is cold at nearly every
+ * click). So the copies in use are refreshed BEFORE they expire, by a round
+ * that runs after a response (any domain's), at most every PREWARM_EVERY
+ * seconds, one process: the visitor finds a fresh copy, and a change still
+ * takes effect within CACHE_TTL (it's the same refresh, only earlier).
+ *
+ * "In use" = asked at least twice, PREWARM_WINDOW (10 min) or less apart, the
+ * last time within PREWARM_WINDOW: a key with a single click in an hour (half
+ * of them, 22/10) would cost two resolves a minute to save nothing. Each
+ * served or redirected request notes its key (prewarm_note: a small file in
+ * cache/used, rewritten at most every PREWARM_NOTE_EVERY seconds, keeping the
+ * previous use); the round refreshes the keys whose copy expires within
+ * PREWARM_LEAD seconds (or is gone — a purge), oldest first, within
+ * PREWARM_BUDGET_MS, each under the key's lock (a visitor refreshing it
+ * wins), and stops at the first failure (the breaker trips, as a visitor's
+ * refresh would). PREWARM=0 turns it off.
+ */
+const PREWARM_EVERY = 5;
+const PREWARM_LEAD = 10;
+const PREWARM_BUDGET_MS = 3000;
+const PREWARM_NOTE_EVERY = 10;
+
+function prewarm_dir(): string
+{
+    return cache_dir() . '/used';
+}
+
+function prewarm_file(string $host, string $path): string
+{
+    return prewarm_dir() . '/' . sha1("$host|$path") . '.json';
+}
+
+/** A request used the copy of (host, path): its use is noted, with the previous one. */
+function prewarm_note(string $host, string $path, ?int $now = null): void
+{
+    if (!config()['prewarm']) {
+        return;
+    }
+    $now ??= time();
+    $file = prewarm_file($host, $path);
+    clearstatcache(true, $file);
+    $last = @filemtime($file);
+    if ($last !== false && $now - $last < PREWARM_NOTE_EVERY) {
+        return;
+    }
+    $json = json_encode(['host' => $host, 'path' => $path, 'prev' => $last === false ? null : $last], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    if ($json !== false && atomic_write($file, $json)) {
+        @touch($file, $now);
+    }
+}
+
+/**
+ * A round: refreshes the copies in use that expire within PREWARM_LEAD
+ * seconds. Returns how many it refreshed (0 when it isn't this process's turn).
+ *
+ * @param (callable(string, string, ?int): ?array)|null $refresh  the refresh (the tests pass a fake Supabase)
+ */
+function prewarm_round(?callable $refresh = null, ?int $now = null): int
+{
+    $cfg = config();
+    if (!$cfg['prewarm']) {
+        return 0;
+    }
+    $now ??= time();
+    $stamp = prewarm_dir() . '/.round';
+    clearstatcache(true, $stamp);
+    $last = @filemtime($stamp);
+    if ($last !== false && $now - $last < PREWARM_EVERY) {
+        return 0;
+    }
+    $lock = try_lock('prewarm');
+    if ($lock === null) {
+        return 0;
+    }
+    try {
+        // Another process may have finished a round between the check and the lock.
+        clearstatcache(true, $stamp);
+        $last = @filemtime($stamp);
+        if ($last !== false && $now - $last < PREWARM_EVERY) {
+            return 0;
+        }
+        if (!is_dir(prewarm_dir()) && !@mkdir(prewarm_dir(), 0750, true) && !is_dir(prewarm_dir())) {
+            return 0;
+        }
+        @touch($stamp, $now);
+        if (supabase_breaker_open()) {
+            return 0;
+        }
+        $refresh ??= 'refresh_routes';
+        $window = $cfg['prewarm_window'];
+        $lead = min(PREWARM_LEAD, intdiv($cfg['cache_ttl'], 3));
+
+        $due = [];
+        foreach (glob(prewarm_dir() . '/*.json') ?: [] as $file) {
+            $used = @filemtime($file);
+            if ($used === false) {
+                continue;
+            }
+            if ($now - $used > $window) {
+                @unlink($file); // not in use anymore: two uses again before it's kept warm
+                continue;
+            }
+            $u = json_decode((string) @file_get_contents($file), true);
+            if (!is_array($u) || !is_string($u['host'] ?? null) || !is_string($u['path'] ?? null)
+                || !is_int($u['prev'] ?? null) || $used - $u['prev'] > $window) {
+                continue;
+            }
+            // The copy's age from its file (written atomically, so mtime = stored_at): no decoding.
+            $stored = @filemtime(routes_file($u['host'], $u['path']));
+            if ($stored === false && host_over_cap($u['host'])) {
+                continue; // a host that isn't cached anymore (cache.php): a refresh wouldn't store it
+            }
+            $age = $stored === false ? PHP_INT_MAX : $now - $stored;
+            if ($age >= $cfg['cache_ttl'] - $lead) {
+                $due[] = [$age, $u['host'], $u['path']];
+            }
+        }
+        usort($due, static fn (array $a, array $b): int => $b[0] <=> $a[0]);
+
+        $t0 = microtime(true);
+        $done = 0;
+        foreach ($due as [, $host, $path]) {
+            if ((microtime(true) - $t0) * 1000 >= PREWARM_BUDGET_MS) {
+                break; // what's left goes next round, still before it expires
+            }
+            $keyLock = try_lock("$host|$path");
+            if ($keyLock === null) {
+                continue; // a visitor's request is refreshing it
+            }
+            try {
+                $ok = $refresh($host, $path, null) !== null;
+            } finally {
+                unlock($keyLock);
+            }
+            if (!$ok) {
+                supabase_breaker_trip();
+                break;
+            }
+            supabase_breaker_close();
+            $done++;
+        }
+        return $done;
     } finally {
         unlock($lock);
     }

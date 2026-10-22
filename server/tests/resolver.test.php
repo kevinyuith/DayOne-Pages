@@ -91,3 +91,107 @@ unlock($held);
 same('another worker refreshing: UPDATING', 'UPDATING', $r['xcache']);
 same('another worker refreshing: Supabase not asked', [], $calls);
 supabase_breaker_close();
+
+// ── Server-Timing (http.php): app = this request in PHP, db = its wait for Supabase ──
+$GLOBALS['dop_server_timing'] = [];
+same('Server-Timing: app only when nothing waited', 'app;dur=12.3', server_timing_value(100.0, 100.0123));
+server_timing_add('db', 30.04);
+server_timing_add('db', 18.02);
+same('Server-Timing: the db waits add up', 'app;dur=12.3, db;dur=48.1', server_timing_value(100.0, 100.0123));
+
+$GLOBALS['dop_server_timing'] = [];
+$calls = [];
+resolver_put_aged('fresh.example', $page, 0);
+resolve_routes('fresh.example', '/', resolver_fake($newer, $calls), true);
+check('Server-Timing: a fresh copy waits for nothing', !isset($GLOBALS['dop_server_timing']['db']));
+resolver_put_aged('expired2.example', $page, 5);
+resolve_routes('expired2.example', '/', resolver_fake($newer, $calls), true);
+check('Server-Timing: an expired copy records its wait for Supabase', isset($GLOBALS['dop_server_timing']['db']));
+$GLOBALS['dop_server_timing'] = [];
+
+// ── Keeping the copies warm (22/10): refreshed before they expire, only the ones in use ──
+/** A fake Supabase that records which keys it was asked for. */
+function prewarm_fake(?array $answer, array &$asked): callable
+{
+    return static function (string $host, string $path, ?int $timeoutMs) use ($answer, &$asked): ?array {
+        $asked[] = "$host$path" . ($timeoutMs === null ? '' : " ($timeoutMs ms)");
+        return $answer;
+    };
+}
+
+/** An entry for (host, /) stored $age seconds before $now: the round reads the age from the file. */
+function prewarm_put_aged(string $host, array $routes, int $now, int $age): void
+{
+    resolver_put_aged($host, $routes, $age);
+    touch(routes_file($host, '/'), $now - $age);
+}
+
+$T = time();
+@unlink(prewarm_dir() . '/.round');
+
+// The use note: written at most every PREWARM_NOTE_EVERY seconds, with the previous use.
+prewarm_note('note.example', '/', $T - 30);
+$u = json_decode((string) file_get_contents(prewarm_file('note.example', '/')), true);
+same('use note: host and path', ['note.example', '/'], [$u['host'] ?? null, $u['path'] ?? null]);
+same('use note: first use has no previous one', [true, null], [array_key_exists('prev', $u), $u['prev'] ?? null]);
+prewarm_note('note.example', '/', $T - 25);
+$u = json_decode((string) file_get_contents(prewarm_file('note.example', '/')), true);
+same('use note: within PREWARM_NOTE_EVERY, not rewritten', [true, null], [array_key_exists('prev', $u), $u['prev'] ?? null]);
+prewarm_note('note.example', '/', $T - 20);
+$u = json_decode((string) file_get_contents(prewarm_file('note.example', '/')), true);
+same('use note: later, the previous use kept', $T - 30, $u['prev'] ?? null);
+@unlink(prewarm_file('note.example', '/'));
+
+// Used twice, the copy about to expire (tests: CACHE_TTL 2) → refreshed, with the full time limit.
+prewarm_note('warm.example', '/', $T - 60);
+prewarm_note('warm.example', '/', $T - 30);
+prewarm_put_aged('warm.example', $page, $T, 5);
+// Used once in the window → left alone (a single click would cost two resolves a minute).
+prewarm_note('once.example', '/', $T - 30);
+prewarm_put_aged('once.example', $page, $T, 5);
+// Used twice but the copy is fresh → not yet.
+prewarm_note('freshw.example', '/', $T - 60);
+prewarm_note('freshw.example', '/', $T - 30);
+prewarm_put_aged('freshw.example', $page, $T, 0);
+// Used twice, the copy gone (a purge) → refreshed first.
+prewarm_note('purged.example', '/', $T - 60);
+prewarm_note('purged.example', '/', $T - 30);
+@unlink(routes_file('purged.example', '/'));
+// Last used before the window → forgotten.
+prewarm_note('old.example', '/', $T - 2000);
+prewarm_note('old.example', '/', $T - 1900);
+prewarm_put_aged('old.example', $page, $T, 5);
+
+$asked = [];
+same('prewarm round: two copies refreshed', 2, prewarm_round(prewarm_fake($newer, $asked), $T));
+same('prewarm round: the gone copy first, then the oldest, full time limit', ['purged.example/', 'warm.example/'], $asked);
+check('prewarm round: a key out of use is forgotten', !is_file(prewarm_file('old.example', '/')));
+check('prewarm round: a key used once is kept noted', is_file(prewarm_file('once.example', '/')));
+
+$asked = [];
+same('prewarm round: at most every PREWARM_EVERY seconds', 0, prewarm_round(prewarm_fake($newer, $asked), $T + 1));
+same('prewarm round: nothing asked off-turn', [], $asked);
+
+// A visitor refreshing the key holds its lock → the round leaves it to the visitor.
+@unlink(prewarm_dir() . '/.round');
+$asked = [];
+$held = try_lock('warm.example|/');
+prewarm_round(prewarm_fake($newer, $asked), $T);
+unlock($held);
+same('prewarm round: a key a visitor is refreshing is skipped', ['purged.example/'], $asked);
+
+// Supabase failing → stops at the first failure and trips the breaker; with it open, no round.
+@unlink(prewarm_dir() . '/.round');
+$asked = [];
+same('prewarm round: Supabase failing refreshes nothing', 0, prewarm_round(prewarm_fake(null, $asked), $T));
+same('prewarm round: stops at the first failure', ['purged.example/'], $asked);
+check('prewarm round: a failure trips the breaker', supabase_breaker_open());
+@unlink(prewarm_dir() . '/.round');
+$asked = [];
+same('prewarm round: breaker open, no round', 0, prewarm_round(prewarm_fake($newer, $asked), $T));
+same('prewarm round: breaker open, Supabase not asked', [], $asked);
+supabase_breaker_close();
+foreach (glob(prewarm_dir() . '/*.json') ?: [] as $f) {
+    @unlink($f);
+}
+@unlink(prewarm_dir() . '/.round');
