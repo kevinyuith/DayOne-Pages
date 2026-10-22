@@ -156,6 +156,21 @@ function strip_content(array $routes): array
     return $routes;
 }
 
+/**
+ * Stores the entry unless the host is over max_paths_per_host — and even then
+ * a path it already has is refreshed: only NEW paths are refused. Until 22/10
+ * the cap refused every write, so a scanner's thousands of paths left the
+ * host's own "/" unrefreshable and every visit waited for Supabase (196 hosts,
+ * travenox.com among them since 21/10 17h UTC).
+ */
+function cache_put_routes_capped(string $host, string $path, array $routes, ?array $gate = null): bool
+{
+    if (!is_file(routes_file($host, $path)) && host_over_cap($host)) {
+        return false;
+    }
+    return cache_put_routes($host, $path, $routes, $gate);
+}
+
 function cache_put_routes(string $host, string $path, array $routes, ?array $gate = null): bool
 {
     $entry = ['v' => 1, 'stored_at' => time(), 'host' => $host, 'path' => $path, 'routes' => strip_content($routes), 'gate' => $gate];
@@ -238,7 +253,43 @@ function cache_has_all_content(array $routes): bool
  */
 function cache_gc_content(int $maxAge): int
 {
-    $dir = cache_dir() . '/content';
+    return cache_gc_tree(cache_dir() . '/content', $maxAge);
+}
+
+/**
+ * Cleanup of the routes entries older than $maxAge (STALE_MAX_AGE): none of
+ * them can stand in for Supabase anymore (cache_get_routes drops one when it's
+ * read), but a path nobody asks again stayed forever — on 22/10, 1.0 of the
+ * 1.4 million entries were over 7 days old and 196 hosts sat past
+ * max_paths_per_host. Run at most every ROUTES_GC_EVERY seconds, after a
+ * response, by one process (app.php). Returns how many were removed.
+ */
+const ROUTES_GC_EVERY = 3600;
+
+function cache_gc_routes_maybe(?int $now = null): ?int
+{
+    $now ??= time();
+    $stamp = cache_dir() . '/routes-gc.at';
+    clearstatcache(true, $stamp);
+    $last = @filemtime($stamp);
+    if ($last !== false && $now - $last < ROUTES_GC_EVERY) {
+        return null;
+    }
+    $lock = try_lock('routes-gc');
+    if ($lock === null) {
+        return null;
+    }
+    try {
+        @touch($stamp, $now);
+        return cache_gc_tree(cache_dir() . '/routes', config()['stale_max_age']);
+    } finally {
+        unlock($lock);
+    }
+}
+
+/** Deletes the files under $dir not modified for more than $maxAge seconds, and the folders left empty. */
+function cache_gc_tree(string $dir, int $maxAge): int
+{
     if (!is_dir($dir)) {
         return 0;
     }

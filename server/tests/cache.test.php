@@ -63,3 +63,30 @@ unlock($l2);
 // Atomic writes leave no temp files.
 $leftovers = glob(cache_dir() . '/routes/*/*/.tmp-*') ?: [];
 same('no temp files', 0, count($leftovers));
+
+// ── The path cap (22/10): a host over max_paths_per_host still refreshes the paths it has ──
+$capHost = 'capped.example';
+$capDir = routes_dir_for_host($capHost);
+@mkdir($capDir, 0750, true);
+cache_put_routes($capHost, '/', [['route_id' => 'old', 'action' => 'SERVE']]);
+for ($i = 0; $i < config()['max_paths_per_host']; $i++) {
+    touch($capDir . '/junk' . $i . '.php');
+}
+check('path cap: the host is over it', host_over_cap($capHost));
+same('path cap: a NEW path is not stored', false, cache_put_routes_capped($capHost, '/.env', [['route_id' => 'x']]));
+check('path cap: the new path left no file', !is_file(routes_file($capHost, '/.env')));
+same('path cap: a path it has is refreshed', true, cache_put_routes_capped($capHost, '/', [['route_id' => 'new', 'action' => 'SERVE']]));
+same('path cap: the refreshed entry is the new one', 'new', cache_get_routes($capHost, '/')['entry']['routes'][0]['route_id'] ?? null);
+remove_tree($capDir);
+
+// ── The routes cleanup: entries older than STALE_MAX_AGE go, at most once an hour ──
+cache_put_routes('gc-old.example', '/', [['route_id' => 'a']]);
+touch(routes_file('gc-old.example', '/'), time() - config()['stale_max_age'] - 5);
+cache_put_routes('gc-new.example', '/', [['route_id' => 'b']]);
+@unlink(cache_dir() . '/routes-gc.at');
+$removed = cache_gc_routes_maybe();
+check('routes cleanup: removed the old entry', is_int($removed) && $removed >= 1 && !is_file(routes_file('gc-old.example', '/')));
+check('routes cleanup: kept the recent one', is_file(routes_file('gc-new.example', '/')));
+check('routes cleanup: the old host folder is gone', !is_dir(routes_dir_for_host('gc-old.example')));
+same('routes cleanup: at most once an hour', null, cache_gc_routes_maybe(time() + 60));
+@unlink(cache_dir() . '/routes-gc.at');

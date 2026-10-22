@@ -249,9 +249,7 @@ function refresh_routes(string $host, string $path, ?int $timeoutMs = null): ?ar
     unset($row);
 
     $routes = strip_content($routes);
-    if (!host_over_cap($host)) {
-        cache_put_routes($host, $path, $routes, $rulesData);
-    }
+    cache_put_routes_capped($host, $path, $routes, $rulesData);
     if (random_int(1, CONTENT_GC_EVERY) === 1) {
         // One day beyond the max age of an expired copy: nothing that could still be served is removed.
         cache_gc_content(config()['stale_max_age'] + 86400);

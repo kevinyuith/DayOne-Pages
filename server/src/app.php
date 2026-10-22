@@ -213,6 +213,8 @@ function dayone_handle(): void
         prewarm_note($host, $path);
     }
     prewarm_round();
+    // The routes entries too old to be used, gone once an hour, so a host's cap fills with live paths (cache.php).
+    cache_gc_routes_maybe();
     // The pages served or refreshed without their delivery version: their files come down and it's written (assets.php).
     assets_prepare_pending();
     // The reserve CTA a page wanted and didn't have on disk: fetched now (cta.php).
