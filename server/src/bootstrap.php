@@ -81,9 +81,10 @@ function config(): array
         return ($v === false || $v === '') ? $default : $v;
     };
     $int = static fn(string $key, int $default): int => (int) ($get($key) ?? $default);
+    $supabaseUrl = rtrim((string) $get('SUPABASE_URL', ''), '/');
 
     $config = [
-        'supabase_url'      => rtrim((string) $get('SUPABASE_URL', ''), '/'),
+        'supabase_url'      => $supabaseUrl,
         'supabase_anon_key' => (string) $get('SUPABASE_ANON_KEY', ''),
         'server_key'        => (string) $get('PAGES_SERVER_KEY', ''),
         'server_id'         => (string) $get('SERVER_ID', ''),
@@ -108,7 +109,10 @@ function config(): array
         'hits_timeout'      => $int('HITS_TIMEOUT', 5),
         // Click events for dayone-main's tracker (dot.php): every page request with a platform click id.
         'dot_clicks'        => $int('DOT_CLICKS', 1) === 1,
-        'dot_url'           => (string) $get('DOT_URL', 'https://api.directdayone.com/functions/v1/dot'),
+        // At the project's own address, like the hits (SUPABASE_URL): no custom domain that can expire or be
+        // pointed elsewhere — cdn.dayone.click expired on 21/10/2026, and on 23/10 a deploy that put it back
+        // lost four hours of clicks while the hits, on SUPABASE_URL, lost none.
+        'dot_url'           => (string) $get('DOT_URL', $supabaseUrl !== '' ? $supabaseUrl . '/functions/v1/dot' : 'https://api.directdayone.com/functions/v1/dot'),
         'dot_timeout'       => $int('DOT_TIMEOUT', 8),
         'sub0_key'          => (string) $get('SUB0_KEY', 'DAYONE'),
     ];

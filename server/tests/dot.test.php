@@ -84,19 +84,24 @@ same('gclid + wbraid: ext_click_id is gclid, wbraid goes too', ['G1', 'W1'], arr
 same('?dotid= wins over the cookie', '11111111-22222222-33333333-09252103', dot_click_payload($dotReq('/?fbclid=x&dotid=11111111-22222222-33333333-09252103', ['HTTP_COOKIE' => 'dotid=aebe26bd-d0245268-71fa28c5-09252103']), [], [])['dotid']);
 check('a malformed dotid is dropped (dot makes one)', !array_key_exists('dotid', dot_click_payload($dotReq('/?fbclid=x', ['HTTP_COOKIE' => 'dotid=<script>']), [], [])));
 same('http when Cloudflare says the visitor came by http', 'http://shop.example/?fbclid=x', dot_click_payload($dotReq('/?fbclid=x'), [], ['HTTP_CF_VISITOR' => '{"scheme":"http"}'])['url']);
-check('config: on by default, the real endpoint', config()['dot_url'] === 'https://api.directdayone.com/functions/v1/dot');
+check('config: on by default, at the project\'s own address (SUPABASE_URL), like the hits', config()['dot_url'] === 'https://testref.supabase.co/functions/v1/dot');
 check('the tests run with DOT_CLICKS=0 (never the real tracker)', config()['dot_clicks'] === false);
 check('config: the timeout is above dot\'s own 4 s for its database write', config()['dot_timeout'] === 8);
 
 // What dot's answer means: queued, worth another try (no answer, a 5xx), or a failure that won't get better.
-same('200 + success: queued', ['ok' => true, 'retry' => false, 'why' => ''], dot_outcome(200, '{"success":true,"queued":true,"msg_id":1}'));
-same('no answer (curl gave up): try again, with curl\'s reason', ['ok' => false, 'retry' => true, 'why' => 'HTTP 0: Operation timed out after 8001 milliseconds'], dot_outcome(0, false, 'Operation timed out after 8001 milliseconds'));
+same('200 + success: queued', ['ok' => true, 'retry' => false, 'later' => false, 'why' => ''], dot_outcome(200, '{"success":true,"queued":true,"msg_id":1}'));
+same('no answer (curl gave up): try again, with curl\'s reason', ['ok' => false, 'retry' => true, 'later' => true, 'why' => 'HTTP 0: Operation timed out after 8001 milliseconds'], dot_outcome(0, false, 'Operation timed out after 8001 milliseconds'));
 same('dot\'s 503 (its database write failed): try again', [false, true], array_values(array_slice(dot_outcome(503, "{\"success\":false,\n\"stage\":\"dot_checkpoint\"}"), 0, 2)));
 same('the answer goes to the log on one line, cut at 200 characters', 'HTTP 503: {"success":false, "stage":"dot_checkpoint"}', dot_outcome(503, "{\"success\":false,\n\"stage\":\"dot_checkpoint\"}")['why']);
 check('a gateway 502/504: try again', dot_outcome(502, '<html>Bad Gateway</html>')['retry'] && dot_outcome(504, '')['retry']);
-check('a 4xx: not again', dot_outcome(400, 'bad')['retry'] === false);
-check('200 with success false (dot couldn\'t read it): not again', dot_outcome(200, '{"success":false,"stage":"parse"}') === ['ok' => false, 'retry' => false, 'why' => 'HTTP 200: {"success":false,"stage":"parse"}']);
-check('200 that isn\'t JSON: not queued', dot_outcome(200, '<html>')['ok'] === false);
+check('200 with success false (dot couldn\'t read it): final, not again and not spooled', dot_outcome(200, '{"success":false,"stage":"parse"}') === ['ok' => false, 'retry' => false, 'later' => false, 'why' => 'HTTP 200: {"success":false,"stage":"parse"}']);
+// dot never answers a 4xx: one comes from what is in front of it (gateway, Cloudflare, a dead domain) — kept for the spool.
+same('a 4xx: not again on the spot, but kept for the spool', [false, false, true], array_values(array_slice(dot_outcome(400, 'bad'), 0, 3)));
+same('23/10: cdn.dayone.click\'s Worker over its daily limit (429 "1027"): kept for the spool', [false, false, true, 'HTTP 429: error code: 1027'], array_values(dot_outcome(429, 'error code: 1027')));
+same('23/10: the domain pointed at another Cloudflare account (403 "1014"): kept for the spool', [false, true], [dot_outcome(403, 'error code: 1014')['retry'], dot_outcome(403, 'error code: 1014')['later']]);
+same('a gateway 401/404 with its own JSON (not dot\'s): kept for the spool', [true, true], [dot_outcome(401, '{"code":401,"message":"Invalid JWT"}')['later'], dot_outcome(404, '{"code":"NOT_FOUND","message":"Requested function was not found"}')['later']]);
+same('200 that isn\'t JSON (a parked domain\'s page): not queued, kept for the spool', [false, false, true], array_values(array_slice(dot_outcome(200, '<html>parked</html>'), 0, 3)));
+same('200 with JSON that isn\'t dot\'s: kept for the spool', true, dot_outcome(200, '{"ok":1}')['later']);
 
 // dot_deliver: a click dot didn't queue is sent again 1 s and 4 s later; only the last failure is reported.
 $dotWaits = [];
@@ -127,12 +132,22 @@ $r = dot_spool_replay(function (string $body) use (&$seen): array {
 }, $t0 + 120);
 same('replay: sends in order, stops at the first one dot still can\'t take (it\'s down), keeps the rest', [['a', 'b'], ['sent' => 1, 'kept' => 2, 'dropped' => 0]], [$seen, $r]);
 same('replay: not again within a minute', null, dot_spool_replay(fn () => ['ok' => true, 'retry' => false, 'why' => ''], $t0 + 150));
-$r = dot_spool_replay(fn (string $body) => str_contains($body, '"c"') ? ['ok' => false, 'retry' => false, 'why' => 'HTTP 400'] : ['ok' => true, 'retry' => false, 'why' => ''], $t0 + 200);
-same('replay: a click refused for good (4xx) is given up; the rest go', ['sent' => 1, 'kept' => 0, 'dropped' => 1], $r);
-same('replay: an empty spool has nothing to do', null, dot_spool_replay(fn () => ['ok' => true, 'retry' => false, 'why' => ''], $t0 + 400));
+$r = dot_spool_replay(fn (string $body) => str_contains($body, '"c"') ? dot_outcome(200, '{"success":false,"stage":"parse"}') : ['ok' => true, 'retry' => false, 'why' => ''], $t0 + 200);
+same('replay: a click dot itself refuses (its 200 success false) is given up; the rest go', ['sent' => 1, 'kept' => 0, 'dropped' => 1], $r);
+dot_spool('{"event":"click","ext_click_id":"d"}', $t0 + 250);
+dot_spool('{"event":"click","ext_click_id":"e"}', $t0 + 250);
+$r = dot_spool_replay(fn () => dot_outcome(429, 'error code: 1027'), $t0 + 300);
+same('replay: the address still answering for dot (a 429) — the round stops, every click is kept', ['sent' => 0, 'kept' => 2, 'dropped' => 0], $r);
+$r = dot_spool_replay(fn () => ['ok' => true, 'retry' => false, 'why' => ''], $t0 + 380);
+same('replay: once the address works, the kept clicks go', ['sent' => 2, 'kept' => 0, 'dropped' => 0], $r);
+same('replay: an empty spool has nothing to do', null, dot_spool_replay(fn () => ['ok' => true, 'retry' => false, 'why' => ''], $t0 + 460));
 dot_spool('{"event":"click","ext_click_id":"old"}', $t0);
 $r = dot_spool_replay(fn () => ['ok' => true, 'retry' => false, 'why' => ''], $t0 + DOT_SPOOL_MAX_AGE + 500);
 same('replay: a click over a day old is given up, not sent', ['sent' => 0, 'kept' => 0, 'dropped' => 1], $r);
 same('deliver: the last failure says whether it is worth sending later', ['tries' => 3, 'why' => 'HTTP 503: x', 'retry' => true], dot_deliver(fn () => dot_outcome(503, 'x'), fn () => null));
+$dotWaits = [];
+same('deliver: a 429 is not tried again on the spot (no wait), but is worth sending later (spooled)', [['tries' => 1, 'why' => 'HTTP 429: error code: 1027', 'retry' => true], []],
+    [dot_deliver(fn () => dot_outcome(429, 'error code: 1027'), $dotSleep), $dotWaits]);
+same('deliver: dot\'s own refusal is reported at once and not spooled', ['tries' => 1, 'why' => 'HTTP 200: {"success":false}', 'retry' => false], dot_deliver(fn () => dot_outcome(200, '{"success":false}'), fn () => null));
 @unlink(dot_spool_path());
 @unlink(cache_dir() . '/dot-spool.replay');

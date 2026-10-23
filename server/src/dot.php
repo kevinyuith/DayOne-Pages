@@ -1,7 +1,7 @@
 <?php
 /**
  * Click events for dayone-main's tracker, the "dot" edge function
- * (DOT_URL, https://api.directdayone.com/functions/v1/dot).
+ * (DOT_URL; by default at the project's own address, SUPABASE_URL/functions/v1/dot).
  *
  * Every page request (.html, .php or no extension) whose URL carries a
  * platform click id (CLICK_ID_PARAMS: ref_id, ext_click_id, gclid, wbraid,
@@ -37,8 +37,10 @@
  * (cache/dot-spool.jsonl, with its own timestamp, so dot records it at the
  * click's time) and goes again after a later response, at most once a minute
  * (dot_spool_replay) — dot's outages (PGRST002 while PostgREST reloads its
- * schema cache, connections exhausted) have lasted up to 20 minutes. Only a
- * click given up (over a day old, or refused for good) goes to the log. DOT_CLICKS=0
+ * schema cache, connections exhausted) have lasted up to 20 minutes. So does
+ * any answer that isn't dot's own (dot_outcome): a 4xx or a 429 comes from what
+ * is in front of it, not from dot. Only a click given up (over a day old, or
+ * refused by dot itself) goes to the log. DOT_CLICKS=0
  * turns it off (tests and local runs must never feed the real tracker).
  */
 declare(strict_types=1);
@@ -250,20 +252,33 @@ const DOT_TRY_WAITS = [0, 1, 4];
 
 /**
  * What one try's answer means: ['ok' => dot queued the click, 'retry' => worth
- * another try, 'why' => for the log]. Worth another try: no answer (curl gave
- * up — the timeout, a connection error) or a 5xx (dot's 503: its own write to
- * the database failed, "Retry-After: 1"). A 4xx, or a 200 with success false
- * (dot couldn't read the body), won't get better by sending it again.
+ * another try right away, 'later' => worth keeping in the spool, 'why' => for
+ * the log]. Worth another try: no answer (curl gave up — the timeout, a
+ * connection error) or a 5xx (dot's 503: its own write to the database failed,
+ * "Retry-After: 1").
+ *
+ * dot itself only answers 200 (queued, or success false) or 503. Any other
+ * answer comes from what is in front of it — the Supabase gateway, Cloudflare,
+ * a domain that expired or points elsewhere (23/10: cdn.dayone.click answered
+ * 429 "error code: 1027" for four hours, then 403 "error code: 1014"; a parked
+ * domain answers 200 with a page) — and says nothing about the click: it isn't
+ * tried again on the spot, but it waits in the spool for the address to work.
+ * Only dot's own 200 with success false (it couldn't read the body) is final.
  */
 function dot_outcome(int $status, string|false $raw, string $curlError = ''): array
 {
-    if ($raw !== false && $status === 200 && (json_decode($raw, true)['success'] ?? false) === true) {
-        return ['ok' => true, 'retry' => false, 'why' => ''];
+    $json = is_string($raw) ? json_decode($raw, true) : null;
+    if ($status === 200 && is_array($json) && ($json['success'] ?? null) === true) {
+        return ['ok' => true, 'retry' => false, 'later' => false, 'why' => ''];
     }
     if ($raw === false || $status === 0) {
-        return ['ok' => false, 'retry' => true, 'why' => 'HTTP 0: ' . ($curlError !== '' ? $curlError : 'no answer')];
+        return ['ok' => false, 'retry' => true, 'later' => true, 'why' => 'HTTP 0: ' . ($curlError !== '' ? $curlError : 'no answer')];
     }
-    return ['ok' => false, 'retry' => $status >= 500, 'why' => "HTTP $status: " . mb_substr(preg_replace('/\s+/', ' ', $raw) ?? '', 0, 200)];
+    $why = "HTTP $status: " . mb_substr(preg_replace('/\s+/', ' ', $raw) ?? '', 0, 200);
+    if ($status === 200 && is_array($json) && array_key_exists('success', $json)) {
+        return ['ok' => false, 'retry' => false, 'later' => false, 'why' => $why];
+    }
+    return ['ok' => false, 'retry' => $status >= 500, 'later' => true, 'why' => $why];
 }
 
 /**
@@ -290,7 +305,7 @@ function dot_deliver(callable $try, ?callable $sleep = null): ?array
             break;
         }
     }
-    return ['tries' => $tries, 'why' => $r['why'], 'retry' => $r['retry']];
+    return ['tries' => $tries, 'why' => $r['why'], 'retry' => $r['later'] ?? $r['retry']];
 }
 
 /** The page_view a pre-lander sends: the click's own fields, as event page_view, marked with the origin. */
@@ -393,8 +408,9 @@ function dot_spool(string $body, ?int $now = null): bool
 /**
  * Sends the spooled clicks again (after a response; one process at a time, at
  * most every DOT_SPOOL_EVERY seconds). Stops at the first one dot still can't
- * take — it's still down, the rest wait for the next round — and gives up a
- * click over DOT_SPOOL_MAX_AGE, or one dot refuses for good (a 4xx). $send
+ * take — it's still down, or its address still answers for it (dot_outcome's
+ * `later`), the rest wait for the next round — and gives up a click over
+ * DOT_SPOOL_MAX_AGE, or one dot itself refuses (its 200 with success false). $send
  * (body → dot_outcome) is the tests' stand-in for the POST.
  *
  * @return array{sent: int, kept: int, dropped: int}|null  null = nothing to do now
@@ -438,7 +454,7 @@ function dot_spool_replay(?callable $send = null, ?int $now = null): ?array
         $r = $send($item['body']);
         if ($r['ok']) {
             $sent++;
-        } elseif ($r['retry']) {
+        } elseif ($r['later'] ?? $r['retry']) {
             $down = true;
             $keep[] = rtrim($line, "\n");
         } else {
