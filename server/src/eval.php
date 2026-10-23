@@ -55,6 +55,7 @@ const EVAL_OWN_CONDITIONS = [
     'eval_cookie', 'touch', 'mobile_hint', 'pointer', 'webdriver', 'automation', 'gl_software', 'platform',
     'iframe', 'tostring_tampered', 'proto_poisoned', 'tz_offset', 'net_rtt_min', 'screens',
     'nav_ttfb_above', 'coast', 'device_memory', 'cores', 'battery', 'charging', 'plugins', 'chrome_below', 'nav_connect_min', 'zoomed',
+    'viewports', 'outers', 'viewport_is_screen', 'net_rtt_max', 'net_downlink_below', 'net_downlink_min', 'net_type', 'gl',
     // The on/off detectors (1 = the tell fired). no_js is stripped too, but
     // never evaluated from signals — a POST proves JS ran.
     'no_touch', 'chrome_ua', 'no_chrome_object', 'tz_mismatch', 'tz_not_us', 'no_cookie', 'odd_resolution', EVAL_NO_JS,
@@ -566,6 +567,19 @@ function eval_rules_matched(array $rules, Request $req, ?array $signals, ?array 
  *                 WebViews) = no measurement: undecidable.
  *   screens       list of "WxH": the screen (screen.width x screen.height, CSS px) is one of them, in either
  *                 orientation — 800x600 is headless Chrome's default and the auto-clickers' VM. No size = undecidable.
+ *   viewports/outers  same shape as screens, for the viewport (innerWidth x innerHeight) and the window's outer
+ *                 size (outerWidth x outerHeight) — an emulator's fixed template. No size = undecidable.
+ *   viewport_is_screen 1 = the viewport fills the screen exactly (no browser bars — an emulated phone); only
+ *                 decidable when both sizes are known.
+ *   net_rtt_max   ms: Chrome's RTT estimate is at most this — with net_rtt_min it brackets a throttled profile.
+ *   net_downlink_below Mbps: Chrome's downlink estimate (navigator.connection.downlink) is below this (strictly).
+ *                 No measurement = undecidable.
+ *   net_downlink_min Mbps: Chrome's downlink estimate is at least this — with net_downlink_below it brackets a range.
+ *                 No measurement = undecidable.
+ *   gl            list of WebGL renderer strings (the unmasked renderer, case-insensitive exact match). A farm of
+ *                 identical devices shares a short list of GPUs. Not reported = undecidable.
+ *   net_type      Chrome's effective connection type (navigator.connection.effectiveType: slow-2g, 2g, 3g, 4g).
+ *                 Not reported = undecidable.
  *   nav_ttfb_above ms: the checkpoint page's time to first byte is above this (strictly). No timing = undecidable.
  *   coast         'east' | 'west': the browser's IANA zone is on that US coast (eval_coast). No zone = undecidable.
  *   device_memory the browser's navigator.deviceMemory (GB) is exactly this. Not reported = undecidable.
@@ -700,14 +714,15 @@ function eval_conditions_match(array $cond, Request $req, ?array $signals, ?arra
                 return false; // No timing never confirms a bot.
             }
             $ok = $sig['nav_ttfb'] > (int) $want;
-        } elseif ($key === 'screens') {
-            if (!isset($sig['screen'])) {
+        } elseif ($key === 'screens' || $key === 'viewports' || $key === 'outers') {
+            $sizeKey = ['screens' => 'screen', 'viewports' => 'viewport', 'outers' => 'outer'][$key];
+            if (!isset($sig[$sizeKey])) {
                 if ($allowPending) {
                     continue;
                 }
-                return false; // No screen size never confirms a bot.
+                return false; // No size never confirms a bot.
             }
-            [$w, $h] = $sig['screen'];
+            [$w, $h] = $sig[$sizeKey];
             $ok = false;
             foreach (is_array($want) ? $want : [] as $res) {
                 if (is_string($res) && preg_match('/^(\d+)x(\d+)$/', strtolower($res), $m) === 1
@@ -716,6 +731,52 @@ function eval_conditions_match(array $cond, Request $req, ?array $signals, ?arra
                     break;
                 }
             }
+        } elseif ($key === 'net_rtt_max') {
+            if (!isset($sig['net_rtt'])) {
+                if ($allowPending) {
+                    continue;
+                }
+                return false; // No measurement never confirms a bot.
+            }
+            $ok = (int) $sig['net_rtt'] <= (int) $want;
+        } elseif ($key === 'net_downlink_below') {
+            if (!isset($sig['net_downlink'])) {
+                if ($allowPending) {
+                    continue;
+                }
+                return false; // No measurement never confirms a bot.
+            }
+            $ok = (float) $sig['net_downlink'] < (float) $want;
+        } elseif ($key === 'net_downlink_min') {
+            if (!isset($sig['net_downlink'])) {
+                if ($allowPending) {
+                    continue;
+                }
+                return false; // No measurement never confirms a bot.
+            }
+            $ok = (float) $sig['net_downlink'] >= (float) $want;
+        } elseif ($key === 'gl') {
+            if (!isset($sig['gl'])) {
+                if ($allowPending) {
+                    continue;
+                }
+                return false; // Not reported never confirms a bot.
+            }
+            $ok = false;
+            foreach (is_array($want) ? $want : [] as $renderer) {
+                if (is_string($renderer) && strcasecmp($renderer, $sig['gl']) === 0) {
+                    $ok = true;
+                    break;
+                }
+            }
+        } elseif ($key === 'net_type') {
+            if (!isset($sig['net_type'])) {
+                if ($allowPending) {
+                    continue;
+                }
+                return false; // Not reported never confirms a bot.
+            }
+            $ok = is_string($want) && $sig['net_type'] === $want;
         } else {
             if (!array_key_exists($key, $sig)) {
                 if ($allowPending) {
@@ -732,6 +793,7 @@ function eval_conditions_match(array $cond, Request $req, ?array $signals, ?arra
                 'tz_offset' => (int) $got === (int) $want,
                 default => ((int) $got === 1) === ((int) $want === 1),
             };
+            // screen/viewport/outer sizes aren't scalar: they're handled above.
         }
         if (!$ok) {
             return false;
@@ -916,6 +978,16 @@ function eval_signal_values(?array $signals, ?array $stored): array
     if (isset($src['nrtt']) && (int) $src['nrtt'] > 0) $out['net_rtt'] = (int) $src['nrtt'];
     // The screen's size [width, height]; 0 = the browser didn't say.
     if (isset($src['sw'], $src['sh']) && (int) $src['sw'] > 0 && (int) $src['sh'] > 0) $out['screen'] = [(int) $src['sw'], (int) $src['sh']];
+    // The viewport and the window's outer size, same deal.
+    if (isset($src['vw'], $src['vh']) && (int) $src['vw'] > 0 && (int) $src['vh'] > 0) $out['viewport'] = [(int) $src['vw'], (int) $src['vh']];
+    if (isset($src['ow'], $src['oh']) && (int) $src['ow'] > 0 && (int) $src['oh'] > 0) $out['outer'] = [(int) $src['ow'], (int) $src['oh']];
+    // viewport_is_screen: the viewport fills the screen exactly (no browser bars) — an emulated phone.
+    if (isset($out['screen'], $out['viewport'])) $out['viewport_is_screen'] = $out['screen'] === $out['viewport'] ? 1 : 0;
+    // Chrome's downlink estimate (Mbps); 0 = it hasn't measured.
+    if (isset($src['ndl']) && (is_int($src['ndl']) || is_float($src['ndl'])) && (float) $src['ndl'] > 0) $out['net_downlink'] = (float) $src['ndl'];
+    // Chrome's effective connection type (slow-2g / 2g / 3g / 4g); not reported = undecidable.
+    if (isset($src['gl']) && is_string($src['gl']) && $src['gl'] !== '') $out['gl'] = $src['gl'];
+    if (isset($src['net']) && is_string($src['net']) && $src['net'] !== '') $out['net_type'] = strtolower($src['net']);
     if (isset($src['tze']) && is_string($src['tze']) && $src['tze'] !== '') {
         $out['tze'] = strtolower($src['tze']);
         // tz_not_us: the zone is outside the home list (US + territories, CA, MX, nearby Caribbean).

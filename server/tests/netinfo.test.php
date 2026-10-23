@@ -84,6 +84,16 @@ check('all together (AND): AWS by ASN + hostname + range', rule_conditions_match
 $netMemo = [];
 check('cheap conditions first: a failing UA never reaches the ASN lookup', !rule_conditions_match(['user_agent' => 'nomatchxyz', 'asns' => [16509]], $netReq('192.0.2.200')) && !isset(netinfo_memo()['192.0.2.200']));
 
+// Before the response a rule only reads the cached hostname: a new IP is never looked up there (the log does it after).
+check('hostname not cached yet: no match, either way', !rule_conditions_match(['hostname' => '.'], $netReq('192.0.2.201')) && !rule_conditions_match(['hostname' => 'x', 'hostname_mode' => 'block'], $netReq('192.0.2.201')));
+check('hostname not cached yet: no lookup', !array_key_exists('hostname_at', netinfo_memo()['192.0.2.201'] ?? []));
+$netMemo = &netinfo_memo();
+$netMemo['192.0.2.201'] = ['hostname' => 'cache.google.com', 'hostname_at' => time()];
+check('the IP\'s next click: the hostname the log cached is checked', rule_conditions_match(['hostname' => '\.google\.com$'], $netReq('192.0.2.201')));
+same('cached hostname: private IP has none, without a lookup', '', netinfo_hostname_cached('10.0.0.1'));
+same('cached hostname: invalid IP is unknown', null, netinfo_hostname_cached('not-an-ip'));
+$netMemo = [];
+
 // Private IPs: no ASN, no hostname, without any query.
 same('private IP: ASN none (0)', 0, netinfo_asn('10.0.0.1', 50));
 same('private IP: no hostname', '', netinfo_hostname('10.0.0.1', 50));

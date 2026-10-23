@@ -525,9 +525,10 @@ function rule_conditions_match(array $cond, Request $req): bool
         }
     }
 
-    // ASN and hostname are network lookups (netinfo.php): last, so they only
-    // run when everything else matched. Unknown (lookup failed) or none (no
-    // ASN) can't be told: the condition doesn't match — never flag on a guess.
+    // ASN and hostname come from the network (netinfo.php): last, so they only
+    // run when everything else matched. Unknown (lookup failed, or a hostname
+    // not cached yet) or none (no ASN) can't be told: the condition doesn't
+    // match — never flag on a guess.
     if (isset($cond['asns'])) {
         $asn = netinfo_asn($req->ip, netinfo_rule_timeout());
         if (!$asn) {
@@ -540,7 +541,8 @@ function rule_conditions_match(array $cond, Request $req): bool
     }
     if (isset($cond['hostname'])) {
         // '' = the IP has no hostname: it matches nothing ("doesn't match" is true).
-        $host = netinfo_hostname($req->ip, netinfo_rule_timeout());
+        // Only the cached PTR: no lookup holds the response (the log looks it up after).
+        $host = netinfo_hostname_cached($req->ip);
         if ($host === null) {
             return false;
         }

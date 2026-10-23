@@ -5,11 +5,11 @@
  * PTR) — for the rules and the traffic log, plus IP/CIDR matching for the rules.
  *
  * A small DNS client over UDP with a timeout: dns_get_record and
- * gethostbyaddr take none, and a rule needs the answer BEFORE the response
- * (a slow resolver would hold the visitor). Each answer is kept per IP on
- * disk (cache/ip/…: a day; a failed lookup, 10 minutes) and in memory for the
- * request, so a rule and the log after the response don't look the same IP
- * up twice.
+ * gethostbyaddr take none. Each answer is kept per IP on disk (cache/ip/…: a
+ * day; a failed lookup, 10 minutes) and in memory for the request, so a rule
+ * and the log after the response don't look the same IP up twice. Before the
+ * response a rule only reads the hostname the cache already has
+ * (netinfo_hostname_cached): the log looks it up after the response.
  *
  * A lookup that fails (timeout, SERVFAIL, no resolver) is null = unknown; a
  * name that doesn't exist (NXDOMAIN, or a private IP) is an answer: no ASN (0)
@@ -21,7 +21,7 @@ defined('DAYONE_ENTRY') || (http_response_code(404) && exit);
 
 const NETINFO_TTL = 86400;
 const NETINFO_FAIL_TTL = 600;
-/** After the response (the log): no one is waiting. Before it, a rule waits netinfo_rule_timeout(). */
+/** After the response (the log): no one is waiting. Before it, a rule only waits for the ASN over DNS (netinfo_rule_timeout()). */
 const NETINFO_LOG_TIMEOUT_MS = 1500;
 
 const DNS_TYPE_PTR = 12;
@@ -29,7 +29,7 @@ const DNS_TYPE_TXT = 16;
 
 // ── ASN and hostname, cached per IP ─────────────────────────────────────────
 
-/** How long a rule may wait for a lookup, before the response: NETINFO_RULE_TIMEOUT_MS (50–3000), 400 ms by default. */
+/** How long a rule may wait for the ASN over DNS (only without the local table), before the response: NETINFO_RULE_TIMEOUT_MS (50–3000), 400 ms by default. */
 function netinfo_rule_timeout(): int
 {
     $v = (int) getenv('NETINFO_RULE_TIMEOUT_MS');
@@ -91,6 +91,24 @@ function netinfo_hostname(string $ip, int $timeoutMs): ?string
         $e = netinfo_store($ip, ['hostname' => $host, 'hostname_at' => time(), 'hostname_wait' => $timeoutMs]);
     }
     return $e['hostname'];
+}
+
+/**
+ * The hostname a rule sees before the response: only what the per-IP cache
+ * already knows, never a lookup. A PTR lookup there held every new IP's
+ * response (Google's clicks, the only platform with hostname rules: median
+ * 175 ms vs 150 for an IP already cached, up to the 400 ms timeout — 19/10).
+ * The log looks the hostname up after the response (reverse_dns) and caches
+ * it, so the IP's next click is checked; until then it's null = unknown and
+ * the condition doesn't match.
+ */
+function netinfo_hostname_cached(string $ip): ?string
+{
+    if (ptr_name($ip) === null) {
+        return filter_var($ip, FILTER_VALIDATE_IP) === false ? null : '';
+    }
+    $e = netinfo_entry($ip);
+    return netinfo_fresh($e, 'hostname') ? $e['hostname'] : null;
 }
 
 /**

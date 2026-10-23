@@ -450,6 +450,64 @@ check('screens: 0x0 is undecidable', !eval_conditions_match(['screens' => ['800x
 check('screens: unknown stays pending for the checkpoint', eval_conditions_match(['screens' => ['800x600']], $req, null, null, true));
 check('screens: from a stored entry', eval_conditions_match(['screens' => ['800x600']], $req, null, ['sw' => 800, 'sh' => 600]));
 check('screens: the request walk skips it quietly', !rule_conditions_match(['sub11' => 'taboola', 'screens' => ['800x600']], $req));
+
+// The viewport (vw x vh) and the window's outer size (ow x oh), same shape as screens.
+check('viewports: 1366x768 fires', eval_conditions_match(['viewports' => ['1366x768']], $req, ['vw' => 1366, 'vh' => 768], null));
+check('viewports: rotated (768x1366) fires', eval_conditions_match(['viewports' => ['1366x768']], $req, ['vw' => 768, 'vh' => 1366], null));
+check('viewports: 1920x911 does not', !eval_conditions_match(['viewports' => ['1366x768']], $req, ['vw' => 1920, 'vh' => 911], null));
+check('viewports: no size is undecidable', !eval_conditions_match(['viewports' => ['1366x768']], $req, ['mtp' => 0], null));
+check('viewports: 0x0 is undecidable', !eval_conditions_match(['viewports' => ['1366x768']], $req, ['vw' => 0, 'vh' => 0], null));
+check('viewports: unknown stays pending for the checkpoint', eval_conditions_match(['viewports' => ['1366x768']], $req, null, null, true));
+check('viewports: from a stored entry', eval_conditions_match(['viewports' => ['1366x768']], $req, null, ['vw' => 1366, 'vh' => 768]));
+check('outers: 1366x907 fires', eval_conditions_match(['outers' => ['1366x907']], $req, ['ow' => 1366, 'oh' => 907], null));
+check('outers: 1920x1032 does not', !eval_conditions_match(['outers' => ['1366x907']], $req, ['ow' => 1920, 'oh' => 1032], null));
+check('outers: no size is undecidable', !eval_conditions_match(['outers' => ['1366x907']], $req, ['mtp' => 0], null));
+check('outers: 0x0 is undecidable', !eval_conditions_match(['outers' => ['1366x907']], $req, ['ow' => 0, 'oh' => 0], null));
+check('viewports/outers: the request walk skips them quietly', !rule_conditions_match(['sub11' => 'taboola', 'viewports' => ['1366x768'], 'outers' => ['1366x907']], $req));
+
+// viewport_is_screen: the viewport fills the screen exactly (an emulated phone, no browser bars).
+check('viewport_is_screen: 360x601 == 360x601 fires', eval_conditions_match(['viewport_is_screen' => 1], $req, ['sw' => 360, 'sh' => 601, 'vw' => 360, 'vh' => 601], null));
+check('viewport_is_screen: 0 (a bar present) fires', eval_conditions_match(['viewport_is_screen' => 0], $req, ['sw' => 360, 'sh' => 640, 'vw' => 360, 'vh' => 601], null));
+check('viewport_is_screen: a bar present does not fire 1', !eval_conditions_match(['viewport_is_screen' => 1], $req, ['sw' => 360, 'sh' => 640, 'vw' => 360, 'vh' => 601], null));
+check('viewport_is_screen: no sizes is undecidable', !eval_conditions_match(['viewport_is_screen' => 1], $req, ['mtp' => 0], null));
+check('viewport_is_screen: screen alone is undecidable', !eval_conditions_match(['viewport_is_screen' => 1], $req, ['sw' => 360, 'sh' => 601], null));
+check('viewport_is_screen: unknown stays pending for the checkpoint', eval_conditions_match(['viewport_is_screen' => 1], $req, null, null, true));
+
+// net_rtt_max: Chrome's RTT estimate at most this (with net_rtt_min it brackets a throttled profile).
+check('net_rtt_max: 100 ≤ 150 fires', eval_conditions_match(['net_rtt_max' => 150], $req, ['nrtt' => 100], null));
+check('net_rtt_max: exactly 150 fires (at most)', eval_conditions_match(['net_rtt_max' => 150], $req, ['nrtt' => 150], null));
+check('net_rtt_max: 200 does not', !eval_conditions_match(['net_rtt_max' => 150], $req, ['nrtt' => 200], null));
+check('net_rtt_max: 0 (no measurement) is undecidable', !eval_conditions_match(['net_rtt_max' => 150], $req, ['nrtt' => 0], null));
+check('net_rtt_max: no nrtt is undecidable', !eval_conditions_match(['net_rtt_max' => 150], $req, ['mtp' => 0], null));
+check('net_rtt_max: unknown stays pending for the checkpoint', eval_conditions_match(['net_rtt_max' => 150], $req, null, null, true));
+check('net_rtt bracket: 100..150 catches 150, not 50', eval_conditions_match(['net_rtt_min' => 100, 'net_rtt_max' => 150], $req, ['nrtt' => 150], null)
+    && !eval_conditions_match(['net_rtt_min' => 100, 'net_rtt_max' => 150], $req, ['nrtt' => 50], null));
+
+// net_downlink_below: Chrome's downlink estimate (Mbps) strictly below this.
+check('net_downlink_below: 1.5 < 2 fires', eval_conditions_match(['net_downlink_below' => 2], $req, ['ndl' => 1.5], null));
+check('net_downlink_below: 2 is not below 2', !eval_conditions_match(['net_downlink_below' => 2], $req, ['ndl' => 2], null));
+check('net_downlink_below: 10 does not', !eval_conditions_match(['net_downlink_below' => 2], $req, ['ndl' => 10], null));
+check('net_downlink_below: 0 (no measurement) is undecidable', !eval_conditions_match(['net_downlink_below' => 2], $req, ['ndl' => 0], null));
+check('net_downlink_below: no ndl (iOS) is undecidable', !eval_conditions_match(['net_downlink_below' => 2], $req, ['mtp' => 0], null));
+check('net_downlink_below: unknown stays pending for the checkpoint', eval_conditions_match(['net_downlink_below' => 2], $req, null, null, true));
+
+// net_downlink_min: with net_downlink_below it brackets a range.
+check('net_downlink_min: 1.5 >= 1.4 fires', eval_conditions_match(['net_downlink_min' => 1.4], $req, ['ndl' => 1.5], null));
+check('net_downlink_min: 1.3 does not', !eval_conditions_match(['net_downlink_min' => 1.4], $req, ['ndl' => 1.3], null));
+check('net_downlink_min: no ndl is undecidable', !eval_conditions_match(['net_downlink_min' => 1.4], $req, ['mtp' => 0], null));
+
+// gl: the WebGL renderer, case-insensitive exact match against a list.
+check('gl: listed renderer fires', eval_conditions_match(['gl' => ['Mali-G71', 'Apple GPU']], $req, ['gl' => 'mali-g71'], null));
+check('gl: unlisted renderer does not', !eval_conditions_match(['gl' => ['Mali-G71']], $req, ['gl' => 'Adreno (TM) 740'], null));
+check('gl: a substring is not a match', !eval_conditions_match(['gl' => ['Mali-G71']], $req, ['gl' => 'Mali-G710'], null));
+check('gl: not reported is undecidable', !eval_conditions_match(['gl' => ['Mali-G71']], $req, ['mtp' => 0], null));
+
+// net_type: Chrome's effective connection type (net).
+check('net_type: 4g fires', eval_conditions_match(['net_type' => '4g'], $req, ['net' => '4g'], null));
+check('net_type: 3g does not', !eval_conditions_match(['net_type' => '4g'], $req, ['net' => '3g'], null));
+check('net_type: not reported is undecidable', !eval_conditions_match(['net_type' => '4g'], $req, ['mtp' => 0], null));
+check('net_type: unknown stays pending for the checkpoint', eval_conditions_match(['net_type' => '4g'], $req, null, null, true));
+check('net_type: from a stored entry', eval_conditions_match(['net_type' => '4g'], $req, null, ['net' => '4G']));
 // Through the gate: Taboola + Windows + an 800x600 screen (the AT&T Mobility
 // auto-clicker, headless Chrome's default window).
 $winRule = ['sub11' => 'taboola', 'user_agent' => 'Windows NT', 'screens' => ['800x600']];
@@ -467,6 +525,22 @@ $wide = $winClick();
 $wide->evalSignals = ['sw' => 1920, 'sh' => 1080, 'vw' => 1903, 'vh' => 945, 'mtp' => 0];
 [, , , , $route] = decide($root, $wide, $winGate);
 same('screens gate: 1920x1080 → the funnel', 'GATE', $route['match_type']);
+
+// Through the gate: the emulated-desktop template (A1) — Google + screen
+// 1920x1080 + viewport 1366x768 + outer 1366x907, battery 100% charging.
+$emuRule = ['sub11_in' => ['google'], 'battery' => 100, 'charging' => 1, 'screens' => ['1920x1080'], 'viewports' => ['1366x768'], 'outers' => ['1366x907']];
+$emuGate = array_merge($gate, ['eval_rules' => [['name' => 'Emulated desktop template 1366x907', 'label' => 'Suspicious', 'reason' => 'emulated profile', 'tags' => ['click-farm'], 'conditions' => $emuRule]]]);
+$ggClick = static fn (): Request => make_request(['REQUEST_URI' => '/?sub1=' . rawurlencode('x[F23]') . '&sub11=Google']);
+[, , , , $route] = decide($root, $ggClick(), $emuGate);
+same('emu gate: a Google click gets the checkpoint', 'checkpoint', $route['_eval'] ?? null);
+$emu = $ggClick();
+$emu->evalSignals = ['sw' => 1920, 'sh' => 1080, 'vw' => 1366, 'vh' => 768, 'ow' => 1366, 'oh' => 907, 'bat' => 100, 'batc' => 1, 'mtp' => 0];
+[, , , , $route] = decide($root, $emu, $emuGate);
+same('emu gate: the template → the safe page, flagged', ['GATE-SAFE', 'Emulated desktop template 1366x907'], [$route['match_type'], $route['_rule'] ?? null]);
+$real = $ggClick();
+$real->evalSignals = ['sw' => 1920, 'sh' => 1080, 'vw' => 1920, 'vh' => 911, 'ow' => 1920, 'oh' => 1032, 'bat' => 100, 'batc' => 1, 'mtp' => 0];
+[, , , , $route] = decide($root, $real, $emuGate);
+same('emu gate: a real desktop → the funnel', 'GATE', $route['match_type']);
 
 // no_js is never decided by signals (the GET-side walk handles it).
 check('no_js: not a signal condition', !eval_conditions_match(['no_js' => 1], $req, ['mtp' => 0], null));
