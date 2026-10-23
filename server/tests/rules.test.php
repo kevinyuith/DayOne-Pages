@@ -215,6 +215,36 @@ same('active: dop_funnel is ignored', ['GATE-SAFE', 'home01', 'no_funnel_token']
 [, , , , $route] = decide($root, make_request(['REQUEST_URI' => '/?dop_funnel=F23']), $locked);
 same('locked: dop_funnel is ignored', ['GATE-SAFE', 'domain_locked'], [$route['match_type'], $route['_gate_reason'] ?? null]);
 
+// ?dop_page= (the dashboard's preview) pins one page of the split on an
+// UNLOCKED domain: that page every time, no draw and no dop_pg cookie.
+$pinned = [];
+for ($i = 0; $i < 30; $i++) {
+    [$st, $hd, , $outcome, $route] = decide($root, make_request(['REQUEST_URI' => "/?dop_funnel=F23&dop_page=$pgB"]), $unlocked);
+    $pinned[$route['content_hash'] . '|' . ($route['page_id'] ?? '') . '|' . $st . '|' . $route['match_type']] = true;
+}
+same('unlocked, pinned page: always that page', ["fade02|$pgB|200|GATE"], array_keys($pinned));
+check('unlocked, pinned page: no dop_pg cookie', !str_contains(json_encode($hd['Set-Cookie'] ?? []), 'dop_pg='));
+same('unlocked, pinned page: the funnel logged', 'F23', $route['_funnel'] ?? null);
+check('unlocked, pinned page: a funnel page (beacon)', beacon_applies($route, make_request(['REQUEST_URI' => "/?dop_funnel=F23&dop_page=$pgB"])));
+// It wins over the visitor's earlier draw (dop_pg), any case, whatever named the funnel.
+[, , , , $route] = decide($root, make_request(['REQUEST_URI' => '/?dop_funnel=F23&dop_page=' . strtoupper($pgB), 'HTTP_COOKIE' => "dop_pg=$pgA"]), $unlocked);
+same('unlocked, pinned page: over dop_pg, any case', 'fade02', $route['content_hash']);
+[, , , , $route] = decide($root, make_request(['REQUEST_URI' => "/?sub1=x[F23]&dop_page=$pgA", 'HTTP_COOKIE' => "dop_pg=$pgB"]), $unlocked);
+same('unlocked, pinned page: with the sub1 token', ['GATE', 'fade01'], [$route['match_type'], $route['content_hash']]);
+[, , , , $route] = decide($root, make_request(['REQUEST_URI' => "/?dop_page=$pgB", 'HTTP_COOKIE' => "dop_pg=$pgA"]), [...$unlocked, 'default_funnel' => 'F23']);
+same('unlocked, pinned page: with the default funnel', ['GATE', 'fade02'], [$route['match_type'], $route['content_hash']]);
+// A page the split doesn't have (draft, paused, another funnel's): the split draws as usual.
+[, $hd, , , $route] = decide($root, make_request(['REQUEST_URI' => '/?dop_funnel=F23&dop_page=33333333-cccc-4ccc-8ccc-cccccccccccc', 'HTTP_COOKIE' => "dop_pg=$pgB"]), $unlocked);
+same('unlocked, page not in the split: the visitor\'s draw', ['GATE', 'fade02'], [$route['match_type'], $route['content_hash']]);
+[, $hd, , , $route] = decide($root, make_request(['REQUEST_URI' => '/?dop_funnel=F23&dop_page=33333333-cccc-4ccc-8ccc-cccccccccccc']), $unlocked);
+check('unlocked, page not in the split: drawn, with dop_pg', in_array($route['content_hash'], ['fade01', 'fade02'], true) && str_contains(json_encode($hd['Set-Cookie'] ?? []), 'dop_pg='));
+// Only UNLOCKED reads dop_page: an ACTIVE domain's A/B test keeps the visitor's draw.
+[, , , , $route] = decide($root, make_request(['REQUEST_URI' => "/?sub1=x[F23]&dop_page=$pgB", 'HTTP_COOKIE' => "dop_pg=$pgA"]), $gate);
+same('active: dop_page is ignored', ['GATE', 'fade01'], [$route['match_type'], $route['content_hash']]);
+same('picker page: lowercased, trimmed', $pgB, picker_page(['dop_page' => ' ' . strtoupper($pgB) . ' ']));
+same('picker page: not a uuid', null, picker_page(['dop_page' => 'F23']));
+same('picker page: none', null, picker_page([]));
+
 // The domain's default funnel (settings.default_funnel, in the gate data): a
 // click whose sub1 names no funnel goes to it — the picker never shows.
 $unlockedDefault = [...$unlockedNamed, 'default_funnel' => 'F23'];

@@ -17,7 +17,8 @@
  * it has no live page); a page request whose sub1 names no funnel goes to the
  * domain's default funnel (gate_default_funnel) or, on a domain without one,
  * gets the funnel picker (picker.php) and goes to the one picked
- * (?dop_funnel=). ACTIVE is the behavior below.
+ * (?dop_funnel=); ?dop_page= pins one page of the funnel's split there (the
+ * dashboard's preview — picker_pin_page). ACTIVE is the behavior below.
  *
  * The rules walk: the first one whose conditions ALL match marks the click
  * with the rule's LABEL and it gets the domain's page at the requested slug.
@@ -181,6 +182,11 @@ function gate_pick(array $routes, array $gate, Request $req): ?array
         }
         // No token, or a funnel without a live split: the domain's page at "/".
         return gate_flag_route($domainPage, GATE_SAFE_MATCH, ['_funnel' => $code, '_gate_reason' => $code === null ? 'no_funnel_token' : 'funnel_not_live']);
+    }
+    // An UNLOCKED domain's ?dop_page= (the dashboard's preview): that page of
+    // the split, no draw. Only a page the split has; any other id draws as usual.
+    if ($status === 'UNLOCKED') {
+        $split = picker_pin_page($split, $params);
     }
 
     // The device checkpoint (eval.php): with eval rules in the gate data, the

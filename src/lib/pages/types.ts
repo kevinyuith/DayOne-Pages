@@ -68,7 +68,8 @@ export function isVendorPlatform(v: unknown): v is VendorPlatform {
  * run, but no slug goes to the funnel (always the domain's page); UNLOCKED =
  * the rules are ignored and every slug goes straight to the sub1's funnel, or
  * — when the sub1 names none — to the one picked on the domain's funnel
- * picker (?dop_funnel=).
+ * picker (?dop_funnel=); ?dop_page=<page id> pins one page of its split
+ * (the dashboard's preview).
  */
 export const DOMAIN_STATUSES = ["ACTIVE", "DISABLED", "LOCKED", "UNLOCKED"] as const;
 export type DomainStatus = (typeof DOMAIN_STATUSES)[number];

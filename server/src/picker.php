@@ -19,6 +19,15 @@
  * Only an UNLOCKED domain reads dop_funnel: on any other status the parameter
  * means nothing, so it can't open a funnel past the rules.
  *
+ * ?dop_page=<page id> pins one page of the funnel's split (the dashboard's
+ * preview, 23/10: "the preview of the right page" — the domain of preview is
+ * UNLOCKED): whatever named the funnel (sub1, default funnel, dop_funnel), the
+ * gate serves THAT page instead of drawing one — only a page the split has
+ * (published, share above 0); any other id is ignored and the split draws as
+ * usual. Same scope as dop_funnel: only an UNLOCKED domain reads it, so a
+ * campaign domain's A/B test never bends to it. The draw's cookie (dop_pg) is
+ * left alone, and a step switch (a reload of the same URL) keeps the page.
+ *
  * The page is uncacheable and noindex; the hit is "SERVE · PICK", with the
  * gate reason domain_unlocked (and the dop_funnel code that wasn't live, when
  * there was one). It carries no beacon and no tracker: it isn't a funnel page.
@@ -29,6 +38,8 @@ defined('DAYONE_ENTRY') || (http_response_code(404) && exit);
 
 /** The URL parameter that carries the visitor's choice. */
 const PICK_PARAM = 'dop_funnel';
+/** The URL parameter that pins one page of the funnel's split. */
+const PICK_PAGE_PARAM = 'dop_page';
 /** The picker's match type (hit decision "SERVE · PICK"). */
 const PICK_MATCH = 'PICK';
 
@@ -37,6 +48,32 @@ function picker_choice(array $params): ?string
 {
     $value = is_scalar($params[PICK_PARAM] ?? null) ? trim((string) $params[PICK_PARAM]) : '';
     return preg_match('/^f\d+$/i', $value) === 1 ? strtoupper($value) : null;
+}
+
+/** The page the URL pins (?dop_page=<uuid>, any case → lowercase), or null. */
+function picker_page(array $params): ?string
+{
+    $value = is_scalar($params[PICK_PAGE_PARAM] ?? null) ? strtolower(trim((string) $params[PICK_PAGE_PARAM])) : '';
+    return preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/', $value) === 1 ? $value : null;
+}
+
+/**
+ * The funnel's split narrowed to the page ?dop_page= pins, when the split has
+ * it; the split as it is otherwise (an unknown, draft or paused page — not in
+ * the split — draws as usual).
+ */
+function picker_pin_page(array $split, array $params): array
+{
+    $id = picker_page($params);
+    if ($id === null) {
+        return $split;
+    }
+    foreach ($split as $entry) {
+        if (is_array($entry) && strtolower((string) ($entry['page_id'] ?? '')) === $id) {
+            return [$entry];
+        }
+    }
+    return $split;
 }
 
 /** Does this request get the picker (instead of a 404)? Pages only — robots.txt, assets and probes stay 404. */
