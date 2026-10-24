@@ -38,6 +38,17 @@ function dayone_handle(): void
         send_response($status, $headers, $body, $req->isHead());
         return;
     }
+    // Which code is running, and the server's state for a monitor (handlers.php): no hit, no Supabase.
+    if ($req->rawPath === VERSION_PATH) {
+        [$status, $headers, $body] = handle_version();
+        send_response($status, $headers, $body, $req->isHead());
+        return;
+    }
+    if ($req->rawPath === HEALTH_PATH) {
+        [$status, $headers, $body] = handle_dop_health(health_token_from($_SERVER), $cfg['health_token']);
+        send_response($status, $headers, $body, $req->isHead());
+        return;
+    }
     // The funnel's trackers, first party on every domain (track.php): no hit, no Supabase.
     $tracker = handle_tracker($req);
     if ($tracker !== null) {

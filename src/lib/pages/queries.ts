@@ -228,9 +228,6 @@ export type FunnelBoardRow = { funnel: MainFunnel | null; pages: FunnelBoardPage
  */
 export async function getFunnelBoard(since: Date): Promise<{ rows: FunnelBoardRow[]; stats: Record<string, VersionStats> }> {
   const db = supabaseService();
-  // Every dayone-main funnel gets its pages.funnels row, with its current code and name.
-  const synced = await db.rpc("funnels_sync");
-  throwIf(synced.error, "funnels_sync");
   const [funnels, pages, stats] = await Promise.all([db.rpc("main_funnels"), funnelPages(null), db.rpc("funnel_page_stats", { p_since: since.toISOString() })]);
   throwIf(funnels.error, "main_funnels");
   throwIf(stats.error, "funnel_page_stats");

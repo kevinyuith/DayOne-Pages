@@ -24,4 +24,24 @@ for f in "$OUT"/_dayone/*.php "$OUT/config.php"; do
   grep -q "defined('DAYONE_ENTRY')" "$f" || { echo "NO GUARD: $f" >&2; exit 1; }
 done
 for f in "$OUT"/index.php "$OUT"/config.php "$OUT"/_dayone/*.php; do php -l "$f" >/dev/null; done
-echo "drop-in built at $OUT"
+
+# What the folder was built from, for /_dop/version (handlers.php): the commit, the
+# server files that differed from it, and the code's sha (a file changed by hand later shows).
+REPO="$(cd "$HERE/.." && pwd)"
+COMMIT="$(git -C "$REPO" rev-parse HEAD 2>/dev/null || true)"
+BRANCH="$(git -C "$REPO" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+UNCOMMITTED="$(git -C "$REPO" status --porcelain -- server/src server/dropin 2>/dev/null | cut -c4- | grep '\.php$' || true)"
+php -r '
+define("DAYONE_ENTRY", true);
+require $argv[1] . "/handlers.php";
+$version = [
+    "commit" => $argv[2] !== "" ? $argv[2] : null,
+    "branch" => $argv[3] !== "" ? $argv[3] : null,
+    "uncommitted" => array_values(array_filter(explode("\n", $argv[4]), "strlen")),
+    "built_at" => gmdate("c"),
+    "code_sha" => code_sha($argv[1]),
+];
+file_put_contents($argv[1] . "/" . VERSION_FILE, json_encode($version, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT) . "\n");
+' "$OUT/_dayone" "$COMMIT" "$BRANCH" "$UNCOMMITTED"
+
+echo "drop-in built at $OUT ($(cut -c1-12 <<<"$COMMIT")${UNCOMMITTED:+, with uncommitted changes})"

@@ -89,6 +89,8 @@ function config(): array
         'server_key'        => (string) $get('PAGES_SERVER_KEY', ''),
         'server_id'         => (string) $get('SERVER_ID', ''),
         'purge_token'       => (string) $get('PURGE_TOKEN', ''),
+        // Token for GET /_dop/health (handlers.php). Empty = the endpoint answers 404.
+        'health_token'      => (string) $get('HEALTH_TOKEN', ''),
         'cache_dir'         => (string) $get('CACHE_DIR', DAYONE_ROOT . '/cache'),
         // The pages' files (assets.php): outside the cache folder and outside the webroot.
         'assets_dir'        => (string) $get('ASSETS_DIR', DAYONE_ROOT . '/assets'),

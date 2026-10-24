@@ -28,6 +28,10 @@ return [
     // the dashboards' purges with it (pages.purge_request).
     'PURGE_TOKEN'       => '',
 
+    // Token for GET /_dop/health (X-Health-Token header, or Authorization: Bearer): the server's
+    // state for a monitor. Empty = the endpoint answers 404. E.g.: openssl rand -hex 24
+    'HEALTH_TOKEN'      => '',
+
     // Disk cache. The folder is created automatically; the site user must be able to write here.
     'CACHE_DIR'         => __DIR__ . '/_cache',
     // The pages' files (images, fonts, CSS, video) copied from the buckets: outside the
