@@ -12,9 +12,9 @@
  *
  * /_dop/health (24/10) is the server's state for a monitor, with HEALTH_TOKEN
  * (X-Health-Token or Authorization: Bearer; none configured or a wrong one =
- * 404): the spools, the local tables, the cache's disk, the Supabase breaker
- * and the error log's last lines. 200 when nothing is wrong, 503 with the
- * problems otherwise.
+ * 404): the spools, the local tables, the cache's disk, the Supabase breaker,
+ * the direct Postgres path (pg.php) and the error log's last lines. 200 when
+ * nothing is wrong, 503 with the problems otherwise.
  *
  * /_purge deletes a host's routes entries (or everything). POST only, with
  * X-Purge-Token compared in constant time — or, for one host, signed
@@ -303,6 +303,15 @@ function health_report(?array $tables = null, ?int $now = null): array
         $problems['supabase'] = 'a refresh from Supabase failed in the last ' . SUPABASE_BREAKER_SECONDS . ' s';
     }
 
+    // The calls straight to Postgres (pg.php): a failed connection touches its breaker and
+    // PostgREST takes the calls meanwhile — worth knowing, not an outage.
+    $pgConfigured = pg_configured();
+    $pgFailureAge = health_file_age(pg_breaker_file(), $now);
+    $pgBreakerOpen = $pgFailureAge !== null && $pgFailureAge < PG_BREAKER_SECONDS;
+    if ($pgConfigured && $pgBreakerOpen) {
+        $warnings['postgres'] = 'a connection to Postgres failed in the last ' . PG_BREAKER_SECONDS . ' s: calls go through PostgREST';
+    }
+
     $errorLog = (string) ini_get('error_log');
     $load = function_exists('sys_getloadavg') ? sys_getloadavg() : false;
 
@@ -319,6 +328,11 @@ function health_report(?array $tables = null, ?int $now = null): array
         'spools' => $spools,
         'tables_age_s' => $tableAges,
         'supabase' => ['breaker_open' => $breakerOpen, 'last_failure_age_s' => $failureAge],
+        'postgres' => [
+            'configured' => $pgConfigured,
+            'breaker_open' => $pgBreakerOpen,
+            'last_failure_age_s' => $pgFailureAge,
+        ],
         'error_log' => [
             'bytes' => $errorLog !== '' ? (int) @filesize($errorLog) : null,
             'age_s' => $errorLog !== '' ? health_file_age($errorLog, $now) : null,

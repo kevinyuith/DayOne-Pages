@@ -11,6 +11,10 @@
  * `Content-Profile: pages` because the function doesn't live in the `public` schema.
  * Invalid key → 403 from PostgREST → we treat it as an error (never as a negative
  * 404, otherwise a rotated key would take down every site until the negative cache expired).
+ *
+ * When the server has its own Postgres login (pg.php), each call goes straight
+ * to the database through the pooler first, and through PostgREST only when
+ * that path can't take it — same functions, same answers, same statuses.
  */
 declare(strict_types=1);
 
@@ -100,7 +104,15 @@ function supabase_rpc(string $fn, array $params, ?int $timeoutMs = null): array
         return ['ok' => false, 'error' => 'SUPABASE_URL, SUPABASE_ANON_KEY or PAGES_SERVER_KEY missing'];
     }
 
-    $body = json_encode($params + ['p_key' => $cfg['server_key']]);
+    $params += ['p_key' => $cfg['server_key']];
+    $pg = pg_call($fn, $params, true, $timeoutMs !== null ? max(100, $timeoutMs) : 1000 * max(1, $cfg['supabase_timeout']));
+    if (!$pg['fallback']) {
+        return $pg['ok']
+            ? ['ok' => true, 'rows' => array_values($pg['value'])]
+            : ['ok' => false, 'error' => 'postgres: ' . $pg['error'], 'status' => $pg['status']];
+    }
+
+    $body = json_encode($params);
     if ($body === false) {
         return ['ok' => false, 'error' => 'json_encode'];
     }
@@ -218,8 +230,9 @@ function supabase_log_replay(array $items): ?array
 
 /**
  * The HTTP status of the last logging call (supabase_fire): 200/204 = went
- * through, 0 = no answer (timeout, connection), -1 = not configured. With
- * $set, records it.
+ * through, 0 = no answer (timeout, connection), -1 = not configured. A call
+ * straight to Postgres records the status PostgREST would have given (pg.php).
+ * With $set, records it.
  */
 function supabase_last_status(?int $set = null): int
 {
@@ -243,7 +256,18 @@ function supabase_fire(string $fn, array $params): mixed
         return null;
     }
 
-    $body = json_encode(['p_key' => $cfg['server_key']] + $params);
+    $params = ['p_key' => $cfg['server_key']] + $params;
+    $pg = pg_call($fn, $params, false, 1000 * max(2, (int) $cfg['hits_timeout']));
+    if (!$pg['fallback']) {
+        supabase_last_status($pg['status']);
+        if (!$pg['ok']) {
+            error_log("[dayone-pages] $fn failed (postgres: {$pg['error']})");
+            return null;
+        }
+        return $pg['value'];
+    }
+
+    $body = json_encode($params);
     if ($body === false) {
         supabase_last_status(-1);
         return null;

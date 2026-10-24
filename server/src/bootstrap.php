@@ -106,6 +106,14 @@ function config(): array
         'max_path_len'      => $int('MAX_PATH_LEN', 200),
         'max_paths_per_host'=> $int('MAX_PATHS_PER_HOST', 2000),
         'supabase_timeout'  => $int('SUPABASE_TIMEOUT', 5),
+        // The calls straight to Postgres through Supabase's pooler (pg.php); without host, user and
+        // password every call goes through PostgREST. PG_SSLMODE: verify-full, or disable (a local database).
+        'pg_host'           => (string) $get('PG_HOST', ''),
+        'pg_port'           => $int('PG_PORT', 6543),
+        'pg_database'       => (string) $get('PG_DATABASE', 'postgres'),
+        'pg_user'           => (string) $get('PG_USER', ''),
+        'pg_password'       => (string) $get('PG_PASSWORD', ''),
+        'pg_sslmode'        => (string) $get('PG_SSLMODE', 'verify-full'),
         'debug_headers'     => $int('DEBUG_HEADERS', 1) === 1,
         'log_hits'          => $int('LOG_HITS', 1) === 1,
         'hits_timeout'      => $int('HITS_TIMEOUT', 5),
@@ -157,6 +165,7 @@ require __DIR__ . '/netdb.php';
 require __DIR__ . '/rirdb.php';
 require __DIR__ . '/anondb.php';
 require __DIR__ . '/netinfo.php';
+require __DIR__ . '/pg.php';
 require __DIR__ . '/supabase.php';
 require __DIR__ . '/logspool.php';
 require __DIR__ . '/conditions.php';

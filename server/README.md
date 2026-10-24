@@ -5,7 +5,7 @@ machine: it asks Supabase (schema `pages`) what that host + path should
 return, caches it on disk for 30 seconds and serves it. If Supabase goes down,
 it serves the copy it has.
 
-No framework, no composer. Requirements: PHP 8.2+ with `curl` and `json`.
+No framework, no composer. Requirements: PHP 8.2+ with `curl`, `json` and `openssl`.
 
 ## How it works
 
@@ -43,6 +43,41 @@ domain blocks bots), the filter's pass page (when the visitor matches its
 conditions: country, device, language, URL parameters, referrer) and the
 default page (the fail page when there is a filter), with the request path as
 the slug. `bot` is only honored by the bot block.
+
+### Straight to Postgres (`src/pg.php`)
+
+With `PG_HOST`, `PG_USER` and `PG_PASSWORD` set, every database call
+(`resolve`, `content_get`, the CTA reads, the `log_*` notices) goes first
+to Supabase's pooler instead of PostgREST, and through PostgREST only when
+that path can't take it: not configured, a connection that failed in the last
+30 s (`cache/pg-breaker`, shown in `/_dop/health`), or a statement the
+database refuses as written (a function, parameter or grant the role doesn't
+see — logged as `postgres refused …`). Same functions, same answers, same
+statuses.
+
+- PostgREST answers 503 to everything while it reloads its schema cache, which
+  it does at every DDL anywhere in the project; going around it also saves
+  ~20 ms per `resolve` and ~40 ms per notice (measured from the server).
+- Plain PHP (no `pgsql` extension): TLS checked against Supabase's root CA
+  (embedded, written to `cache/supabase-root-ca.crt`), SCRAM-SHA-256, one
+  socket kept per php-fpm worker, every step within the call's time limit.
+- The role is `pages_server` (migration `20261024d`): EXECUTE on those
+  functions only, `statement_timeout` 6 s, 40 connections at most. Its
+  password is set apart as a SCRAM verifier and lives only in `config.php`:
+
+```bash
+openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n' > pw    # the password → PG_PASSWORD
+php -r '$pw = file_get_contents("pw"); $s = random_bytes(16); $sp = hash_pbkdf2("sha256", $pw, $s, 4096, 32, true);
+  $ck = hash_hmac("sha256", "Client Key", $sp, true);
+  echo "SCRAM-SHA-256\$4096:", base64_encode($s), "\$", base64_encode(hash("sha256", $ck, true)), ":",
+  base64_encode(hash_hmac("sha256", "Server Key", $sp, true)), "\n";'
+# → ALTER ROLE pages_server PASSWORD '<that verifier>';   (the SQL editor or the MCP)
+```
+
+- The tests run the calls against a local Postgres when `PG_TEST_PORT`,
+  `PG_TEST_ADMIN_PASSWORD`, `PG_TEST_PASSWORD` (a login role `pages_test`) and
+  `PG_TEST_CA` (the CA of its certificate for `localhost`) are set; the
+  database must be named `dayone_pages_test` (its schema `pages` is replaced).
 
 ### Funnel steps, one per response (`dop_step`)
 

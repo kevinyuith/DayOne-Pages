@@ -43,6 +43,13 @@ return [
 
     'SUPABASE_TIMEOUT'  => 5,
 
+    // Straight to Postgres through Supabase's pooler (src/pg.php), PostgREST as the fallback.
+    // Empty PG_PASSWORD = every call through PostgREST. The role is pages_server (migration
+    // 20261024d): set its password as a SCRAM verifier and put the password here.
+    'PG_HOST'           => 'aws-1-us-east-2.pooler.supabase.com',
+    'PG_USER'           => 'pages_server.YOUR-PROJECT-REF',
+    'PG_PASSWORD'       => '',
+
     // sub0 key: visitors entering via www. go (302) to the domain without www;
     // with sub1/utm_campaign/campaign in the URL, they get ?sub0=<timestamp
     // encrypted with AES-256-GCM>. Without this line it's 'DAYONE'.
