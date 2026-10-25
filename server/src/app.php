@@ -12,7 +12,7 @@
  *   path too long          → 404 (same)
  *   resolver               → HIT | MISS | STALE | UPDATING | null (503)
  *   decide                 → SERVE | REDIRECT | BLOCK | 404
- *   page served on www.    → 302 to non-www with sub0 (sub0.php)
+ *   page served on www.    → 302 to non-www with sub21 when it has an fbclid (sub0.php)
  *   HTML page served       → dop_v cookie + load notice script
  *
  * X-Cache is only sent with DEBUG_HEADERS=1. Server-Timing (app, db) goes with
@@ -154,6 +154,16 @@ function dayone_handle(): void
         [$status, $headers, $body] = $www;
         $outcome = 'redirect';
         $route = [...$route, 'action' => 'REDIRECT', 'match_type' => 'WWW'];
+    }
+    // Another browser or device on a sub21 within the rules' window (sub0.php):
+    // it gets the URL's token as its dop_www, so it keeps its pass when the
+    // window closes.
+    $wwwWindow = www_entry_window($resolved['gate'] ?? null);
+    if ($wwwWindow !== null && $outcome === 'served' && $route !== null && is_logged_path($req->path)) {
+        $inherit = www_inherit_cookie($req, $wwwWindow);
+        if ($inherit !== null) {
+            $headers['Set-Cookie'] = [...(array) ($headers['Set-Cookie'] ?? []), $inherit];
+        }
     }
     // A funnel's step switch: the runtime set dop_step and reloaded. The cookie
     // goes (it only carries the switch — a refresh starts over at the first

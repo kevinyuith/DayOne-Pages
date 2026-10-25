@@ -40,7 +40,8 @@
  * ANY URL parameter (param), country, device, language,
  * referrer, URL parameters (via conditions_match), a regex on the User-Agent,
  * the request being a prefetch (request_is_prefetch: loaded ahead of a click,
- * e.g. TikTok's Android app while the ad shows in the feed), the IP (IPs/CIDR
+ * e.g. TikTok's Android app while the ad shows in the feed), the click not
+ * having come through the www entry (www_entry_valid in sub0.php), the IP (IPs/CIDR
  * ranges), and — network lookups, checked last and only when
  * everything else matched — the ASN and a regex on the hostname (netinfo.php:
  * a short timeout, cached per IP; a lookup that fails never flags a click).
@@ -62,7 +63,7 @@ const GATE_SAFE_MATCH = 'GATE-SAFE';
 const GATE_REASONS = ['slug_not_allowed', 'no_funnel_token', 'funnel_not_live', 'domain_disabled', 'domain_locked', 'domain_unlocked'];
 
 /** The rule-only condition keys (the base ones are conditions_match's). */
-const RULE_OWN_CONDITIONS = ['sub1', 'sub11', 'sub11_in', 'param', 'user_agent', 'user_agent_mode', 'prefetch', 'ips', 'ips_mode', 'asns', 'asns_mode', 'hostname', 'hostname_mode', 'accept_languages', 'except'];
+const RULE_OWN_CONDITIONS = ['sub1', 'sub11', 'sub11_in', 'param', 'user_agent', 'user_agent_mode', 'prefetch', 'www_entry', 'ips', 'ips_mode', 'asns', 'asns_mode', 'hostname', 'hostname_mode', 'accept_languages', 'except'];
 
 /**
  * Builds the SERVE route the gate decides on, or null when the click falls
@@ -499,6 +500,18 @@ function rule_conditions_match(array $cond, Request $req): bool
     // `prefetch: true` only matches a request loaded ahead of a click.
     if (($cond['prefetch'] ?? false) === true && !$req->prefetch) {
         return false;
+    }
+
+    // `www_entry: {token_hours, cookie_days}`: the click didn't come through the
+    // www entry — no dop_www from the last cookie_days in this browser and the
+    // URL's sub21 older than token_hours (or absent). Malformed: no match.
+    if (array_key_exists('www_entry', $cond)) {
+        $w = $cond['www_entry'];
+        $hours = is_array($w) ? ($w['token_hours'] ?? null) : null;
+        $days = is_array($w) ? ($w['cookie_days'] ?? null) : null;
+        if (!is_int($hours) || !is_int($days) || www_entry_valid($req, $hours * 3600, $days * 86400)) {
+            return false;
+        }
     }
 
     // `accept_languages`: the number of language TAGS in the Accept-Language

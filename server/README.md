@@ -114,30 +114,39 @@ no step in a slug that has sections, it serves the whole HTML and
 logs it (`funnel with no recognized step`) — the page keeps working, with
 the runtime switching steps in the browser.
 
-### Entry via `www.` (`sub0`)
+### Entry via `www.` (`sub21`)
 
 A page that would be served on `www.x.com` becomes a **302** to the domain
-without www, with the original parameters. If the URL carries a campaign — `sub1`,
-`utm_campaign` or `campaign`, with a value — it also gets `sub0` = encrypted unix
-timestamp (`src/sub0.php`):
+without www, with the original parameters. If the URL carries an `fbclid` (with
+a value) it also gets `sub21` = encrypted unix timestamp, right after the URL's
+last `subN` (`src/sub0.php`):
 
 ```
+GET https://www.x.com/offer?sub1=a&sub11=Facebook&fbclid=Iw…
+→ 302 Location: https://x.com/offer?sub1=a&sub11=Facebook&sub21=<token>&fbclid=Iw…   (Cache-Control: no-store)
+GET https://www.x.com/offer?utm_source=fb&fbclid=Iw…
+→ 302 Location: https://x.com/offer?utm_source=fb&fbclid=Iw…&sub21=<token>          (no subN: at the end)
 GET https://www.x.com/offer?utm_campaign=c1
-→ 302 Location: https://x.com/offer?utm_campaign=c1&sub0=<token>   (Cache-Control: no-store)
-GET https://www.x.com/offer?utm_source=fb&sub1=a&sub2=b
-→ 302 Location: https://x.com/offer?utm_source=fb&sub0=<token>&sub1=a&sub2=b   (sub0 right before sub1)
-GET https://www.x.com/offer?utm_source=fb
-→ 302 Location: https://x.com/offer?utm_source=fb                  (no campaign, no sub0)
+→ 302 Location: https://x.com/offer?utm_campaign=c1                                 (no fbclid, no sub21)
 ```
 
 - Only served pages (200/304). Block, bot, 404, redirect and
   files (`.js`, `robots.txt`…) go on as normal on the www. itself.
-- `sub0` goes right before the first `sub1`; without `sub1`, at the end of the query.
-- With a campaign, a `sub0` already in the URL is replaced by the new one; without
-  a campaign the query stays intact. The hop is recorded in the Logs as
-  `redirect` with decision `REDIRECT · WWW`.
+- With an `fbclid`, a `sub21` already in the URL is replaced by the new one;
+  without one the query stays intact. The hop is recorded in the Logs as
+  `redirect` with decision `REDIRECT · WWW`. (Until 25/10/2026 the token was
+  `sub0`, before `sub1`, on any URL with a campaign.)
+- `dop_www` (HttpOnly, 30 days in the browser, `Domain=<bare domain>`) = the
+  `sub21` that went into the URL, or `1` without an `fbclid`. A rule with
+  `www_entry: {token_hours, cookie_days}` (the owner's numbers: 2 and 5)
+  catches a bare-domain click with no `dop_www` token from the last
+  `cookie_days` (any click's) and a URL `sub21` older than `token_hours` or
+  absent. Moving to another browser or device keeps the `sub21` (the Facebook
+  app → Chrome rewrites the `fbclid`, never the `sub21`); that browser gets the
+  URL's `sub21` as its `dop_www` while it is within the rules' longest
+  `token_hours` (`www_inherit_cookie`). Nothing is stored: the time is in the token.
 - The nginx vhost must NOT redirect `www` on its own (a
-  `server_name ~^www\.…; return 301` block): that answers before PHP and the sub0
+  `server_name ~^www\.…; return 301` block): that answers before PHP and the sub21
   never goes out.
 - Token: `base64url(nonce 12 B ‖ ciphertext ‖ tag 16 B)`, AES-256-GCM, key
   `SHA-256(SUB0_KEY)` (default `DAYONE`); plaintext = seconds, e.g.

@@ -404,6 +404,23 @@ same('prefetch rule: the prefetch gets the domain page', ['GATE-SAFE', 'Bot', 'T
 [, , , , $route] = decide($root, make_request(['REQUEST_URI' => $f23]), $gatePrefetch);
 same('prefetch rule: the click itself goes to the funnel', ['GATE', 'F23'], [$route['match_type'], $route['_funnel']]);
 
+// www_entry {token_hours, cookie_days}: no dop_www from the last cookie_days and the URL's sub21 older than token_hours.
+$gateWww = $gate;
+array_unshift($gateWww['rules'], ['name' => 'Facebook no www entry', 'label' => 'Bot', 'tags' => ['Facebook'], 'conditions' => ['www_entry' => ['token_hours' => 4, 'cookie_days' => 5], 'param' => ['name' => 'fbclid', 'present' => true]]]);
+$fbUri = static fn (int $ago): string => '/?' . http_build_query(['sub1' => '[F23]', 'fbclid' => 'IwZXh0bg_aem_x', 'sub21' => sub0_encrypt(time() - $ago, 'DAYONE')]);
+[, , , , $route] = decide($root, make_request(['REQUEST_URI' => $fbUri(5 * 3600)]), $gateWww);
+same('www_entry rule: an old sub21 without the cookie gets the domain page', ['GATE-SAFE', 'Bot', 'Facebook no www entry'], [$route['match_type'], $route['_rule_label'], $route['_rule']]);
+[, , , , $route] = decide($root, make_request(['REQUEST_URI' => $fbUri(600)]), $gateWww);
+same('www_entry rule: another device within 4 hours goes to the funnel', ['GATE', 'F23'], [$route['match_type'], $route['_funnel']]);
+[, , , , $route] = decide($root, make_request(['REQUEST_URI' => $fbUri(3 * 86400), 'HTTP_COOKIE' => 'dop_www=' . sub0_encrypt(time() - 3 * 86400, 'DAYONE')]), $gateWww);
+same('www_entry rule: the browser that came through www. goes to the funnel days later', ['GATE', 'F23'], [$route['match_type'], $route['_funnel']]);
+[, , , , $route] = decide($root, make_request(['REQUEST_URI' => $fbUri(6 * 86400), 'HTTP_COOKIE' => 'dop_www=' . sub0_encrypt(time() - 6 * 86400, 'DAYONE')]), $gateWww);
+same('www_entry rule: a cookie older than cookie_days gets the domain page', 'GATE-SAFE', $route['match_type']);
+[, , , , $route] = decide($root, make_request(['REQUEST_URI' => '/?sub1=[F23]&fbclid=IwZXh0bg_aem_x']), $gateWww);
+same('www_entry rule: no sub21 and no cookie gets the domain page', 'GATE-SAFE', $route['match_type']);
+check('www_entry: a malformed condition never matches', !rule_conditions_match(['www_entry' => 'missing'], make_request(['REQUEST_URI' => '/?fbclid=x'])));
+check('www_entry: never on www.', !rule_conditions_match(['www_entry' => ['token_hours' => 4, 'cookie_days' => 5]], make_request(['HTTP_HOST' => 'www.example.com', 'REQUEST_URI' => '/?fbclid=x'])));
+
 // ── gate_bot_rules_matched: the shadow evaluation for the log (EVERY Bot rule that matches, not just the first; Suspicious excluded) ──
 $gateShadow = [
     'gate_slugs' => ['/'],

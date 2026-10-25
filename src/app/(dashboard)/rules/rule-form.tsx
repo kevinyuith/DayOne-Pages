@@ -247,6 +247,7 @@ type CondType =
   | "sub11_in"
   | "user_agent"
   | "prefetch"
+  | "www_entry"
   | "ips"
   | "asns"
   | "hostname"
@@ -261,6 +262,7 @@ const COND_TYPES: { type: CondType; label: string; repeat?: true }[] = [
   { type: "sub11_in", label: "Platform" },
   { type: "user_agent", label: "User-Agent" },
   { type: "prefetch", label: "Prefetch" },
+  { type: "www_entry", label: "No www entry" },
   { type: "ips", label: "IP" },
   { type: "asns", label: "ASN" },
   { type: "hostname", label: "Hostname" },
@@ -282,6 +284,7 @@ function initialRows(initial: ReturnType<typeof ruleConditionsToForm>): Row[] {
   if (initial.sub11In.length) rows.push({ type: "sub11_in" });
   if (initial.userAgent) rows.push({ type: "user_agent" });
   if (initial.prefetch) rows.push({ type: "prefetch" });
+  if (initial.wwwEntry) rows.push({ type: "www_entry" });
   if (initial.acceptLanguagesMin !== "" || initial.acceptLanguagesMax !== "") rows.push({ type: "accept_languages" });
   if (initial.ips) rows.push({ type: "ips" });
   if (initial.asns) rows.push({ type: "asns" });
@@ -384,6 +387,33 @@ function ConditionsBuilder({
           <>
             <span className={op}>the request is a prefetch</span>
             <input type="hidden" name="prefetch" value="on" />
+          </>
+        );
+      case "www_entry":
+        return (
+          <>
+            <span className={op}>sub21 older than</span>
+            <input
+              name="www_entry_token_hours"
+              defaultValue={initial.wwwEntryTokenHours}
+              inputMode="numeric"
+              required
+              className={`${INPUT_BASE} w-20 shrink-0 font-mono`}
+              disabled={disabled}
+              aria-label="sub21 window (hours)"
+            />
+            <span className={op}>h and no cookie from the last</span>
+            <input
+              name="www_entry_cookie_days"
+              defaultValue={initial.wwwEntryCookieDays}
+              inputMode="numeric"
+              required
+              className={`${INPUT_BASE} w-20 shrink-0 font-mono`}
+              disabled={disabled}
+              aria-label="Cookie window (days)"
+            />
+            <span className={op}>days</span>
+            <input type="hidden" name="www_entry" value="on" />
           </>
         );
       case "accept_languages":

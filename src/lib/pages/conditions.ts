@@ -118,6 +118,12 @@ const ruleConditionsShape = conditionsSchema.extend({
   user_agent_mode: z.literal("block").optional(),
   // Only a prefetch: the page loaded ahead of a click (X-Moz / Sec-Purpose / Purpose: prefetch).
   prefetch: z.literal(true).optional(),
+  // The click didn't come through the www entry: no dop_www from the last
+  // cookie_days in this browser and the URL's sub21 older than token_hours
+  // (server/src/sub0.php). 0 cookie days = the cookie never counts.
+  www_entry: z
+    .strictObject({ token_hours: z.number().int().min(1).max(168), cookie_days: z.number().int().min(0).max(30) })
+    .optional(),
   // The number of language tags in Accept-Language: a bot often sends a bare
   // "en" (one tag), a real browser sends "en-US,en" (two). {max: 1} flags it.
   accept_languages: z
@@ -326,9 +332,9 @@ export function summarizeConditions(c: RouteConditions | null | undefined): stri
  * Reads a rule's conditions from the rule form. The same fields as the domain
  * filter (minus `bot`), plus `sub1`, `sub11` (exact), `user_agent` and
  * `hostname` (regexes), `ips` (IPs/CIDR ranges) and `asns` (AS numbers, "AS"
- * prefix optional) — each with its `_mode` "block" to invert — and `prefetch`
- * (checkbox). The regexes are validated for real (they must compile — the
- * server runs them per click).
+ * prefix optional) — each with its `_mode` "block" to invert —, `prefetch`
+ * (checkbox) and `www_entry` (its two windows). The regexes are validated for
+ * real (they must compile — the server runs them per click).
  */
 export function parseRuleConditionsForm(fd: FormData): { ok: true; value: RuleConditions } | { ok: false; reason: string } {
   // The rule form adds URL parameters one by one: "contains" goes once, and a parameter only once.
@@ -416,6 +422,13 @@ export function parseRuleConditionsForm(fd: FormData): { ok: true; value: RuleCo
   }
 
   if (fd.get("prefetch") === "on" || fd.get("prefetch") === "true") raw.prefetch = true;
+  if (fd.get("www_entry") === "on") {
+    const hours = String(fd.get("www_entry_token_hours") ?? "").trim();
+    const days = String(fd.get("www_entry_cookie_days") ?? "").trim();
+    if (!/^\d{1,3}$/.test(hours) || Number(hours) < 1 || Number(hours) > 168) return { ok: false, reason: "sub21 window must be whole hours, 1–168." };
+    if (!/^\d{1,2}$/.test(days) || Number(days) > 30) return { ok: false, reason: "Cookie window must be whole days, 0–30." };
+    raw.www_entry = { token_hours: Number(hours), cookie_days: Number(days) };
+  }
 
   // The Accept-Language tag count (min and/or max, independent).
   const alMin = String(fd.get("accept_languages_min") ?? "").trim();
@@ -573,6 +586,9 @@ export function ruleConditionsToForm(c: RuleConditions | null | undefined): Retu
   userAgent: string;
   userAgentMode: ListMode;
   prefetch: boolean;
+  wwwEntry: boolean;
+  wwwEntryTokenHours: string;
+  wwwEntryCookieDays: string;
   acceptLanguagesMin: string;
   acceptLanguagesMax: string;
   ips: string;
@@ -639,6 +655,9 @@ export function ruleConditionsToForm(c: RuleConditions | null | undefined): Retu
     userAgent: c?.user_agent ?? "",
     userAgentMode: c?.user_agent_mode === "block" ? "block" : "allow",
     prefetch: c?.prefetch === true,
+    wwwEntry: c?.www_entry !== undefined,
+    wwwEntryTokenHours: String(c?.www_entry?.token_hours ?? 2),
+    wwwEntryCookieDays: String(c?.www_entry?.cookie_days ?? 5),
     acceptLanguagesMin: c?.accept_languages?.min !== undefined ? String(c.accept_languages.min) : "",
     acceptLanguagesMax: c?.accept_languages?.max !== undefined ? String(c.accept_languages.max) : "",
     ips: (c?.ips ?? []).join(", "),
@@ -707,6 +726,7 @@ export function summarizeRuleConditions(c: RuleConditions | null | undefined): s
     );
   if (c.user_agent) parts.push(`UA ${c.user_agent_mode === "block" ? "not " : ""}~ /${c.user_agent}/i`);
   if (c.prefetch) parts.push("Prefetch");
+  if (c.www_entry) parts.push(`No www entry (sub21 > ${c.www_entry.token_hours} h, cookie > ${c.www_entry.cookie_days} d)`);
   if (c.accept_languages) {
     const { min, max } = c.accept_languages;
     if (min !== undefined && max !== undefined) parts.push(`Languages ${min}–${max}`);
