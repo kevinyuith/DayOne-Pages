@@ -324,7 +324,9 @@ function serve_slug(array $route, Request $req): array
     $body = page_id_placeholder_apply($body, $pageId) ?? $body;
     $body = placeholders_apply($body, $values, $headers['Content-Type']);
     if ($notice) {
-        $body = beacon_inject($body);
+        // The DevTools detection only on a funnel page the gate served ($beacon),
+        // never on a vendor page's upsell step or landing (notice only).
+        $body = beacon_inject($body, $beacon);
     }
     if ($cta !== null && $cta['reserve_html'] !== null) {
         // With our tracker the reserve waits inert; a page with a tracker of its own gets no dot.js

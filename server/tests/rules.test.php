@@ -94,6 +94,17 @@ same('no token: gate reason', 'no_funnel_token', $route['_gate_reason'] ?? null)
 same('no sub1: domain page at /', 'home01', $route['content_hash']);
 same('no sub1: gate reason', 'no_funnel_token', $route['_gate_reason'] ?? null);
 
+// ── DevTools blocked (the beacon's dop_dv cookie, set by /_dop/dd.js): never the funnel ──
+$dvtReq = make_request(['REQUEST_URI' => '/?sub1=x[F23]', 'HTTP_COOKIE' => 'dop_dv=1']);
+[, , , , $route] = decide($root, $dvtReq, $gate);
+same('devtools blocked: the safe page', 'GATE-SAFE', $route['match_type']);
+same('devtools blocked: gate reason', 'devtools', $route['_gate_reason'] ?? null);
+check('devtools blocked: no funnel mark', !isset($route['_funnel']));
+// An UNLOCKED domain serves funnels only — no safe page to show, so a 404.
+[, , , , $route] = decide($root, $dvtReq, [...$gate, 'status' => 'UNLOCKED']);
+same('unlocked + devtools blocked: 404', 'GATE-SAFE', $route['match_type']);
+same('unlocked + devtools blocked: reason', 'devtools', $route['_gate_reason'] ?? null);
+
 // A funnel the data doesn't have: the domain's page at "/", code logged.
 [, , , , $route] = decide($root, make_request(['REQUEST_URI' => '/?sub1=x[F99]']), $gate);
 same('unknown funnel: domain page', 'home01', $route['content_hash']);

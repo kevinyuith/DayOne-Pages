@@ -60,7 +60,10 @@ const GATE_MATCH = 'GATE';
 const GATE_SAFE_MATCH = 'GATE-SAFE';
 
 /** Why a click didn't go to a funnel (pages.hits.gate_reason): by the slug/sub1, or by the domain's status. */
-const GATE_REASONS = ['slug_not_allowed', 'no_funnel_token', 'funnel_not_live', 'domain_disabled', 'domain_locked', 'domain_unlocked'];
+const GATE_REASONS = ['slug_not_allowed', 'no_funnel_token', 'funnel_not_live', 'domain_disabled', 'domain_locked', 'domain_unlocked', 'devtools'];
+
+/** The cookie the beacon sets when it confirms DevTools open (beacon.php): this browser never reaches the funnel again. */
+const DEVTOOLS_COOKIE = 'dop_dv';
 
 /** The rule-only condition keys (the base ones are conditions_match's). */
 const RULE_OWN_CONDITIONS = ['sub1', 'sub11', 'sub11_in', 'param', 'user_agent', 'user_agent_mode', 'prefetch', 'www_entry', 'ips', 'ips_mode', 'asns', 'asns_mode', 'hostname', 'hostname_mode', 'accept_languages', 'except'];
@@ -89,6 +92,17 @@ function gate_pick(array $routes, array $gate, Request $req): ?array
     // DISABLED: the domain serves nothing — 404 for every slug, no rules walk.
     if ($status === 'DISABLED') {
         return gate_always_404($domainId, $req->path, 'domain_disabled');
+    }
+
+    // DevTools blocked: this browser confirmed an open DevTools on a funnel page
+    // (the beacon's dop_dv cookie) — it never reaches the funnel again. A normal
+    // domain serves its page at this slug (the safe page); an UNLOCKED domain
+    // serves funnels only, so there is no safe page to show — a 404.
+    if (($req->cookies[DEVTOOLS_COOKIE] ?? '') === '1') {
+        if ($status === 'UNLOCKED') {
+            return gate_always_404($domainId, $req->path, 'devtools');
+        }
+        return gate_flag_route($domainPage, GATE_SAFE_MATCH, ['_gate_reason' => 'devtools']);
     }
 
     // 1) The rules walk: the first match marks the click with the rule's label

@@ -63,7 +63,7 @@ defined('DAYONE_ENTRY') || (http_response_code(404) && exit);
 const BEACON_PATH = '/_dop/l';
 const BEACON_COOKIE = 'dop_v';
 /** ETag suffix of pages with the script. Changed the script, bump the version. */
-const BEACON_ETAG = '-b11';
+const BEACON_ETAG = '-b16';
 /** The longest time on a page that is taken (4 hours). */
 const BEACON_MAX_DURATION_MS = 14400000;
 /** The kinds of the first interaction ("i=<kind>"), as pages.hits.interaction takes them. */
@@ -212,11 +212,34 @@ function page_id_placeholder_apply(string $html, ?string $pageId): ?string
     return (string) preg_replace(PAGE_ID_PLACEHOLDER_RE, $pageId ?? '', $html);
 }
 
-/** The script before the last </body>; without </body>, at the end. */
-function beacon_inject(string $html): string
+/**
+ * DevTools detection (the disable-devtool library, served first-party at
+ * /_dop/dd.js — track.php). When it fires (once per page), this browser is
+ * marked (dop_dv=1, 30 days), the page's hit gets "dvb" = the detector that
+ * fired (its DetectorType) and the tab is closed. A browser only lets a script
+ * close a tab opened by a script or with one history entry (an ad opened in a
+ * new tab, not one clicked from a search page in the same tab): when it
+ * refuses, the SAME URL reloads and the gate (rules.php) serves the safe page —
+ * a normal domain — or a 404 (an UNLOCKED domain serves funnels only). The
+ * context menu is disabled too.
+ */
+const DEVTOOLS_SCRIPT = '<script src="/_dop/dd.js"></' . 'script><script data-dop-devtools>(function(){var f=0;DisableDevtool({'
+    . 'ondevtoolopen:function(t){if(f)return;f=1;'
+    . 'try{document.cookie="dop_dv=1; Path=/; Max-Age=2592000; SameSite=Lax"}catch(e){}'
+    . 'try{var v=(document.cookie.match(/(?:^|; )' . BEACON_COOKIE . '=([0-9a-f]{32})/)||[])[1];navigator.sendBeacon("' . BEACON_PATH . '",(v?"v="+v+"&":"")+"sg="+encodeURIComponent(JSON.stringify({dvb:t|0})))}catch(e){}'
+    . 'try{window.close()}catch(e){}'
+    . 'setTimeout(function(){if(!window.closed)location.reload()},300)},'
+    . 'disableMenu:true'
+    . '})})();</' . 'script>';
+
+/** The script before the last </body>; without </body>, at the end. The DevTools
+ * detection goes only on a funnel page the gate served ($withDevtools) — never on
+ * a vendor page's upsell step or landing. */
+function beacon_inject(string $html, bool $withDevtools = true): string
 {
+    $scripts = ($withDevtools ? DEVTOOLS_SCRIPT : '') . BEACON_SCRIPT;
     $pos = strripos($html, '</body>');
-    return $pos === false ? $html . BEACON_SCRIPT : substr_replace($html, BEACON_SCRIPT, $pos, 0);
+    return $pos === false ? $html . $scripts : substr_replace($html, $scripts, $pos, 0);
 }
 
 function beacon_new_visit_id(): string

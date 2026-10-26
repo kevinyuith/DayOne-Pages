@@ -28,6 +28,7 @@ export const HIT_FILTER_OPTIONS = {
     ["domain_disabled", "Domain: disabled"],
     ["domain_locked", "Domain: locked"],
     ["domain_unlocked", "Domain: unlocked"],
+    ["devtools", "DevTools open"],
   ],
   interaction: [
     ["yes", "Interacted"],

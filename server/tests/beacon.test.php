@@ -2,9 +2,9 @@
 declare(strict_types=1);
 
 // Where the script goes: before the LAST </body> (case-insensitive); without </body>, at the end.
-same('before </body>', '<html><body>x' . BEACON_SCRIPT . '</body></html>', beacon_inject('<html><body>x</body></html>'));
-same('before the last </BODY>', '<p>"</body>"</p>' . BEACON_SCRIPT . '</BODY>', beacon_inject('<p>"</body>"</p></BODY>'));
-same('no </body>: at the end', '<p>x</p>' . BEACON_SCRIPT, beacon_inject('<p>x</p>'));
+same('before </body>', '<html><body>x' . DEVTOOLS_SCRIPT . BEACON_SCRIPT . '</body></html>', beacon_inject('<html><body>x</body></html>'));
+same('before the last </BODY>', '<p>"</body>"</p>' . DEVTOOLS_SCRIPT . BEACON_SCRIPT . '</BODY>', beacon_inject('<p>"</body>"</p></BODY>'));
+same('no </body>: at the end', '<p>x</p>' . DEVTOOLS_SCRIPT . BEACON_SCRIPT, beacon_inject('<p>x</p>'));
 check('script calls the endpoint on load', str_contains(BEACON_SCRIPT, 'sendBeacon("/_dop/l"') && str_contains(BEACON_SCRIPT, '"load"'));
 
 // Which responses get the load notice: the gate's funnel pages (match_type GATE), HTML only.
@@ -108,6 +108,22 @@ same('beacon_parse_signals: keeps the motion keys (gy, gm, ac, am)', ['gy' => 1,
 check('script: detects DevTools (window gap and console timing) and reports the first hit', str_contains(BEACON_SCRIPT, '_dchk') && str_contains(BEACON_SCRIPT, 'outerWidth-innerWidth') && str_contains(BEACON_SCRIPT, 'console.log') && str_contains(BEACON_SCRIPT, 'b(enc({dvt:1}))'));
 check('script: dvt joins the capability object when already set', str_contains(BEACON_SCRIPT, 'if(_dvt)S.dvt=1;'));
 same('beacon_parse_signals: keeps the dvt flag', ['dvt' => 1], beacon_parse_signals('{"dvt":1}'));
+// DevTools detection: the library is first-party (/_dop/dd.js, no CDN), and a
+// detection (once) marks the browser (dop_dv), tells the page's hit which
+// detector fired (dvb) and closes the tab — when the browser won't close it,
+// the same URL reloads for the gate.
+check('devtools: the library is served first-party', str_contains(DEVTOOLS_SCRIPT, 'src="/_dop/dd.js"'));
+check('devtools: a detection marks the browser', str_contains(DEVTOOLS_SCRIPT, 'dop_dv=1'));
+check('devtools: a detection acts once', str_contains(DEVTOOLS_SCRIPT, 'if(f)return;f=1;'));
+check('devtools: the detector goes to the page\'s hit', str_contains(DEVTOOLS_SCRIPT, 'sendBeacon("' . BEACON_PATH . '"') && str_contains(DEVTOOLS_SCRIPT, '{dvb:t|0}'));
+check('devtools: closes the tab, reloads the same URL when it stays open', str_contains(DEVTOOLS_SCRIPT, 'window.close()') && str_contains(DEVTOOLS_SCRIPT, 'if(!window.closed)location.reload()'));
+same('beacon_parse_signals: keeps the dvb detector (0 included)', ['dvb' => 0], beacon_parse_signals('{"dvb":0}'));
+check('devtools: the context menu is disabled', str_contains(DEVTOOLS_SCRIPT, 'disableMenu:true'));
+check('devtools: no external CDN', !str_contains(DEVTOOLS_SCRIPT, 'cdn.jsdelivr.net') && !str_contains(DEVTOOLS_SCRIPT, 'jsdelivr'));
+// A vendor page's upsell step or landing carries the notice but NOT the DevTools
+// detection — that's a funnel-page-only thing.
+same('beacon_inject: a vendor page (notice only) gets no DevTools lib', '<html><body>x' . BEACON_SCRIPT . '</body></html>', beacon_inject('<html><body>x</body></html>', false));
+same('beacon_inject: a gate funnel page gets the DevTools lib', '<html><body>x' . DEVTOOLS_SCRIPT . BEACON_SCRIPT . '</body></html>', beacon_inject('<html><body>x</body></html>', true));
 $sgMotion = rawurlencode(json_encode(['mm' => 0, 'ts' => 3, 'gy' => 1, 'gm' => 8, 'ac' => 1, 'am' => 0.5]));
 same('beacon: the motion signals ride the duration notice', ['kind' => 'duration', 'ms' => 3000, 'sg' => ['mm' => 0, 'ts' => 3, 'gy' => 1, 'gm' => 8, 'ac' => 1, 'am' => 0.5]], handle_beacon($post(), "v=$id&d=3000&sg=$sgMotion")[4]);
 // How the page loaded (09/10, the pages' optimization): ttfb/fcp at load, lcp (+ element, own file) when hidden or left.
@@ -122,7 +138,7 @@ same('beacon: the lcp rides the duration notice', ['kind' => 'duration', 'ms' =>
 $bSlug = '22222222-2222-2222-2222-222222222222';
 cache_put_content('bb01', '<html><body>hi</body></html>');
 [$status, $headers, $body] = serve_slug(['slug_id' => $bSlug, 'content_hash' => 'bb01', 'content_type' => 'text/html', 'match_type' => 'GATE'], make_request());
-same('serve funnel html: body with the script (and dot.js: without steps it is all Lander)', track_inject('<html><body>hi' . BEACON_SCRIPT . '</body></html>', 'lander'), $body);
+same('serve funnel html: body with the script (and dot.js: without steps it is all Lander)', track_inject('<html><body>hi' . DEVTOOLS_SCRIPT . BEACON_SCRIPT . '</body></html>', 'lander'), $body);
 same('serve funnel html: ETag with version', '"bb01' . ASSETS_ETAG . BEACON_ETAG . track_etag() . '"', $headers['ETag']);
 same('serve funnel html: old ETag (no version) → 200', 200, serve_slug(['slug_id' => $bSlug, 'content_hash' => 'bb01', 'content_type' => 'text/html', 'match_type' => 'GATE'], make_request(['HTTP_IF_NONE_MATCH' => '"bb01"']))[0]);
 [$status, $headers, $body] = serve_slug(['slug_id' => $bSlug, 'content_hash' => 'bb01', 'content_type' => 'text/html', 'match_type' => 'GATE-SAFE'], make_request());
