@@ -111,15 +111,16 @@ function track_inject(string $html, string $origin, ?string $pageId = null, ?str
 }
 
 // ── The tracker itself: /_dop/dot.js ─────────────────────────────────────────
-// It sends to dayone-main's dot edge function (Supabase), like the CDN copies
-// (dot.js and pre_dot.js) it replaces. It takes the VSL video from its own URL
+// It sends to dayone-main's dot ingest service (dot.directdayone.com, on EC2
+// behind Cloudflare since 28/10; before, its dot edge function on Supabase), like
+// the CDN copies (dot.js and pre_dot.js) it replaces. It takes the VSL video from its own URL
 // or the video_id cookie the server sets with the page (vsl.php), never from
 // the player.
 
 const TRACKER_DOT_JS = <<<'JS'
 /**
  * dot.js — the funnel's tracker, served by DayOne Pages on the funnel's own domain (/_dop/dot.js)
- * Endpoint: https://api.directdayone.com/functions/v1/dot
+ * Endpoint: https://dot.directdayone.com
  *
  * ORIGIN: the step it's on, from this script's own URL (?origin=pre_lander or
  *   lander; lander without one). The same code for both steps — it replaces
@@ -234,7 +235,7 @@ const TRACKER_DOT_JS = <<<'JS'
  */
 (function () {
   'use strict';
-  var ENDPOINT = 'https://api.directdayone.com/functions/v1/dot';
+  var ENDPOINT = 'https://dot.directdayone.com';
   var REQUEST_TIMEOUT = 5000;  // max wait (ms) for a single send before aborting
   // Attribution parameters captured from the URL and persisted for the session
   var ATTRIBUTION_PARAMS = [
