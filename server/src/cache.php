@@ -4,11 +4,17 @@
  *
  * What is cached, and why in two levels:
  *
- *   routes/<h2>/<sha1(host)>/<sha1(path)>.php
+ *   routes/<h2>/<sha1(host)>/<sha1(path)>.r2.php
  *       the RESOLVER RESULT for (host, path): the list of candidate routes,
  *       without the HTML. The `conditions` vary per visitor, so the final
  *       response can't be cached — the list can.
  *       Empty list = unknown domain (negative cache, NEGATIVE_TTL).
+ *       The gate's data by reference (`gate_ref`) since 28/10; the `.php`
+ *       next to it is the format from before (gate inline), read until the
+ *       path is refreshed or the cleanup takes it.
+ *
+ *   gates/<h2>/<sha256(gate json)>.php
+ *       the gate's data, one file per distinct gate, shared by the entries.
  *
  *   content/<h2>/<content_hash>.php
  *       the HTML, addressed by its hash (the routes' `content_hash` = sha256
@@ -74,9 +80,34 @@ function routes_dir_for_host(string $host): string
     return cache_dir() . '/routes/' . substr($h, 0, 2) . '/' . $h;
 }
 
+/**
+ * The entry as written since 28/10: the gate's data is NOT inside it, only `gate_ref` (see gate_file).
+ *
+ * Until then every (host, path) carried the gate twice — in the entry and in each route — and the gate is ~79 KB:
+ * 676k entries of ~158 KB filled the server's 96 GB disk in a week (28/10). The new entries have their own file name
+ * on purpose: a server running the code from before (a deploy of an older tree) doesn't see them, misses, and asks
+ * Supabase — it never reads an entry without its gate.
+ */
 function routes_file(string $host, string $path): string
 {
+    return routes_dir_for_host($host) . '/' . sha1($path) . '.r2.php';
+}
+
+/** The entry in the format from before 28/10 (gate inline): still read, never written; refreshing the path removes it. */
+function routes_file_v1(string $host, string $path): string
+{
     return routes_dir_for_host($host) . '/' . sha1($path) . '.php';
+}
+
+/**
+ * The gate's data, addressed by the sha256 of its JSON: one file per distinct gate, shared by every path (and host)
+ * that resolves to it. Each write of an entry that uses it touches it, so the cleanup (STALE_MAX_AGE) only takes a
+ * gate no entry has been written with for that long — and an entry that old is past STALE_MAX_AGE too.
+ */
+function gate_file(string $hash): string
+{
+    $safe = preg_replace('/[^a-f0-9]/', '', strtolower($hash)) ?? '';
+    return cache_dir() . '/gates/' . substr($safe, 0, 2) . '/' . $safe . '.php';
 }
 
 function content_file(string $id): string
@@ -121,12 +152,27 @@ function cache_get_routes(string $host, string $path): array
     $file = routes_file($host, $path);
     $raw = @file_get_contents($file);
     if ($raw === false) {
+        $file = routes_file_v1($host, $path);
+        $raw = @file_get_contents($file);
+    }
+    if ($raw === false) {
         return ['state' => 'NONE', 'entry' => null];
     }
     $entry = json_decode(cache_unwrap($raw) ?? '', true);
     if (!is_array($entry) || !isset($entry['stored_at'], $entry['routes']) || !is_array($entry['routes'])) {
         @unlink($file);
         return ['state' => 'NONE', 'entry' => null];
+    }
+    // The gate comes back into the entry, as it always came: readers see `gate`, never `gate_ref`. Without its file
+    // the entry is useless (deciding without the gate's data is not the same decision) — a miss, and a refresh.
+    if (isset($entry['gate_ref'])) {
+        $gate = cache_read_gate((string) $entry['gate_ref']);
+        if ($gate === null) {
+            @unlink($file);
+            return ['state' => 'NONE', 'entry' => null];
+        }
+        $entry['gate'] = $gate;
+        unset($entry['gate_ref']);
     }
     $cfg = config();
     $age = time() - (int) $entry['stored_at'];
@@ -161,24 +207,76 @@ function strip_content(array $routes): array
  * a path it already has is refreshed: only NEW paths are refused. Until 22/10
  * the cap refused every write, so a scanner's thousands of paths left the
  * host's own "/" unrefreshable and every visit waited for Supabase (196 hosts,
- * travenox.com among them since 21/10 17h UTC).
+ * travenox.com among them since 21/10 17h UTC). A path it has in the format
+ * from before 28/10 (routes_file_v1) is one it has too.
  */
 function cache_put_routes_capped(string $host, string $path, array $routes, ?array $gate = null): bool
 {
-    if (!is_file(routes_file($host, $path)) && host_over_cap($host)) {
+    if (!is_file(routes_file($host, $path)) && !is_file(routes_file_v1($host, $path)) && host_over_cap($host)) {
         return false;
     }
     return cache_put_routes($host, $path, $routes, $gate);
 }
 
+/**
+ * Stores the entry with the gate by reference (gate_file). The routes go without their own `gate`: the resolve fuses
+ * the same gate into every row (resolver.php) and nobody reads it from a cached route — the gate is the entry's.
+ * If the gate's file can't be written, the gate goes inline, as before: never an entry that lost its gate.
+ */
 function cache_put_routes(string $host, string $path, array $routes, ?array $gate = null): bool
 {
-    $entry = ['v' => 1, 'stored_at' => time(), 'host' => $host, 'path' => $path, 'routes' => strip_content($routes), 'gate' => $gate];
+    $routes = strip_content($routes);
+    foreach ($routes as &$route) {
+        unset($route['gate']);
+    }
+    unset($route);
+    $entry = ['v' => 2, 'stored_at' => time(), 'host' => $host, 'path' => $path, 'routes' => $routes];
+    $ref = $gate === null ? null : cache_put_gate($gate);
+    if ($ref !== null) {
+        $entry['gate_ref'] = $ref;
+    } else {
+        $entry['gate'] = $gate;
+    }
     $json = json_encode($entry, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     if ($json === false) {
         return false;
     }
-    return atomic_write(routes_file($host, $path), cache_wrap($json));
+    if (!atomic_write(routes_file($host, $path), cache_wrap($json))) {
+        return false;
+    }
+    @unlink(routes_file_v1($host, $path));
+    return true;
+}
+
+/** Writes the gate's file if it isn't there yet (and marks it in use if it is). Returns its hash, or null. */
+function cache_put_gate(array $gate): ?string
+{
+    $json = json_encode($gate, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    if ($json === false) {
+        return null;
+    }
+    $hash = hash('sha256', $json);
+    $file = gate_file($hash);
+    if (is_file($file)) {
+        @touch($file);
+        return $hash;
+    }
+    return atomic_write($file, cache_wrap($json)) ? $hash : null;
+}
+
+/** The gate's data by its hash; null when the file is gone or unreadable. Kept for the request (several paths, one gate). */
+function cache_read_gate(string $hash): ?array
+{
+    static $read = [];
+    if (isset($read[$hash])) {
+        return $read[$hash];
+    }
+    $raw = @file_get_contents(gate_file($hash));
+    $gate = $raw === false ? null : json_decode(cache_unwrap($raw) ?? '', true);
+    if (!is_array($gate)) {
+        return null;
+    }
+    return $read[$hash] = $gate;
 }
 
 function cache_put_content(string $id, string $content): bool
@@ -281,7 +379,8 @@ function cache_gc_routes_maybe(?int $now = null): ?int
     }
     try {
         @touch($stamp, $now);
-        return cache_gc_tree(cache_dir() . '/routes', config()['stale_max_age']);
+        $maxAge = config()['stale_max_age'];
+        return cache_gc_tree(cache_dir() . '/routes', $maxAge) + cache_gc_tree(cache_dir() . '/gates', $maxAge);
     } finally {
         unlock($lock);
     }
@@ -317,7 +416,7 @@ function purge_host(string $host): int
 
 function purge_all(): int
 {
-    return remove_tree(cache_dir() . '/routes') + remove_tree(cache_dir() . '/content');
+    return remove_tree(cache_dir() . '/routes') + remove_tree(cache_dir() . '/content') + remove_tree(cache_dir() . '/gates');
 }
 
 function remove_tree(string $dir): int
