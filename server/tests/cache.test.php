@@ -77,6 +77,9 @@ same('path cap: a NEW path is not stored', false, cache_put_routes_capped($capHo
 check('path cap: the new path left no file', !is_file(routes_file($capHost, '/.env')));
 same('path cap: a path it has is refreshed', true, cache_put_routes_capped($capHost, '/', [['route_id' => 'new', 'action' => 'SERVE']]));
 same('path cap: the refreshed entry is the new one', 'new', cache_get_routes($capHost, '/')['entry']['routes'][0]['route_id'] ?? null);
+atomic_write(routes_file_v1($capHost, '/old'), cache_wrap((string) json_encode(['v' => 1, 'stored_at' => time(), 'host' => $capHost, 'path' => '/old', 'routes' => [['route_id' => 'v1']], 'gate' => null])));
+same('path cap: a path it has in the format from before 28/10 is refreshed too', true, cache_put_routes_capped($capHost, '/old', [['route_id' => 'v2', 'action' => 'SERVE']]));
+check('path cap: … into the new format', is_file(routes_file($capHost, '/old')) && !is_file(routes_file_v1($capHost, '/old')));
 remove_tree($capDir);
 
 // ── The routes cleanup: entries older than STALE_MAX_AGE go, at most once an hour ──

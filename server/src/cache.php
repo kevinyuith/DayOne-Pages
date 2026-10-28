@@ -207,11 +207,12 @@ function strip_content(array $routes): array
  * a path it already has is refreshed: only NEW paths are refused. Until 22/10
  * the cap refused every write, so a scanner's thousands of paths left the
  * host's own "/" unrefreshable and every visit waited for Supabase (196 hosts,
- * travenox.com among them since 21/10 17h UTC).
+ * travenox.com among them since 21/10 17h UTC). A path it has in the format
+ * from before 28/10 (routes_file_v1) is one it has too.
  */
 function cache_put_routes_capped(string $host, string $path, array $routes, ?array $gate = null): bool
 {
-    if (!is_file(routes_file($host, $path)) && host_over_cap($host)) {
+    if (!is_file(routes_file($host, $path)) && !is_file(routes_file_v1($host, $path)) && host_over_cap($host)) {
         return false;
     }
     return cache_put_routes($host, $path, $routes, $gate);
