@@ -183,6 +183,7 @@ require __DIR__ . '/sub0.php';
 require __DIR__ . '/beacon.php';
 require __DIR__ . '/track.php';
 require __DIR__ . '/cta.php';
+require __DIR__ . '/player.php';
 require __DIR__ . '/upsell.php';
 require __DIR__ . '/placeholders.php';
 require __DIR__ . '/handlers.php';

@@ -293,6 +293,10 @@ function gate_pick(array $routes, array $gate, Request $req): ?array
     if (is_array($funnel['ctas'] ?? null)) {
         $route['ctas'] = array_values(array_filter($funnel['ctas'], 'is_array'));
     }
+    // The funnel's player (player.php): the layer dot.js draws over the VSL, saved in the dashboard.
+    if (is_array($funnel['player'] ?? null) && $funnel['player'] !== []) {
+        $route['player'] = $funnel['player'];
+    }
     // A checkpoint POST that passed: the funnel response marks the visitor ok
     // (eval_response_cookie).
     if ($evalPassed) {

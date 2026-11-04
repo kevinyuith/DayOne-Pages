@@ -311,7 +311,11 @@ function serve_slug(array $route, Request $req): array
     $trackOrigin = $track && !track_has_own_tag($body) ? ($mark !== null ? (string) $mark['origin'] : track_origin($funnel['kind'] ?? null)) : null;
     // The vendor page's id goes in its tracker's URL (dot's page_id), like a funnel page's.
     $trackPageId = $mark !== null ? page_id_value($route['page_id'] ?? null) : $pageId;
-    $etag = '"' . $hash . $atag . $abTag . ($funnel ? '-' . $funnel['step'] : '') . $vslTag . $ctaTag . $pidTag . $utag . $wtag . $ptag . $tag . ($track ? track_etag() : '') . '"';
+    // The funnel's player (player.php): on the served step that drew a VSL video, with our tracker (it's dot.js
+    // that draws it) — the config goes into the page and into the ETag.
+    $playerJson = $beacon && $trackOrigin !== null ? player_page_json($route, $video) : null;
+    $playerTag = $playerJson !== null ? player_tag($playerJson) : '';
+    $etag = '"' . $hash . $atag . $abTag . ($funnel ? '-' . $funnel['step'] : '') . $vslTag . $ctaTag . $playerTag . $pidTag . $utag . $wtag . $ptag . $tag . ($track ? track_etag() : '') . '"';
     if ($funnel || $abTag !== '' || $vslTag !== '' || $upsell !== null) {
         $headers['Vary'] .= ', Cookie';
     }
@@ -332,6 +336,9 @@ function serve_slug(array $route, Request $req): array
         // With our tracker the reserve waits inert; a page with a tracker of its own gets no dot.js
         // from us, so nobody would ask for the CTA: the reserve goes straight in the slot.
         $body = $trackOrigin !== null ? cta_reserve_inject($body, $cta['reserve_html']) : cta_slot_inject($body, $cta['reserve_html']);
+    }
+    if ($playerJson !== null) {
+        $body = player_inject($body, $playerJson);
     }
     if ($trackOrigin !== null) {
         $body = track_inject($body, $trackOrigin, $trackPageId, $video, $cta['mode'] ?? null, [...upsell_track_params($upsell), ...vendor_track_params($mark)]);

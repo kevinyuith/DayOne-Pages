@@ -188,6 +188,16 @@ const TRACKER_DOT_JS = <<<'JS'
  *   time watched in it) as vturb_id and under every name of the player config's
  *   `conversion`. No answer in time → the
  *   page's reserve (<template data-dop-cta-reserve>), with no cta_id: it wasn't drawn.
+ *
+ * PLAYER: the funnel's player (player.php — the dashboard's Player window), as
+ *   <script type="application/json" data-dop-player> on the served VSL step: a
+ *   layer over the <vturb-smartplayer> with the play image (over the muted smart
+ *   autoplay; the touch goes through to VTurb), the thumb when paused (its button
+ *   to the offer's checkout, after the pitch), the hooks and what happens at the
+ *   end. A test draws the visitor's side (cookie dop_pt_<test>). Events:
+ *   player_variant, player_play_view/_tap, player_thumb_view/_click,
+ *   player_hook<n>_view/_stay, player_end_reach/_click — the tested feature's
+ *   carry _metadata.variant. Never in the way of the tracking: it runs in a try.
  *   &cta=3 = the test link (?dop_cta=<cta id> on the page): that CTA of the funnel, a
  *   draft too, at once (&preview= to /_dop/cta), outside the draw: no cookie, no cta_id.
  *
@@ -895,6 +905,293 @@ const TRACKER_DOT_JS = <<<'JS'
   window.addEventListener('scroll', function (ev) { if (ev.isTrusted) measureDepth(ev.target); }, { capture: true, passive: true });
   document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') sendDepth(); });
   window.addEventListener('pagehide', sendDepth);
+  // ---- the funnel's player (player.php): the layer over the VSL, saved in the dashboard ----
+  // The config is <script type="application/json" data-dop-player> before </body> (only on the served step
+  // that drew a VSL video). The layer is a box over the <vturb-smartplayer> (it's in our DOM, not an iframe),
+  // kept on the player's rectangle; nothing in it takes a touch except the thumb (a touch outside its button
+  // resumes the video) and the end notice. One test at a time: the visitor's side (a/b) is drawn by the
+  // weights, kept in a cookie per test, and sent once as player_variant; the tested feature's events carry it
+  // in _metadata.variant. dot keeps one event of each name per click, so each hook has its own name.
+  var PLAYER_HOOK_SHOW = 6;     // seconds a hook stays on screen
+  var PLAYER_HOOK_STAY = 60;    // "stayed": still watching this many seconds of video after the hook
+  function playerConfig() {
+    try {
+      var s = document.querySelector('script[data-dop-player]');
+      var c = s ? JSON.parse(s.textContent || 'null') : null;
+      return c && typeof c === 'object' ? c : null;
+    } catch (e) { return null; }
+  }
+  function cookieValue(name) {
+    var all = document.cookie.split(';');
+    for (var i = 0; i < all.length; i++) {
+      var kv = all[i].replace(/^\s+/, '');
+      if (kv.indexOf(name + '=') === 0) return kv.slice(name.length + 1);
+    }
+    return '';
+  }
+  function playerLayer(el) {
+    var cfg = playerConfig();
+    if (cfg) { playerStart(el, cfg); return; }
+    // the config sits before </body>: a player ready before the parser got there reads it on DOMContentLoaded
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', function () { var c = playerConfig(); if (c) playerStart(el, c); });
+    }
+  }
+  function playerStart(el, cfg) {
+    if (el.__dopPlayer) return;
+    el.__dopPlayer = true;
+    var test = cfg.test && cfg.test.variants && cfg.test.variants.length === 2 ? cfg.test : null;
+    var side = '';
+    var mine = null;
+    if (test) {
+      var ck = 'dop_pt_' + String(test.id).slice(0, 8);
+      side = cookieValue(ck);
+      if (side !== 'a' && side !== 'b') {
+        var wa = +test.variants[0].weight || 50, wb = +test.variants[1].weight || 50;
+        side = Math.random() * (wa + wb) < wa ? 'a' : 'b';
+      }
+      setCookie(ck, side, 30);
+      mine = side === 'a' ? test.variants[0] : test.variants[1];
+      sendEvent('player_variant', { video_id: videoId, _metadata: { test: test.id, feature: test.feature, variant: side } });
+    }
+    // the tested feature is off on the "without" side
+    function on(feature) { return !(test && test.feature === feature && mine && mine.off); }
+    function fire(name, feature, sync) {
+      var extra = { video_id: videoId, video_time: currentTime() };
+      if (test && test.feature === feature) extra._metadata = { variant: side };
+      if (sync) sendSync(buildPayload(name, extra)); else sendEvent(name, extra);
+    }
+    function pitch() {
+      var c = el.config || el.__config;
+      return (c && c.pitchTime) || 0;
+    }
+    var style = document.createElement('style');
+    style.textContent = '@keyframes dopPlayerPulse{0%,100%{transform:translate(-50%,-50%) scale(1)}50%{transform:translate(-50%,-50%) scale(1.07)}}';
+    (document.head || document.documentElement).appendChild(style);
+    var layer = document.createElement('div');
+    layer.setAttribute('data-dop-player-layer', '');
+    layer.style.cssText = 'position:absolute;z-index:2147483000;pointer-events:none;overflow:hidden;display:none;left:0;top:0;width:0;height:0';
+    (document.body || document.documentElement).appendChild(layer);
+    var shown = null, follow = null;
+    function place() {
+      var r = el.getBoundingClientRect();
+      if (!r.width || !r.height) { layer.style.visibility = 'hidden'; return; }
+      layer.style.visibility = '';
+      layer.style.left = (r.left + (window.pageXOffset || 0)) + 'px';
+      layer.style.top = (r.top + (window.pageYOffset || 0)) + 'px';
+      layer.style.width = r.width + 'px';
+      layer.style.height = r.height + 'px';
+    }
+    function show(kind, node) {
+      layer.innerHTML = '';
+      layer.appendChild(node);
+      layer.style.display = 'block';
+      shown = kind;
+      place();
+      if (!follow) follow = setInterval(place, 400);
+    }
+    function hide(kind) {
+      if (kind && shown !== kind) return;
+      layer.innerHTML = '';
+      layer.style.display = 'none';
+      shown = null;
+      if (follow) { clearInterval(follow); follow = null; }
+    }
+    window.addEventListener('resize', function () { if (shown) place(); });
+    el.addEventListener('player:resize', function () { if (shown) place(); });
+    var paused = false, ended = false;
+    el.addEventListener('video:play', function () { paused = false; ended = false; });
+    el.addEventListener('video:pause', function () { paused = true; });
+    el.addEventListener('video:ended', function () { ended = true; });
+
+    // the play button: over the muted smart autoplay; the touch goes through to VTurb (it unmutes and restarts)
+    var play = cfg.play && on('play') ? cfg.play : null;
+    var playImg = play ? (test && test.feature === 'play' && mine && mine.image ? mine.image : play.image) : null;
+    var playSeen = false, playTapped = false;
+    function playShow() {
+      if (!playImg || shown === 'thumb' || shown === 'end') return;
+      var img = document.createElement('img');
+      img.src = playImg;
+      img.alt = '';
+      img.style.cssText = 'position:absolute;left:50%;top:' + (+play.position || 50) + '%;width:' + (+play.size || 50) + '%;height:auto;transform:translate(-50%,-50%);pointer-events:none;' +
+        (play.pulse ? 'animation:dopPlayerPulse 1.15s ease-in-out infinite;' : '');
+      show('play', img);
+      if (!playSeen) { playSeen = true; fire('player_play_view', 'play'); }
+    }
+    function playHide() {
+      if (shown !== 'play') return;
+      hide('play');
+      // the muted autoplay ended by the visitor's touch (VTurb unmutes and starts over): "tapped"
+      if (playSeen && !playTapped) { playTapped = true; fire('player_play_tap', 'play'); }
+    }
+    if (playImg) {
+      el.addEventListener('smartautoplay:active', playShow);
+      el.addEventListener('smartautoplay:inactive', playHide);
+      if (el.inSmartAutoPlay) playShow();
+    }
+
+    // the thumb: when paused (and, with end mode "thumb", when the video ends), with the button to the offer
+    var thumb = cfg.thumb || null;
+    var thumbSeen = false;
+    function offerHref() {
+      var b = thumb.button || {};
+      var href = b.target === 'url' && b.url ? b.url : '';
+      if (!href) {
+        var a = document.querySelector('[data-dop-cta] a[href*="checkout"]') || document.querySelector('a[href*="checkout"]');
+        href = a ? a.getAttribute('href') || '' : '';
+      }
+      if (!href) return '';
+      try {
+        var u = new URL(href, window.location.href);
+        if (!/^https?:$/.test(u.protocol)) return '';
+        return u.hostname !== window.location.hostname ? ctaLink(href, ctaId) : href;
+      } catch (e) { return ''; }
+    }
+    function thumbNode(why) {
+      var box = document.createElement('div');
+      box.style.cssText = 'position:absolute;left:0;top:0;right:0;bottom:0;background:#000;pointer-events:auto;cursor:pointer';
+      var img = document.createElement('img');
+      img.src = thumb.image;
+      img.alt = '';
+      img.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block';
+      box.appendChild(img);
+      var b = thumb.button || {};
+      var p = pitch();
+      var href = b.on && (!b.after_pitch || (p > 0 && currentTime() >= p)) ? offerHref() : '';
+      if (href) {
+        var a = document.createElement('a');
+        a.href = href;
+        a.textContent = b.text || '';
+        a.style.cssText = 'position:absolute;left:50%;bottom:13%;transform:translateX(-50%);width:80%;box-sizing:border-box;border-radius:999px;padding:12px 8px;' +
+          'font:italic 700 16px/1.2 Arial,Helvetica,sans-serif;text-align:center;color:#fff;text-decoration:none;border:2px solid #fff;box-shadow:0 4px 12px rgba(0,0,0,.35);' +
+          'background:' + (/^#[0-9a-f]{6}$/i.test(b.color || '') ? b.color : '#16a34a');
+        a.addEventListener('click', function (ev) {
+          ev.stopPropagation();
+          if (why === 'end') fire('player_end_click', 'end', true); else fire('player_thumb_click', 'thumb', true);
+        });
+        box.appendChild(a);
+      }
+      // a touch outside the button: back to the video
+      box.addEventListener('click', function () {
+        hide();
+        try { if (typeof el.play === 'function') el.play(); } catch (e) {}
+      });
+      return box;
+    }
+    if (thumb && thumb.on_pause && on('thumb')) {
+      el.addEventListener('video:pause', function () {
+        // a pause right before the end is the end's business; the muted autoplay is never "paused" by the visitor
+        setTimeout(function () {
+          if (!paused || ended || el.inSmartAutoPlay || shown === 'end') return;
+          show('thumb', thumbNode('pause'));
+          if (!thumbSeen) { thumbSeen = true; fire('player_thumb_view', 'thumb'); }
+        }, 200);
+      });
+      el.addEventListener('video:play', function () { hide('thumb'); });
+    }
+
+    // the hooks: at a second of the video, or N seconds before this VSL's pitch
+    var hooks = cfg.hooks && on('hooks') && cfg.hooks.items && cfg.hooks.items.length ? cfg.hooks : null;
+    var hookState = [];
+    function hookShow(h) {
+      if (shown === 'thumb' || shown === 'end') return;
+      var d = document.createElement('div');
+      d.textContent = h.text;
+      d.style.cssText = 'position:absolute;left:4%;right:4%;padding:10px 12px;border-radius:10px;font:700 15px/1.25 Arial,Helvetica,sans-serif;text-align:center;box-shadow:0 4px 12px rgba(0,0,0,.3);' +
+        (hooks.style === 'bottom' ? 'bottom:8%;background:rgba(17,17,17,.88);border:2px solid #facc15;color:#fde047' : 'top:6%;background:rgba(220,38,38,.92);color:#fff');
+      show('hook', d);
+      setTimeout(function () { hide('hook'); }, PLAYER_HOOK_SHOW * 1000);
+    }
+    if (hooks) {
+      el.addEventListener('video:timeupdate', function (ev) {
+        if (el.inSmartAutoPlay) return;
+        var t = Math.floor((ev.detail && ev.detail.time) || 0);
+        for (var i = 0; i < hooks.items.length; i++) {
+          var h = hooks.items[i];
+          var s = hookState[i] || (hookState[i] = {});
+          var at = h.when === 'at' ? h.seconds : (pitch() > 0 ? Math.max(0, pitch() - h.seconds) : -1);
+          if (at < 0) continue;
+          if (!s.seen && t >= at && t < at + PLAYER_HOOK_SHOW) {
+            s.seen = true;
+            s.at = at;
+            hookShow(h);
+            fire('player_hook' + (i + 1) + '_view', 'hooks');
+          }
+          if (s.seen && !s.stay && t >= s.at + PLAYER_HOOK_STAY) {
+            s.stay = true;
+            fire('player_hook' + (i + 1) + '_stay', 'hooks');
+          }
+        }
+      });
+    }
+
+    // the end: scroll to the offer (the CTA under the player), the thumb, or a notice over the player
+    var end = cfg.end && on('end') ? cfg.end : null;
+    var endDone = false, atPitchDone = false, endClickArmed = false;
+    function offerTarget() {
+      return document.querySelector('[data-dop-cta]') || document.querySelector('a[href*="checkout"]');
+    }
+    function goToOffer() {
+      var o = offerTarget();
+      try { if (o && o.scrollIntoView) o.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) {}
+    }
+    // after the end (or the pitch scroll), the next checkout click is the end's "clicked the offer"
+    function armEndClick() {
+      if (endClickArmed) return;
+      endClickArmed = true;
+      document.addEventListener('click', function onClick(ev) {
+        var path = ev.composedPath ? ev.composedPath() : [ev.target];
+        for (var i = 0; i < path.length; i++) {
+          var n = path[i];
+          if (n && n.tagName === 'A' && (n.getAttribute('href') || '').indexOf('checkout') >= 0) {
+            document.removeEventListener('click', onClick, true);
+            fire('player_end_click', 'end', true);
+            return;
+          }
+        }
+      }, true);
+    }
+    function endNotice() {
+      var box = document.createElement('div');
+      box.style.cssText = 'position:absolute;left:0;top:0;right:0;bottom:0;background:rgba(0,0,0,.6);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;' +
+        'color:#fff;text-align:center;padding:16px;font:700 18px/1.3 Arial,Helvetica,sans-serif;pointer-events:auto';
+      var t = document.createElement('div');
+      t.textContent = 'The offer is right below ↓';
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = 'SHOW ME THE OFFER';
+      b.style.cssText = 'background:#16a34a;border:2px solid #fff;border-radius:999px;padding:10px 18px;color:#fff;font:italic 700 15px Arial,Helvetica,sans-serif;cursor:pointer';
+      b.addEventListener('click', function () { fire('player_end_click', 'end'); hide('end'); goToOffer(); });
+      box.appendChild(t);
+      box.appendChild(b);
+      return box;
+    }
+    if (end) {
+      if (end.mode !== 'none') {
+        el.addEventListener('video:ended', function () {
+          if (endDone) return;
+          endDone = true;
+          fire('player_end_reach', 'end');
+          if (end.mode === 'scroll') { hide(); goToOffer(); armEndClick(); }
+          else if (end.mode === 'thumb' && thumb) show('end', thumbNode('end'));
+          else if (end.mode === 'notice') show('end', endNotice());
+        });
+      }
+      if (end.scroll_at_pitch) {
+        el.addEventListener('video:timeupdate', function (ev) {
+          if (atPitchDone || el.inSmartAutoPlay) return;
+          var p = pitch();
+          var t = Math.floor((ev.detail && ev.detail.time) || 0);
+          if (p > 0 && t >= p) {
+            atPitchDone = true;
+            // the CTA shows at the pitch (ctaReveal): scroll once it's laid out
+            setTimeout(goToOffer, 600);
+            armEndClick();
+          }
+        });
+      }
+    }
+  }
   // ---- player: binds the video events ----
   // On player:ready, registered RIGHT AWAY at script execution — and at once if the
   // player was already ready when this script arrived (a late tracker must not lose
@@ -906,6 +1203,8 @@ const TRACKER_DOT_JS = <<<'JS'
       if (videoBound || !el) return;
       videoBound = true;
       bindVideoEvents(el);
+      // the funnel's player (player.php): never in the way of the tracking above
+      try { playerLayer(el); } catch (e) {}
     };
     document.addEventListener('player:ready', function (ev) {
       var d = (ev && ev.detail) || {};
