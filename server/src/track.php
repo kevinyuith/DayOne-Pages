@@ -194,10 +194,13 @@ const TRACKER_DOT_JS = <<<'JS'
  *   layer over the <vturb-smartplayer> with the play image (over the muted smart
  *   autoplay; the touch goes through to VTurb), the thumb when paused (its button
  *   to the offer's checkout, after the pitch), the hooks and what happens at the
- *   end. A test draws the visitor's side (cookie dop_pt_<test>). Events:
+ *   end. The server draws a test's side (cookie dop_pt_<test>) and puts the
+ *   speed and the player's settings in the tag's custom-config. Events:
  *   player_variant, player_play_view/_tap, player_thumb_view/_click,
- *   player_hook<n>_view/_stay, player_end_reach/_click — the tested feature's
- *   carry _metadata.variant. Never in the way of the tracking: it runs in a try.
+ *   player_hook<n>_view/_stay, player_end_reach/_click,
+ *   player_resume_view/_continue, player_mini_enter/_back,
+ *   player_spause_pause/_resume — the tested feature's carry
+ *   _metadata.variant. Never in the way of the tracking: it runs in a try.
  *   &cta=3 = the test link (?dop_cta=<cta id> on the page): that CTA of the funnel, a
  *   draft too, at once (&preview= to /_dop/cta), outside the draw: no cookie, no cta_id.
  *
@@ -944,13 +947,14 @@ const TRACKER_DOT_JS = <<<'JS'
     var side = '';
     var mine = null;
     if (test) {
+      // the side the server drew (player.php, cookie dop_pt_<test>); drawn here only if it didn't come
       var ck = 'dop_pt_' + String(test.id).slice(0, 8);
-      side = cookieValue(ck);
+      side = cfg.side === 'a' || cfg.side === 'b' ? cfg.side : cookieValue(ck);
       if (side !== 'a' && side !== 'b') {
         var wa = +test.variants[0].weight || 50, wb = +test.variants[1].weight || 50;
         side = Math.random() * (wa + wb) < wa ? 'a' : 'b';
+        setCookie(ck, side, 30);
       }
-      setCookie(ck, side, 30);
       mine = side === 'a' ? test.variants[0] : test.variants[1];
       sendEvent('player_variant', { video_id: videoId, _metadata: { test: test.id, feature: test.feature, variant: side } });
     }
@@ -1124,6 +1128,56 @@ const TRACKER_DOT_JS = <<<'JS'
         }
       });
     }
+
+    // The player's own features (the speed, mini player, Smart Pause and "continue watching" go in the player tag's
+    // custom-config — player.php — or are VTurb's own setting): what they did, read from outside, because their
+    // events stay inside the player's closed shadow root. Each once per page.
+    var told = {};
+    function tell(name, sync) { if (told[name]) return; told[name] = true; fire(name, null, sync); }
+    // "continue watching": VTurb shows it when it saved a position for this player (localStorage <player>-resume,
+    // seconds; -1 = watched to the end); "continued" = the first real play starts near that position
+    var resumeAt = 0;
+    try {
+      var rc = el.config || el.__config;
+      if (!rc || !rc.resume || rc.resume.active !== false) resumeAt = +JSON.parse(localStorage.getItem(videoId + '-resume') || '0') || 0;
+    } catch (e) {}
+    if (resumeAt > 5) {
+      tell('player_resume_view');
+      // VTurb's "continue" doesn't fire a new video:play: the video moving forward from the saved position is the
+      // answer (from near 0 = "start from the beginning"). A seek alone moves no time forward.
+      var resumeFrom = -1, resumeDone = false;
+      el.addEventListener('video:timeupdate', function (ev) {
+        if (resumeDone || el.inSmartAutoPlay) return;
+        var t = Math.floor((ev.detail && ev.detail.time) || 0);
+        if (resumeFrom < 0) { resumeFrom = t; return; }
+        if (t <= resumeFrom) return;
+        resumeDone = true;
+        if (resumeFrom >= resumeAt - 3) tell('player_resume_continue');
+      });
+    }
+    // the mini player: VTurb keeps a spacer in the page (.vturb-mini-player-page-spacer) shown while it's floating
+    var miniIn = false, miniLater = null;
+    function miniCheck() {
+      var sp = document.querySelector('.vturb-mini-player-page-spacer');
+      var on = !!sp && sp.style.display !== 'none';
+      if (on && !miniIn) { miniIn = true; tell('player_mini_enter'); }
+      else if (!on && miniIn) { miniIn = false; tell('player_mini_back'); }
+    }
+    // checked on the scroll and again a moment after it stops (VTurb opens/closes the window after its own observer)
+    window.addEventListener('scroll', function () {
+      miniCheck();
+      if (miniLater) clearTimeout(miniLater);
+      miniLater = setTimeout(miniCheck, 600);
+    }, { passive: true });
+    // Smart Pause: the video pauses right after the tab is hidden, and plays again when it's back
+    var hiddenAt = 0, pausedByHide = false;
+    document.addEventListener('visibilitychange', function () { if (document.hidden) hiddenAt = Date.now(); });
+    el.addEventListener('video:pause', function () {
+      if (document.hidden && Date.now() - hiddenAt < 2000) { pausedByHide = true; tell('player_spause_pause', true); }
+    });
+    el.addEventListener('video:play', function () {
+      if (pausedByHide && !document.hidden) { pausedByHide = false; tell('player_spause_resume'); }
+    });
 
     // the end: scroll to the offer (the CTA under the player), the thumb, or a notice over the player
     var end = cfg.end && on('end') ? cfg.end : null;

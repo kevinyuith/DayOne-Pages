@@ -67,15 +67,54 @@ check('test with a bad id: dropped', !isset($withTest([...$playTest, 'id' => 'no
 check('test with one side: dropped', !isset($withTest([...$playTest, 'variants' => [$playTest['variants'][0]]])['test']));
 check('test with a 0 or 100 weight: dropped', !isset($withTest([...$playTest, 'variants' => [['weight' => 100], ['weight' => 0]]])['test']));
 
-// The page: JSON safe inside <script>, only when the step drew a video.
+// speed and other: for the player tag's custom-config.
+same('speed: kept (0.5–2), rounded', 1.25, player_config(['speed' => ['speed' => 1.25]])['speed']);
+same('speed: out of range or null → none', null, player_config(['speed' => ['speed' => 9]]));
+same('other: only what the funnel chose', ['mini_player' => true, 'resume_title' => 'Você já começou'], player_config(['other' => ['mini_player' => true, 'smart_pause' => null, 'resume_title' => ' Você já começou ', 'resume_play' => '']])['other']);
+check('other: "off" on purpose is kept', player_config(['other' => ['smart_pause' => false]])['other']['smart_pause'] === false);
+same('custom-config: the funnel\'s speed, mini player, Smart Pause and texts, in VTurb\'s keys', [
+    'turbo' => ['active' => true, 'type' => 'single', 'speed' => 1.2],
+    'miniPlayer' => ['active' => true, 'autoEnableOnScroll' => true, 'autoReturn' => true],
+    'playback' => ['smartPause' => false],
+    'resume' => ['title' => 'T', 'play' => 'P'],
+], player_custom(player_config(['speed' => ['speed' => 1.2], 'other' => ['mini_player' => true, 'smart_pause' => false, 'resume_title' => 'T', 'resume_play' => 'P']]), null));
+same('custom-config: nothing chosen → none', null, player_custom(player_config(['play' => ['image' => $plImg]]), null));
+
+// The test's side: drawn here, kept in dop_pt_<test>.
+$speedTest = ['speed' => ['speed' => 1.1], 'test' => ['id' => $plTest, 'feature' => 'speed', 'variants' => [['weight' => 50, 'speed' => 1.1], ['weight' => 50, 'speed' => 1.3]]]];
+$cfgSpeed = player_config($speedTest);
+same('speed test: each side with its speed', [1.1, 1.3], array_column($cfgSpeed['test']['variants'], 'speed'));
+check('speed test with a side without a speed: dropped', !isset(player_config(['test' => ['id' => $plTest, 'feature' => 'speed', 'variants' => [['weight' => 50, 'speed' => 1.1], ['weight' => 50]]]])['test']));
+$fixedP = static fn (int $n) => static fn (int $max): int => min($n, $max - 1);
+same('draw 0 of 100 → a', 'a', player_draw($cfgSpeed['test'], [], $fixedP(0))['side']);
+same('draw 60 of 100 → b', 'b', player_draw($cfgSpeed['test'], [], $fixedP(60))['side']);
+same('new side: the cookie', 'dop_pt_11111111=b; Path=/; Max-Age=2592000; Secure; SameSite=Lax', player_draw($cfgSpeed['test'], [], $fixedP(60))['cookie']);
+same('the cookie wins, and isn\'t sent again', ['side' => 'a', 'cookie' => null], player_draw($cfgSpeed['test'], ['dop_pt_11111111' => 'a'], $fixedP(99)));
+same('a junk cookie draws again', 'b', player_draw($cfgSpeed['test'], ['dop_pt_11111111' => 'x'], $fixedP(60))['side']);
+same('custom-config in a speed test: the side\'s speed', 1.3, player_custom($cfgSpeed, 'b')['turbo']['speed']);
+same('… and side a\'s', 1.1, player_custom($cfgSpeed, 'a')['turbo']['speed']);
+
+// The page: JSON safe inside <script>, only when the step drew a video; the side and the custom-config with it.
 $route = ['player' => [...$plFull, 'hooks' => ['items' => [['text' => '</script><script>alert(1)</script> & "q"', 'when' => 'at', 'seconds' => 3]]]]];
-$json = player_page_json($route, 'dddddddddddddddddddddd01');
+$pp = player_page($route, 'dddddddddddddddddddddd01');
+$json = $pp['json'] ?? null;
 check('the JSON has no </script>', $json !== null && !str_contains($json, '</script') && !str_contains($json, '<'));
 same('… and decodes back to the text', '</script><script>alert(1)</script> & "q"', json_decode((string) $json, true)['hooks']['items'][0]['text']);
-same('no video drawn: no player', null, player_page_json($route, null));
-same('no player on the route: none', null, player_page_json([], 'dddddddddddddddddddddd01'));
+same('no speed/other chosen: no custom-config', null, $pp['custom']);
+same('no test: no cookie', null, $pp['cookie']);
+same('no video drawn: no player', null, player_page($route, null));
+same('no player on the route: none', null, player_page([], 'dddddddddddddddddddddd01'));
+$ps = player_page(['player' => $speedTest], 'dddddddddddddddddddddd01', [], $fixedP(60));
+same('speed test page: the side in the JSON', 'b', json_decode($ps['json'], true)['side']);
+same('… the side\'s speed in the custom-config', 1.3, json_decode((string) $ps['custom'], true)['turbo']['speed']);
+check('… and the cookie to send', str_starts_with((string) $ps['cookie'], 'dop_pt_11111111=b;'));
+check('the ETag tag changes with the side', $ps['tag'] !== player_page(['player' => $speedTest], 'dddddddddddddddddddddd01', ['dop_pt_11111111' => 'a'])['tag']);
+
 $page = '<html><head></head><body><vturb-smartplayer id="vid-1"></vturb-smartplayer></body></html>';
 $injected = player_inject($page, '{"play":1}');
 check('injected before </body>', str_ends_with($injected, '<script type="application/json" data-dop-player>{"play":1}</script></body></html>'));
 same('no </body>: at the end', 'x<script type="application/json" data-dop-player>{}</script>', player_inject('x', '{}'));
+same('custom-config on the player tag, as an attribute', '<vturb-smartplayer custom-config="{&quot;turbo&quot;:{&quot;speed&quot;:1.2}}" id="vid-1"></vturb-smartplayer>', player_custom_inject('<vturb-smartplayer id="vid-1"></vturb-smartplayer>', '{"turbo":{"speed":1.2}}'));
+same('the page\'s own custom-config wins', '<vturb-smartplayer custom-config=\'{"a":1}\' id="vid-1">', player_custom_inject('<vturb-smartplayer custom-config=\'{"a":1}\' id="vid-1">', '{"turbo":{"speed":1.2}}'));
+same('no player tag: unchanged', '<div></div>', player_custom_inject('<div></div>', '{}'));
 same('the ETag tag changes with the config', true, player_tag('{"a":1}') !== player_tag('{"a":2}') && str_starts_with(player_tag('{}'), '-pl'));

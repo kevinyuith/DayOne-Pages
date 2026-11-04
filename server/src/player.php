@@ -9,8 +9,18 @@
  *   thumb  an image when the video is paused, with a button to the offer's checkout
  *   hooks  short lines for 6 s, at a second of the video or N seconds before the pitch
  *   end    when the video ends: scroll to the offer, the thumb, or a notice
- *   test   one of them in A × B: dot.js draws the side (cookie per test) and says
- *          which in a player_variant event
+ *   speed  the player's speed (VTurb's Turbo)
+ *   other  mini player, Smart Pause and the "continue watching" texts
+ *   test   one of them in A × B: THIS server draws the visitor's side by the
+ *          weights (cookie dop_pt_<test>, like the VSL and the CTA draws) and the
+ *          page says which (dot.js sends it in a player_variant event)
+ *
+ * speed and other aren't drawn by us: they go in the player tag's
+ * `custom-config` attribute (<vturb-smartplayer custom-config="{…}">), which
+ * VTurb's own smartplayer.js merges over the player's config when it mounts —
+ * tested on 04/11 with the real player (playbackRate, mini-player:entered,
+ * smart-pause:paused/resumed and the resume texts). Nothing is written to VTurb;
+ * null / empty = the VSL keeps its own setting there.
  *
  * pages.resolve gives the funnel's `player` (20261104a), the gate copies it to the
  * funnel route (rules.php), and the served step that drew a VSL video gets it,
@@ -26,6 +36,14 @@ defined('DAYONE_ENTRY') || (http_response_code(404) && exit);
 /** Most hooks a funnel has (the dashboard's limit). */
 const PLAYER_MAX_HOOKS = 8;
 const PLAYER_UUID_RE = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/';
+/** The side of the funnel's test the visitor got: dop_pt_<first 8 of the test id> = a|b. */
+const PLAYER_COOKIE = 'dop_pt_';
+
+/** A speed the player takes (0.5–2), or null. */
+function player_speed(mixed $v): ?float
+{
+    return is_numeric($v) && (float) $v >= 0.5 && (float) $v <= 2 ? round((float) $v, 2) : null;
+}
 
 /** An https image URL from the dashboard's {url, …}; null otherwise. */
 function player_image(mixed $img): ?string
@@ -120,12 +138,34 @@ function player_config(mixed $player): ?array
         $out['end'] = ['mode' => $endMode, 'scroll_at_pitch' => $atPitch];
     }
 
+    // speed and other: for the player tag's custom-config (player_custom), not drawn by dot.js.
+    $speed = player_speed(is_array($player['speed'] ?? null) ? ($player['speed']['speed'] ?? null) : null);
+    if ($speed !== null) {
+        $out['speed'] = $speed;
+    }
+    $other = is_array($player['other'] ?? null) ? $player['other'] : [];
+    $o = [];
+    foreach (['mini_player', 'smart_pause'] as $k) {
+        if (is_bool($other[$k] ?? null)) {
+            $o[$k] = $other[$k];
+        }
+    }
+    foreach (['resume_title' => 120, 'resume_play' => 60, 'resume_replay' => 60] as $k => $max) {
+        $t = player_text($other[$k] ?? '', $max);
+        if ($t !== '') {
+            $o[$k] = $t;
+        }
+    }
+    if ($o !== []) {
+        $out['other'] = $o;
+    }
+
     // One test at a time: a valid A × B on a feature that is on (the play's side B brings its own image).
     $test = is_array($player['test'] ?? null) ? $player['test'] : null;
     $feature = $test['feature'] ?? null;
     $variants = is_array($test['variants'] ?? null) ? array_values($test['variants']) : [];
     if ($test !== null && is_string($test['id'] ?? null) && preg_match(PLAYER_UUID_RE, $test['id']) === 1
-        && in_array($feature, ['play', 'thumb', 'hooks', 'end'], true) && isset($out[$feature]) && count($variants) === 2) {
+        && in_array($feature, ['play', 'thumb', 'hooks', 'end', 'speed'], true) && ($feature === 'speed' || isset($out[$feature])) && count($variants) === 2) {
         $sides = [];
         foreach ($variants as $i => $v) {
             $w = is_array($v) && is_numeric($v['weight'] ?? null) ? (int) $v['weight'] : 0;
@@ -136,6 +176,14 @@ function player_config(mixed $player): ?array
             $side = ['key' => $i === 0 ? 'a' : 'b', 'weight' => $w, 'off' => ($v['off'] ?? false) === true];
             if ($feature === 'play') {
                 $side['image'] = player_image($v['image'] ?? null) ?? $out['play']['image'];
+            }
+            if ($feature === 'speed') {
+                $sp = player_speed($v['speed'] ?? null);
+                if ($sp === null) {
+                    $sides = [];
+                    break;
+                }
+                $side['speed'] = $sp;
             }
             $sides[] = $side;
         }
@@ -153,14 +201,101 @@ function player_json(array $config): string
     return (string) json_encode($config, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 }
 
-/** The page's player JSON for the served step: the route's config, when the step drew a VSL video. null = none. */
-function player_page_json(array $route, ?string $video): ?string
+/**
+ * The visitor's side of the funnel's test: the one dop_pt_<test> holds, else
+ * drawn by the weights (ab_pick). `cookie` = the Set-Cookie to send (null: it
+ * already had it).
+ *
+ * @return array{side: string, cookie: ?string}
+ */
+function player_draw(array $test, array $cookies, ?callable $rand = null): array
+{
+    $name = PLAYER_COOKIE . substr((string) $test['id'], 0, 8);
+    $had = $cookies[$name] ?? null;
+    if ($had === 'a' || $had === 'b') {
+        return ['side' => $had, 'cookie' => null];
+    }
+    $side = ab_pick([
+        ['key' => 'a', 'weight' => (int) $test['variants'][0]['weight']],
+        ['key' => 'b', 'weight' => (int) $test['variants'][1]['weight']],
+    ], $rand)['key'];
+    return ['side' => $side, 'cookie' => "$name=$side; Path=/; Max-Age=2592000; Secure; SameSite=Lax"];
+}
+
+/**
+ * The player tag's custom-config (VTurb's keys): the funnel's speed (or the
+ * drawn side's, in a speed test), mini player, Smart Pause and resume texts.
+ * null = nothing to change in the player.
+ *
+ * @return array<string, mixed>|null
+ */
+function player_custom(array $config, ?string $side): ?array
+{
+    $custom = [];
+    $speed = $config['speed'] ?? null;
+    $test = $config['test'] ?? null;
+    if ($side !== null && is_array($test) && ($test['feature'] ?? null) === 'speed') {
+        $speed = $test['variants'][$side === 'a' ? 0 : 1]['speed'] ?? $speed;
+    }
+    if ($speed !== null) {
+        $custom['turbo'] = ['active' => true, 'type' => 'single', 'speed' => $speed];
+    }
+    $o = $config['other'] ?? [];
+    if (isset($o['mini_player'])) {
+        $custom['miniPlayer'] = ['active' => $o['mini_player'], 'autoEnableOnScroll' => $o['mini_player'], 'autoReturn' => true];
+    }
+    if (isset($o['smart_pause'])) {
+        $custom['playback'] = ['smartPause' => $o['smart_pause']];
+    }
+    $resume = [];
+    foreach (['title', 'play', 'replay'] as $k) {
+        if (isset($o["resume_$k"])) {
+            $resume[$k] = $o["resume_$k"];
+        }
+    }
+    if ($resume !== []) {
+        $custom['resume'] = $resume;
+    }
+    return $custom === [] ? null : $custom;
+}
+
+/**
+ * The served step's player: the page's config for dot.js (with the drawn side),
+ * the player tag's custom-config, the ETag part and the test's Set-Cookie — when
+ * the step drew a VSL video and the route has a player. null = none.
+ *
+ * @return array{json: string, custom: ?string, tag: string, cookie: ?string}|null
+ */
+function player_page(array $route, ?string $video, array $cookies = [], ?callable $rand = null): ?array
 {
     if ($video === null || $video === '') {
         return null;
     }
     $config = player_config($route['player'] ?? null);
-    return $config === null ? null : player_json($config);
+    if ($config === null) {
+        return null;
+    }
+    $side = null;
+    $cookie = null;
+    if (isset($config['test'])) {
+        ['side' => $side, 'cookie' => $cookie] = player_draw($config['test'], $cookies, $rand);
+        $config['side'] = $side;
+    }
+    $custom = player_custom($config, $side);
+    $json = player_json($config);
+    $customJson = $custom === null ? null : player_json($custom);
+    return ['json' => $json, 'custom' => $customJson, 'tag' => player_tag($json . '|' . (string) $customJson), 'cookie' => $cookie];
+}
+
+/** The custom-config on every <vturb-smartplayer> tag that doesn't have one (the page's own wins). */
+function player_custom_inject(string $html, string $custom): string
+{
+    $attr = ' custom-config="' . htmlspecialchars($custom, ENT_QUOTES) . '"';
+    return preg_replace_callback(
+        '/<vturb-smartplayer\b[^>]*>/i',
+        static fn (array $m): string => preg_match('/\scustom-config\s*=/i', $m[0]) === 1 ? $m[0] : substr_replace($m[0], $attr, strlen('<vturb-smartplayer'), 0),
+        $html,
+    ) ?? $html;
 }
 
 /** The ETag suffix of a page with the player: the config's hash. */
