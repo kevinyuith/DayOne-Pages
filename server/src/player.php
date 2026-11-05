@@ -28,6 +28,11 @@
  * before </body> — only with our tracker (a page with a tracker of its own would
  * carry a config nobody reads). The config goes into the ETag. dot.js (track.php)
  * draws the layer and sends the player_* events to dot.
+ *
+ * GROUPS (05/11/2026, the dashboard's Player stage became like the CTA stage: a
+ * Default and groups of VSLs): the top level is the Default, and `groups` =
+ * [{ id, name, vsls: [video ids], <feature>: {…} | null, test }]. The served
+ * step's video picks its group (player_for_video) before anything else here.
  */
 declare(strict_types=1);
 
@@ -38,6 +43,8 @@ const PLAYER_MAX_HOOKS = 8;
 const PLAYER_UUID_RE = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/';
 /** The side of the funnel's test the visitor got: dop_pt_<first 8 of the test id> = a|b. */
 const PLAYER_COOKIE = 'dop_pt_';
+/** The features a group can have of its own (the rest it takes from the Default). */
+const PLAYER_FEATURES = ['play', 'thumb', 'hooks', 'end', 'speed', 'other'];
 
 /** A speed the player takes (0.5–2), or null. */
 function player_speed(mixed $v): ?float
@@ -60,6 +67,44 @@ function player_text(mixed $s, int $max): string
     }
     $s = trim(preg_replace('/\s+/u', ' ', $s) ?? '');
     return mb_substr($s, 0, $max);
+}
+
+/**
+ * The funnel's player for one VSL video: the Default (the top level) with the
+ * features of the first group that lists the video, each one the group has of its
+ * own (absent or null = the Default's). One test per visitor: the group's test
+ * when it has one; else the Default's, only while it tests a feature the group
+ * takes from the Default. No group lists the video: the Default. `groups` never
+ * goes further.
+ */
+function player_for_video(mixed $player, string $video): mixed
+{
+    if (!is_array($player)) {
+        return $player;
+    }
+    $groups = $player['groups'] ?? null;
+    unset($player['groups']);
+    foreach (is_array($groups) ? $groups : [] as $g) {
+        $vsls = is_array($g) ? ($g['vsls'] ?? null) : null;
+        if (!is_array($vsls) || !in_array($video, $vsls, true)) {
+            continue;
+        }
+        $own = [];
+        foreach (PLAYER_FEATURES as $f) {
+            if (is_array($g[$f] ?? null)) {
+                $player[$f] = $g[$f];
+                $own[] = $f;
+            }
+        }
+        $defaultTest = is_array($player['test'] ?? null) ? $player['test'] : null;
+        if (is_array($g['test'] ?? null)) {
+            $player['test'] = $g['test'];
+        } elseif ($defaultTest !== null && in_array($defaultTest['feature'] ?? null, $own, true)) {
+            $player['test'] = null;
+        }
+        break;
+    }
+    return $player;
 }
 
 /**
@@ -271,7 +316,7 @@ function player_page(array $route, ?string $video, array $cookies = [], ?callabl
     if ($video === null || $video === '') {
         return null;
     }
-    $config = player_config($route['player'] ?? null);
+    $config = player_config(player_for_video($route['player'] ?? null, $video));
     if ($config === null) {
         return null;
     }

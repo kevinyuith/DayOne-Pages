@@ -118,3 +118,42 @@ same('custom-config on the player tag, as an attribute', '<vturb-smartplayer cus
 same('the page\'s own custom-config wins', '<vturb-smartplayer custom-config=\'{"a":1}\' id="vid-1">', player_custom_inject('<vturb-smartplayer custom-config=\'{"a":1}\' id="vid-1">', '{"turbo":{"speed":1.2}}'));
 same('no player tag: unchanged', '<div></div>', player_custom_inject('<div></div>', '{}'));
 same('the ETag tag changes with the config', true, player_tag('{"a":1}') !== player_tag('{"a":2}') && str_starts_with(player_tag('{}'), '-pl'));
+
+// Groups (05/11): the served video's group replaces the features it has of its own; one test per visitor.
+$vA = 'dddddddddddddddddddddd01';
+$vG = 'dddddddddddddddddddddd02';
+$vH = 'dddddddddddddddddddddd03';
+$plImgG = ['url' => 'https://cdn.example.com/play-group.png', 'name' => 'play-group.png', 'width' => 1080, 'height' => 1080];
+$grpTest = '22222222-2222-4222-8222-222222222222';
+$playTest = ['id' => $plTest, 'feature' => 'play', 'started_at' => '2026-11-05T00:00:00Z', 'variants' => [
+    ['key' => 'a', 'weight' => 50, 'label' => 'A', 'image' => $plImg], ['key' => 'b', 'weight' => 50, 'label' => 'B', 'image' => $plThumb],
+]];
+$withGroups = [...$plFull, 'test' => $playTest, 'groups' => [
+    ['id' => 'g1', 'name' => 'DTC', 'vsls' => [$vG], 'play' => ['image' => $plImgG, 'size' => 70, 'position' => 50, 'pulse' => true], 'thumb' => null, 'test' => null],
+    ['id' => 'g2', 'name' => 'Hooks', 'vsls' => [$vH, $vG], 'hooks' => ['style' => 'top', 'items' => [['text' => 'Group hook', 'when' => 'at', 'seconds' => 9]]],
+     'test' => ['id' => $grpTest, 'feature' => 'hooks', 'started_at' => '2026-11-05T00:00:00Z', 'variants' => [['key' => 'a', 'weight' => 50, 'label' => 'Com'], ['key' => 'b', 'weight' => 50, 'label' => 'Sem', 'off' => true]]]],
+]];
+$forA = player_for_video($withGroups, $vA);
+check('a video no group lists: the Default, without `groups`', !array_key_exists('groups', $forA) && $forA['play'] === $plFull['play'] && $forA['test'] === $playTest);
+$forG = player_for_video($withGroups, $vG);
+same('the group\'s own play replaces the Default\'s', $plImgG, $forG['play']['image']);
+same('… a null feature is the Default\'s', $plFull['thumb'], $forG['thumb']);
+same('… and what it doesn\'t have, too', $plFull['hooks'], $forG['hooks']);
+same('the Default\'s test on a feature the group has of its own: dropped', null, $forG['test']);
+same('the first group that lists the video wins (not the 2nd)', $plFull['hooks'], player_for_video($withGroups, $vG)['hooks']);
+$forH = player_for_video($withGroups, $vH);
+same('the group\'s own test replaces the Default\'s', $grpTest, $forH['test']['id']);
+same('… with its own hooks', 'Group hook', $forH['hooks']['items'][0]['text']);
+$inherit = [...$withGroups, 'groups' => [['id' => 'g3', 'name' => 'Inherits', 'vsls' => [$vA], 'play' => null, 'test' => null]]];
+same('the Default\'s test on a feature the group takes from the Default: kept', $plTest, player_for_video($inherit, $vA)['test']['id']);
+same('no groups: unchanged', $plFull, player_for_video($plFull, $vA));
+same('junk groups: the Default', $plFull['play'], player_for_video([...$plFull, 'groups' => 'x'], $vA)['play']);
+same('a group with junk vsls: skipped', $plFull['play'], player_for_video([...$plFull, 'groups' => [['vsls' => 'x', 'play' => ['image' => $plImgG]]]], $vA)['play']);
+same('null player: null', null, player_for_video(null, $vA));
+$pg = json_decode((string) player_page(['player' => $withGroups], $vG)['json'], true);
+same('the page of a group\'s video: the group\'s play image', $plImgG['url'], $pg['play']['image']);
+check('… and no test (the Default\'s was on play)', !isset($pg['test']));
+$ph = player_page(['player' => $withGroups], $vH, [], $fixedP(60));
+same('the page of the hooks group: its test\'s side', 'b', json_decode($ph['json'], true)['side']);
+check('… with the group test\'s cookie', str_starts_with((string) $ph['cookie'], 'dop_pt_22222222=b;'));
+same('the Default\'s page: its play test', $plTest, json_decode((string) player_page(['player' => $withGroups], $vA, [], $fixedP(0))['json'], true)['test']['id']);
