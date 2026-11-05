@@ -1120,6 +1120,8 @@ const TRACKER_DOT_JS = <<<'JS'
         // a pause right before the end is the end's business; the muted autoplay is never "paused" by the visitor
         setTimeout(function () {
           if (!paused || ended || el.inSmartAutoPlay || shown === 'end') return;
+          // "after the pitch": a pause before the VSL's pitch (or with no pitch) just pauses
+          if (thumb.only_after_pitch && !(pitch() > 0 && currentTime() >= pitch())) return;
           show('thumb', thumbNode('pause'));
           if (!thumbSeen) { thumbSeen = true; fire('player_thumb_view', 'thumb'); }
         }, 200);

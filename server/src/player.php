@@ -161,6 +161,8 @@ function player_config(mixed $player): ?array
         $out['thumb'] = [
             'image' => $thumbImage,
             'on_pause' => $onPause,
+            // "after the pitch" (05/11): only the pauses after the VSL's pitch; before it, a pause just pauses
+            'only_after_pitch' => ($thumb['only_after_pitch'] ?? false) === true,
             'button' => [
                 'on' => ($b['on'] ?? true) !== false && player_text($b['text'] ?? '', 60) !== '',
                 'text' => player_text($b['text'] ?? '', 60),

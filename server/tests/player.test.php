@@ -27,6 +27,9 @@ same('all off (the dashboard\'s default): none', null, player_config(['version' 
 $c = player_config($plFull);
 same('play: the image URL, size, position, pulse, and appearing at once when it says nothing', ['image' => $plImg['url'], 'size' => 55, 'position' => 34, 'pulse' => false, 'effect' => 'none'], $c['play']);
 same('thumb: the image URL', $plThumb['url'], $c['thumb']['image']);
+same('thumb: on every pause unless it says "after the pitch"', false, $c['thumb']['only_after_pitch']);
+same('thumb: "after the pitch"', true, player_config(['thumb' => ['image' => $plThumb, 'only_after_pitch' => true]])['thumb']['only_after_pitch']);
+same('thumb: junk is not "after the pitch"', false, player_config(['thumb' => ['image' => $plThumb, 'only_after_pitch' => 'yes']])['thumb']['only_after_pitch']);
 same('thumb button: target checkout keeps no URL', ['on' => true, 'text' => 'YES! I WANT IT →', 'color' => '#d4141c', 'target' => 'checkout', 'url' => '', 'after_pitch' => true], $c['thumb']['button']);
 same('hooks from before (one style): no ids; the bubble, lower, 90%, at once', ['items' => [
     ['kind' => 'text', 'when' => 'at', 'seconds' => 180, 'position' => 80, 'size' => 90, 'effect' => 'none', 'text' => 'Stay until the end', 'look' => 'bubble'],
