@@ -1148,7 +1148,7 @@ const TRACKER_DOT_JS = <<<'JS'
         inner = document.createElement('div');
         inner.textContent = h.text || '';
         var w = el.getBoundingClientRect().width || 360;
-        var px = Math.max(10, Math.round(w * 0.042 * size / 90));
+        var px = Math.max(10, Math.round(w * 0.05 * size / 90)); // 5% of the player's width at 90%, as the dashboard draws it
         var bubble = h.look === 'bubble';
         inner.style.cssText = 'padding:10px 12px;border-radius:' + (bubble ? '16px' : '10px') + ';font:700 ' + px + 'px/1.25 Arial,Helvetica,sans-serif;text-align:center;box-shadow:0 4px 12px rgba(0,0,0,.3);' +
           (bubble ? 'background:rgba(17,17,17,.88);border:2px solid #facc15;color:#fde047;' : 'background:rgba(220,38,38,.92);color:#fff;');
