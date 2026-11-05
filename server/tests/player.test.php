@@ -25,10 +25,13 @@ same('all off (the dashboard\'s default): none', null, player_config(['version' 
 
 // Cleaned to what dot.js reads.
 $c = player_config($plFull);
-same('play: the image URL, size, position, pulse', ['image' => $plImg['url'], 'size' => 55, 'position' => 34, 'pulse' => false], $c['play']);
+same('play: the image URL, size, position, pulse, and appearing at once when it says nothing', ['image' => $plImg['url'], 'size' => 55, 'position' => 34, 'pulse' => false, 'effect' => 'none'], $c['play']);
 same('thumb: the image URL', $plThumb['url'], $c['thumb']['image']);
 same('thumb button: target checkout keeps no URL', ['on' => true, 'text' => 'YES! I WANT IT →', 'color' => '#d4141c', 'target' => 'checkout', 'url' => '', 'after_pitch' => true], $c['thumb']['button']);
-same('hooks: no ids, the style', ['style' => 'bottom', 'items' => [['text' => 'Stay until the end', 'when' => 'at', 'seconds' => 180], ['text' => 'The recipe is coming up', 'when' => 'before_pitch', 'seconds' => 600]]], $c['hooks']);
+same('hooks from before (one style): no ids; the bubble, lower, 90%, at once', ['items' => [
+    ['kind' => 'text', 'when' => 'at', 'seconds' => 180, 'position' => 80, 'size' => 90, 'effect' => 'none', 'text' => 'Stay until the end', 'look' => 'bubble'],
+    ['kind' => 'text', 'when' => 'before_pitch', 'seconds' => 600, 'position' => 80, 'size' => 90, 'effect' => 'none', 'text' => 'The recipe is coming up', 'look' => 'bubble'],
+]], $c['hooks']);
 same('end', ['mode' => 'scroll', 'scroll_at_pitch' => false], $c['end']);
 check('no test key without a test', !array_key_exists('test', $c));
 
@@ -192,3 +195,19 @@ $spOpt = [...$plFull, 'test' => ['id' => $thumbTest, 'feature' => 'speed', 'star
 $spA = player_page(['player' => $spOpt], $vA, [], $fixedP(0));
 same('speed option a: its speed in the custom-config', 1.2, json_decode((string) $spA['custom'], true)['turbo']['speed']);
 same('speed option "as on VTurb" (off): no custom-config speed', null, player_page(['player' => $spOpt], $vA, [], $fixedP(60))['custom']);
+
+// Image hooks, the 5 positions, the size and how it appears (05/11, the dashboard's canvas "ganchos com imagem").
+$hookImg = ['url' => 'https://cdn.example.com/hook.png', 'name' => 'hook.png', 'width' => 1200, 'height' => 400];
+$ch = player_config(['hooks' => ['style' => 'top', 'items' => [
+    ['id' => 'a', 'kind' => 'image', 'image' => $hookImg, 'text' => '', 'position' => 0, 'size' => 100, 'effect' => 'bounce', 'when' => 'at', 'seconds' => 30],
+    ['id' => 'b', 'kind' => 'text', 'text' => 'Wait', 'look' => 'bubble', 'position' => 100, 'size' => 60, 'effect' => 'slide', 'when' => 'at', 'seconds' => 40],
+    ['id' => 'c', 'kind' => 'image', 'image' => null, 'text' => 'ignored', 'when' => 'at', 'seconds' => 50],
+    ['id' => 'd', 'kind' => 'image', 'image' => ['url' => 'http://x.com/a.png'], 'when' => 'at', 'seconds' => 60],
+    ['id' => 'e', 'kind' => 'text', 'text' => 'Odd', 'position' => 33, 'size' => 400, 'effect' => 'spin', 'look' => 'neon', 'when' => 'at', 'seconds' => 70],
+]]])['hooks']['items'];
+same('an image hook: the URL, Topo, 100%, bounce; no text, no look', ['kind' => 'image', 'when' => 'at', 'seconds' => 30, 'position' => 0, 'size' => 100, 'effect' => 'bounce', 'image' => $hookImg['url']], $ch[0]);
+same('a text hook: its look, Fundo, its size and effect', ['kind' => 'text', 'when' => 'at', 'seconds' => 40, 'position' => 100, 'size' => 60, 'effect' => 'slide', 'text' => 'Wait', 'look' => 'bubble'], $ch[1]);
+same('an image hook without an (https) image is left out', 3, count($ch));
+same('junk position → middle, size clamped, unknown effect → at once, unknown look → the old style\'s', ['position' => 50, 'size' => 100, 'effect' => 'none', 'look' => 'band'], array_intersect_key($ch[2], ['position' => 1, 'size' => 1, 'effect' => 1, 'look' => 1]));
+same('play at Fundo, sliding', ['position' => 100, 'effect' => 'slide'], array_intersect_key(player_config(['play' => ['image' => $plImg, 'position' => 100, 'effect' => 'slide']])['play'], ['position' => 1, 'effect' => 1]));
+same('play: an unknown position → center', 50, player_config(['play' => ['image' => $plImg, 'position' => 20]])['play']['position']);

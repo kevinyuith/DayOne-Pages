@@ -974,7 +974,14 @@ const TRACKER_DOT_JS = <<<'JS'
       return (c && c.pitchTime) || 0;
     }
     var style = document.createElement('style');
-    style.textContent = '@keyframes dopPlayerPulse{0%,100%{transform:translate(-50%,-50%) scale(1)}50%{transform:translate(-50%,-50%) scale(1.07)}}';
+    // the pulse and the entrances act on the piece inside its placed box (placeCss), so they don't fight its transform
+    style.textContent = '@keyframes dopPlayerPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.07)}}' +
+      '@keyframes dopFxFade{from{opacity:0}to{opacity:1}}' +
+      '@keyframes dopFxDown{from{opacity:0;transform:translateY(-160%)}to{opacity:1;transform:none}}' +
+      '@keyframes dopFxUp{from{opacity:0;transform:translateY(160%)}to{opacity:1;transform:none}}' +
+      '@keyframes dopFxSide{from{opacity:0;transform:translateX(-130%)}to{opacity:1;transform:none}}' +
+      '@keyframes dopFxGrow{from{opacity:0;transform:scale(.2)}to{opacity:1;transform:none}}' +
+      '@keyframes dopFxBounce{0%{opacity:0;transform:scale(.2)}55%{opacity:1;transform:scale(1.06)}75%{transform:scale(.97)}100%{transform:none}}';
     (document.head || document.documentElement).appendChild(style);
     var layer = document.createElement('div');
     layer.setAttribute('data-dop-player-layer', '');
@@ -1012,18 +1019,40 @@ const TRACKER_DOT_JS = <<<'JS'
     el.addEventListener('video:pause', function () { paused = true; });
     el.addEventListener('video:ended', function () { ended = true; });
 
+    // Where a piece goes and how it appears (the dashboard's src/lib/funnel-player/layout.ts): position 0 = against the
+    // top edge, 100 = against the bottom edge, else its center at that % of the height; "slide" comes from the
+    // nearest edge.
+    function placeCss(pos) {
+      pos = +pos;
+      if (pos === 0) return 'top:1.5%;transform:translateX(-50%);';
+      if (pos === 100) return 'bottom:3%;transform:translateX(-50%);';
+      return 'top:' + (pos || 50) + '%;transform:translate(-50%,-50%);';
+    }
+    function effectAnim(effect, pos) {
+      pos = +pos;
+      var n = effect === 'fade' ? 'dopFxFade' : effect === 'grow' ? 'dopFxGrow' : effect === 'bounce' ? 'dopFxBounce'
+        : effect === 'slide' ? (pos <= 34 ? 'dopFxDown' : pos >= 66 ? 'dopFxUp' : 'dopFxSide') : '';
+      return n ? n + ' .65s cubic-bezier(.2,.8,.2,1) both' : '';
+    }
+
     // the play button: over the muted smart autoplay; the touch goes through to VTurb (it unmutes and restarts)
     var play = cfg.play && on('play') ? cfg.play : null;
     var playImg = play ? (test && test.feature === 'play' && mine && mine.image ? mine.image : play.image) : null;
     var playSeen = false, playTapped = false;
     function playShow() {
       if (!playImg || shown === 'thumb' || shown === 'end') return;
+      var box = document.createElement('div');
+      box.style.cssText = 'position:absolute;left:50%;width:' + (+play.size || 50) + '%;pointer-events:none;' + placeCss(play.position);
       var img = document.createElement('img');
       img.src = playImg;
       img.alt = '';
-      img.style.cssText = 'position:absolute;left:50%;top:' + (+play.position || 50) + '%;width:' + (+play.size || 50) + '%;height:auto;transform:translate(-50%,-50%);pointer-events:none;' +
-        (play.pulse ? 'animation:dopPlayerPulse 1.15s ease-in-out infinite;' : '');
-      show('play', img);
+      var enter = effectAnim(play.effect, play.position);
+      var anims = [];
+      if (enter) anims.push(enter);
+      if (play.pulse) anims.push('dopPlayerPulse 1.15s ease-in-out ' + (enter ? '.65s ' : '') + 'infinite');
+      img.style.cssText = 'width:100%;height:auto;display:block;' + (anims.length ? 'animation:' + anims.join(',') + ';' : '');
+      box.appendChild(img);
+      show('play', box);
       if (!playSeen) { playSeen = true; fire('player_play_view', 'play'); }
     }
     function playHide() {
@@ -1101,14 +1130,41 @@ const TRACKER_DOT_JS = <<<'JS'
     // the hooks: at a second of the video, or N seconds before this VSL's pitch
     var hooks = cfg.hooks && on('hooks') && cfg.hooks.items && cfg.hooks.items.length ? cfg.hooks : null;
     var hookState = [];
+    // A hook (05/11): its line of text in a band or a bubble, or an image in its place; at its position, its size
+    // (% of the most: the player's width less 4% each side) and the font with it; it comes in by its effect and
+    // leaves the way it came.
     function hookShow(h) {
       if (shown === 'thumb' || shown === 'end') return;
-      var d = document.createElement('div');
-      d.textContent = h.text;
-      d.style.cssText = 'position:absolute;left:4%;right:4%;padding:10px 12px;border-radius:10px;font:700 15px/1.25 Arial,Helvetica,sans-serif;text-align:center;box-shadow:0 4px 12px rgba(0,0,0,.3);' +
-        (hooks.style === 'bottom' ? 'bottom:8%;background:rgba(17,17,17,.88);border:2px solid #facc15;color:#fde047' : 'top:6%;background:rgba(220,38,38,.92);color:#fff');
-      show('hook', d);
-      setTimeout(function () { hide('hook'); }, PLAYER_HOOK_SHOW * 1000);
+      var size = +h.size || 90;
+      var box = document.createElement('div');
+      box.style.cssText = 'position:absolute;left:50%;width:' + (Math.round(size * 9.2) / 10) + '%;pointer-events:none;' + placeCss(h.position);
+      var inner;
+      if (h.kind === 'image' && h.image) {
+        inner = document.createElement('img');
+        inner.src = h.image;
+        inner.alt = '';
+        inner.style.cssText = 'width:100%;height:auto;display:block;';
+      } else {
+        inner = document.createElement('div');
+        inner.textContent = h.text || '';
+        var w = el.getBoundingClientRect().width || 360;
+        var px = Math.max(10, Math.round(w * 0.042 * size / 90));
+        var bubble = h.look === 'bubble';
+        inner.style.cssText = 'padding:10px 12px;border-radius:' + (bubble ? '16px' : '10px') + ';font:700 ' + px + 'px/1.25 Arial,Helvetica,sans-serif;text-align:center;box-shadow:0 4px 12px rgba(0,0,0,.3);' +
+          (bubble ? 'background:rgba(17,17,17,.88);border:2px solid #facc15;color:#fde047;' : 'background:rgba(220,38,38,.92);color:#fff;');
+      }
+      var anim = effectAnim(h.effect, h.position);
+      if (anim) inner.style.animation = anim;
+      box.appendChild(inner);
+      show('hook', box);
+      setTimeout(function () {
+        if (shown !== 'hook' || layer.firstChild !== box) return;
+        if (!anim) { hide('hook'); return; }
+        inner.style.animation = 'none';
+        void inner.offsetWidth;
+        inner.style.animation = anim.replace(' both', ' reverse both');
+        setTimeout(function () { if (layer.firstChild === box) hide('hook'); }, 650);
+      }, PLAYER_HOOK_SHOW * 1000);
     }
     if (hooks) {
       el.addEventListener('video:timeupdate', function (ev) {

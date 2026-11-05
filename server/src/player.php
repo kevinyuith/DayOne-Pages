@@ -46,6 +46,16 @@ const PLAYER_MAX_HOOKS = 8;
 const PLAYER_UUID_RE = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/';
 /** The side of the funnel's test the visitor got: dop_pt_<first 8 of the test id> = a|b. */
 const PLAYER_COOKIE = 'dop_pt_';
+/**
+ * Where a piece goes (05/11, the dashboard's canvas "ganchos com imagem"): 0 = against the
+ * top edge, 100 = against the bottom edge; the others are the piece's center in % of the
+ * player's height. The play button uses 34/50/66, a hook 20/50/80.
+ */
+const PLAYER_PLAY_POSITIONS = [0, 34, 50, 66, 100];
+const PLAYER_HOOK_POSITIONS = [0, 20, 50, 80, 100];
+/** How a piece appears: none · fade · slide (from the nearest edge) · grow · bounce. */
+const PLAYER_EFFECTS = ['none', 'fade', 'slide', 'grow', 'bounce'];
+
 /** The features a group can have of its own (the rest it takes from the Default). */
 const PLAYER_FEATURES = ['play', 'thumb', 'hooks', 'end', 'speed', 'other'];
 
@@ -131,8 +141,9 @@ function player_config(mixed $player): ?array
         $out['play'] = [
             'image' => $playImage,
             'size' => max(30, min(90, $size)),
-            'position' => in_array($pos, [34, 50, 66], true) ? $pos : 50,
+            'position' => in_array($pos, PLAYER_PLAY_POSITIONS, true) ? $pos : 50,
             'pulse' => ($play['pulse'] ?? true) !== false,
+            'effect' => in_array($play['effect'] ?? null, PLAYER_EFFECTS, true) ? $play['effect'] : 'none',
         ];
     }
 
@@ -164,22 +175,44 @@ function player_config(mixed $player): ?array
         $endMode = 'none';
     }
 
+    // Each hook (05/11): a line of text in a band or a bubble, or an image in its place; with its position, size
+    // (% of the most: the player's width less 4% each side) and how it appears. A hook from before comes without
+    // them: the old style puts it (top = band, upper; bottom = bubble, lower), at 90%, appearing at once.
     $hooks = is_array($player['hooks'] ?? null) ? $player['hooks'] : [];
+    $oldStyle = ($hooks['style'] ?? 'top') === 'bottom' ? 'bottom' : 'top';
     $items = [];
     foreach (is_array($hooks['items'] ?? null) ? $hooks['items'] : [] as $h) {
         if (!is_array($h) || count($items) >= PLAYER_MAX_HOOKS) {
             continue;
         }
+        $kind = ($h['kind'] ?? 'text') === 'image' ? 'image' : 'text';
         $text = player_text($h['text'] ?? '', 120);
+        $img = $kind === 'image' ? player_image($h['image'] ?? null) : null;
         $when = in_array($h['when'] ?? null, ['at', 'before_pitch'], true) ? $h['when'] : null;
         $sec = is_numeric($h['seconds'] ?? null) ? (int) $h['seconds'] : -1;
-        if ($text === '' || $when === null || $sec < 0 || $sec > 4 * 3600) {
+        if (($kind === 'text' ? $text === '' : $img === null) || $when === null || $sec < 0 || $sec > 4 * 3600) {
             continue;
         }
-        $items[] = ['text' => $text, 'when' => $when, 'seconds' => $sec];
+        $pos = is_numeric($h['position'] ?? null) ? (int) $h['position'] : ($oldStyle === 'bottom' ? 80 : 20);
+        $size = is_numeric($h['size'] ?? null) ? (int) $h['size'] : 90;
+        $item = [
+            'kind' => $kind,
+            'when' => $when,
+            'seconds' => $sec,
+            'position' => in_array($pos, PLAYER_HOOK_POSITIONS, true) ? $pos : 50,
+            'size' => max(30, min(100, $size)),
+            'effect' => in_array($h['effect'] ?? null, PLAYER_EFFECTS, true) ? $h['effect'] : 'none',
+        ];
+        if ($kind === 'image') {
+            $item['image'] = $img;
+        } else {
+            $item['text'] = $text;
+            $item['look'] = in_array($h['look'] ?? null, ['band', 'bubble'], true) ? $h['look'] : ($oldStyle === 'bottom' ? 'bubble' : 'band');
+        }
+        $items[] = $item;
     }
     if ($items !== []) {
-        $out['hooks'] = ['style' => ($hooks['style'] ?? 'top') === 'bottom' ? 'bottom' : 'top', 'items' => $items];
+        $out['hooks'] = ['items' => $items];
     }
 
     if ($endMode !== 'none' || $atPitch) {
