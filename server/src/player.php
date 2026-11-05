@@ -11,9 +11,12 @@
  *   end    when the video ends: scroll to the offer, the thumb, or a notice
  *   speed  the player's speed (VTurb's Turbo)
  *   other  mini player, Smart Pause and the "continue watching" texts
- *   test   one of them in A × B: THIS server draws the visitor's side by the
- *          weights (cookie dop_pt_<test>, like the VSL and the CTA draws) and the
- *          page says which (dot.js sends it in a player_variant event)
+ *   test   one of them with 2 to 4 options (a…d): THIS server draws the visitor's
+ *          option by the weights (cookie dop_pt_<test>, like the VSL and the CTA
+ *          draws) and the page says which (dot.js sends it in a player_variant
+ *          event). Since 05/11 each option can carry the feature's whole setting
+ *          (`config`, like the dashboard's "+ Thumb" adds a CTA-like option): the
+ *          drawn option's setting replaces the block's before it goes to the page.
  *
  * speed and other aren't drawn by us: they go in the player tag's
  * `custom-config` attribute (<vturb-smartplayer custom-config="{…}">), which
@@ -205,25 +208,40 @@ function player_config(mixed $player): ?array
         $out['other'] = $o;
     }
 
-    // One test at a time: a valid A × B on a feature that is on (the play's side B brings its own image).
+    // One test at a time: 2 to 4 options (a…d) on a feature that is on. An option off = "without" it;
+    // with `config`, its own setting of the feature, cleaned like the block's (in the block's context:
+    // the end's "thumb" needs the block's thumb). Older options bring just the play's image or the speed.
     $test = is_array($player['test'] ?? null) ? $player['test'] : null;
     $feature = $test['feature'] ?? null;
     $variants = is_array($test['variants'] ?? null) ? array_values($test['variants']) : [];
     if ($test !== null && is_string($test['id'] ?? null) && preg_match(PLAYER_UUID_RE, $test['id']) === 1
-        && in_array($feature, ['play', 'thumb', 'hooks', 'end', 'speed'], true) && ($feature === 'speed' || isset($out[$feature])) && count($variants) === 2) {
+        && in_array($feature, ['play', 'thumb', 'hooks', 'end', 'speed'], true) && ($feature === 'speed' || isset($out[$feature]))
+        && count($variants) >= 2 && count($variants) <= 4) {
         $sides = [];
+        $keys = [];
         foreach ($variants as $i => $v) {
             $w = is_array($v) && is_numeric($v['weight'] ?? null) ? (int) $v['weight'] : 0;
-            if ($w < 1 || $w > 99) {
+            $key = is_array($v) && is_string($v['key'] ?? null) && preg_match('/^[a-d]$/', $v['key']) === 1 ? $v['key'] : chr(97 + $i);
+            if ($w < 1 || $w > 99 || isset($keys[$key])) {
                 $sides = [];
                 break;
             }
-            $side = ['key' => $i === 0 ? 'a' : 'b', 'weight' => $w, 'off' => ($v['off'] ?? false) === true];
-            if ($feature === 'play') {
-                $side['image'] = player_image($v['image'] ?? null) ?? $out['play']['image'];
+            $keys[$key] = true;
+            $side = ['key' => $key, 'weight' => $w, 'off' => ($v['off'] ?? false) === true];
+            $own = null;
+            if (!$side['off'] && is_array($v['config'] ?? null)) {
+                $own = player_config([...$player, $feature => $v['config'], 'test' => null])[$feature] ?? null;
+                if ($own === null) {
+                    $sides = [];
+                    break;
+                }
+                $side['config'] = $own;
             }
-            if ($feature === 'speed') {
-                $sp = player_speed($v['speed'] ?? null);
+            if ($feature === 'play' && !$side['off']) {
+                $side['image'] = $own['image'] ?? player_image($v['image'] ?? null) ?? $out['play']['image'];
+            }
+            if ($feature === 'speed' && !$side['off']) {
+                $sp = $own ?? player_speed($v['speed'] ?? null);
                 if ($sp === null) {
                     $sides = [];
                     break;
@@ -247,24 +265,33 @@ function player_json(array $config): string
 }
 
 /**
- * The visitor's side of the funnel's test: the one dop_pt_<test> holds, else
- * drawn by the weights (ab_pick). `cookie` = the Set-Cookie to send (null: it
- * already had it).
+ * The visitor's option of the funnel's test: the one dop_pt_<test> holds (while
+ * the test still has it), else drawn by the weights (ab_pick). `cookie` = the
+ * Set-Cookie to send (null: it already had it).
  *
  * @return array{side: string, cookie: ?string}
  */
 function player_draw(array $test, array $cookies, ?callable $rand = null): array
 {
     $name = PLAYER_COOKIE . substr((string) $test['id'], 0, 8);
+    $options = array_map(static fn (array $v): array => ['key' => (string) $v['key'], 'weight' => (int) $v['weight']], $test['variants']);
     $had = $cookies[$name] ?? null;
-    if ($had === 'a' || $had === 'b') {
+    if (is_string($had) && in_array($had, array_column($options, 'key'), true)) {
         return ['side' => $had, 'cookie' => null];
     }
-    $side = ab_pick([
-        ['key' => 'a', 'weight' => (int) $test['variants'][0]['weight']],
-        ['key' => 'b', 'weight' => (int) $test['variants'][1]['weight']],
-    ], $rand)['key'];
+    $side = ab_pick($options, $rand)['key'];
     return ['side' => $side, 'cookie' => "$name=$side; Path=/; Max-Age=2592000; Secure; SameSite=Lax"];
+}
+
+/** The test's option with that key, or null. */
+function player_option(array $config, ?string $side): ?array
+{
+    foreach (is_array($config['test']['variants'] ?? null) ? $config['test']['variants'] : [] as $v) {
+        if (($v['key'] ?? null) === $side) {
+            return $v;
+        }
+    }
+    return null;
 }
 
 /**
@@ -279,8 +306,10 @@ function player_custom(array $config, ?string $side): ?array
     $custom = [];
     $speed = $config['speed'] ?? null;
     $test = $config['test'] ?? null;
-    if ($side !== null && is_array($test) && ($test['feature'] ?? null) === 'speed') {
-        $speed = $test['variants'][$side === 'a' ? 0 : 1]['speed'] ?? $speed;
+    $option = player_option($config, $side);
+    if ($option !== null && is_array($test) && ($test['feature'] ?? null) === 'speed') {
+        // the "as on VTurb" option (off) leaves the player's own speed
+        $speed = ($option['off'] ?? false) ? null : ($option['speed'] ?? $speed);
     }
     if ($speed !== null) {
         $custom['turbo'] = ['active' => true, 'type' => 'single', 'speed' => $speed];
@@ -325,6 +354,14 @@ function player_page(array $route, ?string $video, array $cookies = [], ?callabl
     if (isset($config['test'])) {
         ['side' => $side, 'cookie' => $cookie] = player_draw($config['test'], $cookies, $rand);
         $config['side'] = $side;
+        // the drawn option's own setting is what the page draws; the page gets no option's setting
+        $own = player_option($config, $side)['config'] ?? null;
+        if ($own !== null) {
+            $config[$config['test']['feature']] = $own;
+        }
+        foreach ($config['test']['variants'] as $i => $v) {
+            unset($config['test']['variants'][$i]['config']);
+        }
     }
     $custom = player_custom($config, $side);
     $json = player_json($config);

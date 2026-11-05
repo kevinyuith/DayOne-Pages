@@ -157,3 +157,38 @@ $ph = player_page(['player' => $withGroups], $vH, [], $fixedP(60));
 same('the page of the hooks group: its test\'s side', 'b', json_decode($ph['json'], true)['side']);
 check('… with the group test\'s cookie', str_starts_with((string) $ph['cookie'], 'dop_pt_22222222=b;'));
 same('the Default\'s page: its play test', $plTest, json_decode((string) player_page(['player' => $withGroups], $vA, [], $fixedP(0))['json'], true)['test']['id']);
+
+// Options like CTAs (05/11): 2 to 4 (a…d), each with the feature's whole setting; the drawn one's goes to the page.
+$thumbB = ['url' => 'https://cdn.example.com/thumb-b.png', 'name' => 'thumb-b.png', 'width' => 1080, 'height' => 1920];
+$thumbTest = '33333333-3333-4333-8333-333333333333';
+$withOptions = [...$plFull, 'test' => ['id' => $thumbTest, 'feature' => 'thumb', 'started_at' => '2026-11-05T00:00:00Z', 'variants' => [
+    ['key' => 'a', 'weight' => 40, 'label' => 'A', 'config' => $plFull['thumb']],
+    ['key' => 'b', 'weight' => 40, 'label' => 'B', 'config' => [...$plFull['thumb'], 'image' => $thumbB, 'button' => [...$plFull['thumb']['button'], 'text' => 'GET IT']]],
+    ['key' => 'c', 'weight' => 20, 'label' => 'Sem', 'off' => true],
+]]];
+$co = player_config($withOptions);
+same('three options, by key', ['a', 'b', 'c'], array_column($co['test']['variants'], 'key'));
+same('… each option\'s setting cleaned', $thumbB['url'], $co['test']['variants'][1]['config']['image']);
+check('… the "without" option has none', !isset($co['test']['variants'][2]['config']));
+same('draw 85 of 100 → c', 'c', player_draw($co['test'], [], $fixedP(85))['side']);
+same('a cookie of an option the test still has: kept', 'b', player_draw($co['test'], ['dop_pt_33333333' => 'b'])['side']);
+same('a cookie of an option the test no longer has: drawn again', 'a', player_draw($co['test'], ['dop_pt_33333333' => 'd'], $fixedP(0))['side']);
+$pb = json_decode((string) player_page(['player' => $withOptions], $vA, [], $fixedP(50))['json'], true);
+same('the page of option b: its thumb', $thumbB['url'], $pb['thumb']['image']);
+same('… its button text', 'GET IT', $pb['thumb']['button']['text']);
+check('… and no option carries its setting to the page', !array_filter($pb['test']['variants'], static fn ($v) => isset($v['config'])));
+same('five options: no test', null, player_config([...$plFull, 'test' => [...$withOptions['test'], 'variants' => array_fill(0, 5, ['weight' => 20])]])['test'] ?? null);
+same('two options with the same key: no test', null, player_config([...$plFull, 'test' => [...$withOptions['test'], 'variants' => [['key' => 'a', 'weight' => 50], ['key' => 'a', 'weight' => 50]]]])['test'] ?? null);
+same('an option whose setting is off (no image): no test', null, player_config([...$plFull, 'test' => [...$withOptions['test'], 'variants' => [['key' => 'a', 'weight' => 50], ['key' => 'b', 'weight' => 50, 'config' => [...$plFull['thumb'], 'image' => null]]]]])['test'] ?? null);
+$endTest = [...$plFull, 'test' => ['id' => $thumbTest, 'feature' => 'end', 'started_at' => '2026-11-05T00:00:00Z', 'variants' => [
+    ['key' => 'a', 'weight' => 50, 'config' => ['mode' => 'scroll', 'scroll_at_pitch' => false]],
+    ['key' => 'b', 'weight' => 50, 'config' => ['mode' => 'thumb', 'scroll_at_pitch' => false]],
+]]];
+same('an end option "thumb" uses the block\'s thumb', 'thumb', player_config($endTest)['test']['variants'][1]['config']['mode']);
+$spOpt = [...$plFull, 'test' => ['id' => $thumbTest, 'feature' => 'speed', 'started_at' => '2026-11-05T00:00:00Z', 'variants' => [
+    ['key' => 'a', 'weight' => 50, 'config' => ['speed' => 1.2]],
+    ['key' => 'b', 'weight' => 50, 'label' => 'Como no VTurb', 'off' => true],
+]]];
+$spA = player_page(['player' => $spOpt], $vA, [], $fixedP(0));
+same('speed option a: its speed in the custom-config', 1.2, json_decode((string) $spA['custom'], true)['turbo']['speed']);
+same('speed option "as on VTurb" (off): no custom-config speed', null, player_page(['player' => $spOpt], $vA, [], $fixedP(60))['custom']);

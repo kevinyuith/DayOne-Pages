@@ -943,19 +943,23 @@ const TRACKER_DOT_JS = <<<'JS'
   function playerStart(el, cfg) {
     if (el.__dopPlayer) return;
     el.__dopPlayer = true;
-    var test = cfg.test && cfg.test.variants && cfg.test.variants.length === 2 ? cfg.test : null;
+    var test = cfg.test && cfg.test.variants && cfg.test.variants.length >= 2 ? cfg.test : null;
     var side = '';
     var mine = null;
     if (test) {
-      // the side the server drew (player.php, cookie dop_pt_<test>); drawn here only if it didn't come
+      // the option the server drew (player.php, cookie dop_pt_<test>; 2 to 4, a…d); drawn here only if it didn't come
       var ck = 'dop_pt_' + String(test.id).slice(0, 8);
-      side = cfg.side === 'a' || cfg.side === 'b' ? cfg.side : cookieValue(ck);
-      if (side !== 'a' && side !== 'b') {
-        var wa = +test.variants[0].weight || 50, wb = +test.variants[1].weight || 50;
-        side = Math.random() * (wa + wb) < wa ? 'a' : 'b';
+      var pick = function (k) { for (var j = 0; j < test.variants.length; j++) { if (test.variants[j].key === k) return test.variants[j]; } return null; };
+      side = pick(cfg.side) ? cfg.side : cookieValue(ck);
+      if (!pick(side)) {
+        var total = 0, k;
+        for (k = 0; k < test.variants.length; k++) total += +test.variants[k].weight || 1;
+        var r = Math.random() * total;
+        for (k = 0; k < test.variants.length; k++) { r -= +test.variants[k].weight || 1; if (r < 0) break; }
+        side = test.variants[Math.min(k, test.variants.length - 1)].key;
         setCookie(ck, side, 30);
       }
-      mine = side === 'a' ? test.variants[0] : test.variants[1];
+      mine = pick(side);
       sendEvent('player_variant', { video_id: videoId, _metadata: { test: test.id, feature: test.feature, variant: side } });
     }
     // the tested feature is off on the "without" side
