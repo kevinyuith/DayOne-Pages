@@ -11,7 +11,8 @@ import { z } from "zod";
  *   countries       ISO-3166 alpha-2, uppercase. Comes from the CF-IPCountry header.
  *   countries_mode  "block" inverts the list: matches whoever is NOT in it. Absent = "allow only".
  *   devices         mobile | tablet | desktop, from the User-Agent.
- *   languages       ISO 639-1 (two letters), lowercase. Comes from the browser's Accept-Language.
+ *   languages       Lowercase language tags. "en" matches every regional English;
+ *                   "en-in" matches that exact tag in Accept-Language.
  *   languages_mode  same as countries_mode, for languages.
  *   query           per parameter: "present" | "absent" | { equals: "value" }.
  *   referrer        text contained in the Referer header (case-insensitive).
@@ -40,7 +41,7 @@ export const conditionsSchema = z
     countries: z.array(z.string().regex(/^[A-Z]{2}$/, "country must be a two-letter code")).min(1).max(50).optional(),
     countries_mode: z.literal("block").optional(),
     devices: z.array(z.enum(DEVICES)).min(1).optional(),
-    languages: z.array(z.string().regex(/^[a-z]{2}$/, "language must be a two-letter code (ISO 639-1)")).min(1).max(50).optional(),
+    languages: z.array(z.string().regex(/^[a-z]{2}(?:-[a-z0-9]{1,8})*$/, "language must be a base code or language tag, e.g. en or en-IN")).min(1).max(50).optional(),
     languages_mode: z.literal("block").optional(),
     query: z.record(z.string().regex(/^[A-Za-z0-9_.\-\[\]]{1,100}$/, "invalid parameter name"), queryRule).optional(),
     referrer: z.string().min(1).max(200).optional(),
@@ -100,6 +101,8 @@ export function isIpOrRange(s: string): boolean {
 
 /** A screen size, "WxH" (the database checks the same pattern). */
 const SCREEN_RE = /^\d{2,5}x\d{2,5}$/;
+const OUTER_RE = /^(\d{2,5}x\d{2,5}|screen)$/;
+const TZ_RE = /^[A-Za-z_]+\/[A-Za-z_]+(\/[A-Za-z_]+)?$/;
 
 /** A platform of the rule's scope: the click's sub11 as hits.platform keeps it (lowercase). */
 const platformName = z
@@ -108,6 +111,7 @@ const platformName = z
   .max(40)
   .refine((p) => p === p.trim().toLowerCase() && !/[&=]/.test(p), "a platform is lowercase, without & or =");
 
+// A two-letter language code matches every region; a full tag (en-IN) is exact.
 const ruleConditionsShape = conditionsSchema.extend({
   sub1: subId.optional(),
   sub11: subId.optional(),
@@ -171,6 +175,32 @@ const ruleConditionsShape = conditionsSchema.extend({
   nav_connect_min: z.number().int().min(1).max(10000).optional(),
   // screens: the screen (screen.width x screen.height) is one of these "WxH", either orientation; no size never matches.
   screens: z.array(z.string().regex(SCREEN_RE, "a size is WxH, e.g. 800x600")).min(1).max(50).optional(),
+  // viewports/outers: same shape as screens, for the viewport (innerWidth x innerHeight)
+  // and the window's outer size (outerWidth x outerHeight); no size never matches.
+  // outers also accepts the token "screen" (the window equals the screen exactly).
+  viewports: z.array(z.string().regex(SCREEN_RE, "a size is WxH, e.g. 800x600")).min(1).max(50).optional(),
+  outers: z.array(z.string().regex(OUTER_RE, 'a size is WxH or the token "screen"')).min(1).max(50).optional(),
+  // viewport_is_screen: 1 = the viewport fills the screen exactly (no browser bars — an emulated phone);
+  // only decidable with both sizes. Not measured never matches.
+  viewport_is_screen: z.union([z.literal(0), z.literal(1)]).optional(),
+  // outer_is_screen: 1 = the outer window fills the screen exactly (a cell-phone
+  // emulator or a remote fullscreen browser); only decidable with both sizes.
+  outer_is_screen: z.union([z.literal(0), z.literal(1)]).optional(),
+  // tz_in: the browser's IANA zone is one of these (case-insensitive); no zone never matches.
+  tz_in: z.array(z.string().regex(TZ_RE, "an IANA zone, e.g. America/Los_Angeles")).min(1).max(20).optional(),
+  // nav_ttfb_missing: 1 = a POST ran but the browser didn't deliver nav timing
+  // (the reviewer's tell). Only decidable on a POST — a GET never matches.
+  nav_ttfb_missing: z.union([z.literal(0), z.literal(1)]).optional(),
+  // net_rtt_max: Chrome's RTT estimate (ms) is at most this; pairs with net_rtt_min to bracket a throttled profile.
+  net_rtt_max: z.number().int().min(1).max(10000).optional(),
+  // net_downlink_below: Chrome's downlink estimate (Mbps) is below this (strictly); no measurement never matches.
+  net_downlink_below: z.number().min(0.01).max(100).optional(),
+  // net_downlink_min: the downlink estimate (Mbps) is at least this; with net_downlink_below it brackets a range.
+  net_downlink_min: z.number().min(0.01).max(100).optional(),
+  // gl: the WebGL renderer is one of these (case-insensitive exact); not reported never matches.
+  gl: z.array(z.string().min(1).max(60)).min(1).max(50).optional(),
+  // net_type: Chrome's effective connection type (navigator.connection.effectiveType: slow-2g, 2g, 3g, 4g); not reported never matches.
+  net_type: z.enum(["slow-2g", "2g", "3g", "4g"]).optional(),
   // The on/off detectors (1 = the tell fired). no_js is decided on the GET
   // (the page served, no POST back), the rest from the browser's signals.
   no_touch: z.union([z.literal(0), z.literal(1)]).optional(),
@@ -473,6 +503,31 @@ export function parseRuleConditionsForm(fd: FormData): { ok: true; value: RuleCo
     if (!/^\d{1,5}$/.test(netRttMin) || Number(netRttMin) < 1 || Number(netRttMin) > 10000) return { ok: false, reason: "Chrome RTT must be whole milliseconds, 1–10000." };
     raw.net_rtt_min = Number(netRttMin);
   }
+  const netRttMax = String(fd.get("net_rtt_max") ?? "").trim();
+  if (netRttMax !== "") {
+    if (!/^\d{1,5}$/.test(netRttMax) || Number(netRttMax) < 1 || Number(netRttMax) > 10000) return { ok: false, reason: "Chrome RTT max must be whole milliseconds, 1–10000." };
+    raw.net_rtt_max = Number(netRttMax);
+  }
+  const netDownlinkBelow = String(fd.get("net_downlink_below") ?? "").trim();
+  if (netDownlinkBelow !== "") {
+    const v = Number(netDownlinkBelow);
+    if (!/^\d{1,3}(\.\d{1,2})?$/.test(netDownlinkBelow) || v < 0.01 || v > 100) return { ok: false, reason: "Downlink must be 0.01–100 Mbps." };
+    raw.net_downlink_below = v;
+  }
+  const netDownlinkMin = String(fd.get("net_downlink_min") ?? "").trim();
+  if (netDownlinkMin !== "") {
+    const v = Number(netDownlinkMin);
+    if (!/^\d{1,3}(\.\d{1,2})?$/.test(netDownlinkMin) || v < 0.01 || v > 100) return { ok: false, reason: "Downlink must be 0.01–100 Mbps." };
+    raw.net_downlink_min = v;
+  }
+  const glList = Array.from(new Set(String(fd.get("gl") ?? "").split(/[\n;]+/).map((s) => s.trim()).filter(Boolean)));
+  if (glList.length) {
+    if (glList.length > 50) return { ok: false, reason: "Up to 50 WebGL renderers." };
+    if (glList.some((s) => s.length > 60)) return { ok: false, reason: "A WebGL renderer is at most 60 characters." };
+    raw.gl = glList;
+  }
+  const netType = String(fd.get("net_type") ?? "");
+  if (netType === "slow-2g" || netType === "2g" || netType === "3g" || netType === "4g") raw.net_type = netType;
   const navTtfbAbove = String(fd.get("nav_ttfb_above") ?? "").trim();
   if (navTtfbAbove !== "") {
     if (!/^\d{1,5}$/.test(navTtfbAbove) || Number(navTtfbAbove) < 1 || Number(navTtfbAbove) > 10000) return { ok: false, reason: "Checkpoint TTFB must be whole milliseconds, 1–10000." };
@@ -501,6 +556,28 @@ export function parseRuleConditionsForm(fd: FormData): { ok: true; value: RuleCo
     if (bad) return { ok: false, reason: `Invalid screen size "${bad}" (WxH, e.g. 800x600).` };
     if (screens.length > 50) return { ok: false, reason: "Up to 50 screen sizes." };
     raw.screens = screens;
+  }
+  for (const field of ["viewports", "outers"] as const) {
+    const sizes = Array.from(new Set(String(fd.get(field) ?? "").toLowerCase().replace(/×/g, "x").split(/[\s,;]+/).filter(Boolean)));
+    if (!sizes.length) continue;
+    const re = field === "outers" ? OUTER_RE : SCREEN_RE;
+    const bad = sizes.find((s) => !re.test(s));
+    if (bad) return { ok: false, reason: `Invalid ${field === "viewports" ? "viewport" : "outer"} size "${bad}" (WxH, e.g. 800x600${field === "outers" ? ', or "screen"' : ""}).` };
+    if (sizes.length > 50) return { ok: false, reason: `Up to 50 ${field === "viewports" ? "viewport" : "outer"} sizes.` };
+    raw[field] = sizes;
+  }
+  const viewportIsScreen = bit("viewport_is_screen");
+  if (viewportIsScreen !== undefined) raw.viewport_is_screen = viewportIsScreen;
+  const outerIsScreen = bit("outer_is_screen");
+  if (outerIsScreen !== undefined) raw.outer_is_screen = outerIsScreen;
+  const navTtfbMissing = bit("nav_ttfb_missing");
+  if (navTtfbMissing !== undefined) raw.nav_ttfb_missing = navTtfbMissing;
+  const tzIn = Array.from(new Set(String(fd.get("tz_in") ?? "").split(/[\s,;]+/).map((s) => s.trim()).filter(Boolean)));
+  if (tzIn.length) {
+    const bad = tzIn.find((s) => !TZ_RE.test(s));
+    if (bad) return { ok: false, reason: `Invalid IANA zone "${bad}" (Area/City, e.g. America/Los_Angeles).` };
+    if (tzIn.length > 20) return { ok: false, reason: "Up to 20 IANA zones." };
+    raw.tz_in = tzIn;
   }
   if (fd.get("eval_cookie") === "absent") raw.eval_cookie = "absent";
   // The on/off detectors.
@@ -620,6 +697,17 @@ export function ruleConditionsToForm(c: RuleConditions | null | undefined): Retu
   chromeBelow: string;
   navConnectMin: string;
   screens: string;
+  viewports: string;
+  outers: string;
+  viewportIsScreen: "" | "0" | "1";
+  outerIsScreen: "" | "0" | "1";
+  navTtfbMissing: "" | "0" | "1";
+  tzIn: string;
+  netRttMax: string;
+  netDownlinkBelow: string;
+  netDownlinkMin: string;
+  gl: string;
+  netType: "" | "slow-2g" | "2g" | "3g" | "4g";
   noTouch: "" | "0" | "1";
   chromeUa: "" | "0" | "1";
   noChromeObject: "" | "0" | "1";
@@ -689,6 +777,17 @@ export function ruleConditionsToForm(c: RuleConditions | null | undefined): Retu
     chromeBelow: c?.chrome_below !== undefined ? String(c.chrome_below) : "",
     navConnectMin: c?.nav_connect_min !== undefined ? String(c.nav_connect_min) : "",
     screens: (c?.screens ?? []).join(", "),
+    viewports: (c?.viewports ?? []).join(", "),
+    outers: (c?.outers ?? []).join(", "),
+    viewportIsScreen: bit(c?.viewport_is_screen),
+    outerIsScreen: bit(c?.outer_is_screen),
+    navTtfbMissing: bit(c?.nav_ttfb_missing),
+    tzIn: (c?.tz_in ?? []).join(", "),
+    netRttMax: c?.net_rtt_max !== undefined ? String(c.net_rtt_max) : "",
+    netDownlinkBelow: c?.net_downlink_below !== undefined ? String(c.net_downlink_below) : "",
+    netDownlinkMin: c?.net_downlink_min !== undefined ? String(c.net_downlink_min) : "",
+    gl: (c?.gl ?? []).join("\n"),
+    netType: c?.net_type ?? "",
     noTouch: bit(c?.no_touch),
     chromeUa: bit(c?.chrome_ua),
     noChromeObject: bit(c?.no_chrome_object),
@@ -764,6 +863,17 @@ export function summarizeRuleConditions(c: RuleConditions | null | undefined): s
     c.chrome_below !== undefined ? `Chrome < ${c.chrome_below}` : "",
     c.nav_connect_min !== undefined ? `Connect ≥ ${c.nav_connect_min} ms` : "",
     c.screens?.length ? `Screen ${c.screens.join(", ")}` : "",
+    c.viewports?.length ? `Viewport ${c.viewports.join(", ")}` : "",
+    c.outers?.length ? `Outer ${c.outers.join(", ")}` : "",
+    onOff(c.viewport_is_screen, "Viewport = screen", "Viewport ≠ screen"),
+    onOff(c.outer_is_screen, "Outer = screen", "Outer ≠ screen"),
+    c.tz_in?.length ? `TZ in ${c.tz_in.join(" | ")}` : "",
+    onOff(c.nav_ttfb_missing, "No nav timing", "Has nav timing"),
+    c.net_rtt_max !== undefined ? `Chrome RTT ≤ ${c.net_rtt_max} ms` : "",
+    c.net_downlink_below !== undefined ? `Downlink < ${c.net_downlink_below} Mbps` : "",
+    c.net_downlink_min !== undefined ? `Downlink ≥ ${c.net_downlink_min} Mbps` : "",
+    c.gl?.length ? `WebGL ${c.gl.join(" | ")}` : "",
+    c.net_type ? `Connection ${c.net_type}` : "",
     onOff(c.no_touch, "No touch", "Has touch"),
     onOff(c.chrome_ua, "Chrome UA", "Not Chrome UA"),
     onOff(c.no_chrome_object, "No window.chrome", ""),

@@ -189,6 +189,27 @@ function DeviceSignals({ initial, disabled }: { initial: ReturnType<typeof ruleC
         <Field label="Chrome RTT at least (ms)" hint="navigator.connection.rtt, steps of 50. No measurement never matches.">
           <input name="net_rtt_min" defaultValue={initial.netRttMin} inputMode="numeric" placeholder="150" className={INPUT_CLASS} disabled={disabled} />
         </Field>
+        <Field label="Chrome RTT at most (ms)" hint="Upper bound of the RTT — with the minimum it brackets a throttled profile.">
+          <input name="net_rtt_max" defaultValue={initial.netRttMax} inputMode="numeric" placeholder="150" className={INPUT_CLASS} disabled={disabled} />
+        </Field>
+        <Field label="Downlink below (Mbps)" hint="navigator.connection.downlink, strictly below. No measurement never matches.">
+          <input name="net_downlink_below" defaultValue={initial.netDownlinkBelow} inputMode="decimal" placeholder="2" className={INPUT_CLASS} disabled={disabled} />
+        </Field>
+        <Field label="Downlink at least (Mbps)" hint="Lower bound of the downlink — with 'below' it brackets a range.">
+          <input name="net_downlink_min" defaultValue={initial.netDownlinkMin} inputMode="decimal" placeholder="1.4" className={INPUT_CLASS} disabled={disabled} />
+        </Field>
+        <Field label="WebGL renderer (one per line)" hint="Unmasked renderer, exact, case-insensitive. Not reported never matches.">
+          <textarea name="gl" defaultValue={initial.gl} rows={3} placeholder="Mali-G71" className={INPUT_CLASS} disabled={disabled} />
+        </Field>
+        <Field label="Connection type" hint="navigator.connection.effectiveType. Not reported never matches.">
+          <select name="net_type" defaultValue={initial.netType} className={SELECT_CLASS} disabled={disabled}>
+            <option value="">Any</option>
+            <option value="slow-2g">slow-2g</option>
+            <option value="2g">2g</option>
+            <option value="3g">3g</option>
+            <option value="4g">4g</option>
+          </select>
+        </Field>
         <Field label="Checkpoint TTFB above (ms)" hint="Time to first byte of the checkpoint page. Strictly above.">
           <input name="nav_ttfb_above" defaultValue={initial.navTtfbAbove} inputMode="numeric" placeholder="300" className={INPUT_CLASS} disabled={disabled} />
         </Field>
@@ -220,6 +241,18 @@ function DeviceSignals({ initial, disabled }: { initial: ReturnType<typeof ruleC
         </Field>
         <Field label="Screen is (W×H)" hint="screen.width × screen.height, either orientation; comma-separated.">
           <input name="screens" defaultValue={initial.screens} placeholder="800x600" className={INPUT_CLASS} disabled={disabled} />
+        </Field>
+        <Field label="Viewport is (W×H)" hint="innerWidth × innerHeight, either orientation; comma-separated.">
+          <input name="viewports" defaultValue={initial.viewports} placeholder="1366x768" className={INPUT_CLASS} disabled={disabled} />
+        </Field>
+        <Field label="Outer window is (W×H)" hint='outerWidth × outerHeight, either orientation; comma-separated. The token "screen" matches when the window equals the screen exactly.'>
+          <input name="outers" defaultValue={initial.outers} placeholder="1366x907, screen" className={INPUT_CLASS} disabled={disabled} />
+        </Field>
+        {bit("viewport_is_screen", "Viewport = screen", initial.viewportIsScreen, ["exactly", "not exactly"])}
+        {bit("outer_is_screen", "Outer = screen", initial.outerIsScreen, ["exactly", "not exactly"])}
+        {bit("nav_ttfb_missing", "No nav timing", initial.navTtfbMissing, ["missing", "present"])}
+        <Field label="Timezone in (IANA)" hint="Browser's IANA zone, comma-separated. Case-insensitive; no zone never matches.">
+          <input name="tz_in" defaultValue={initial.tzIn} placeholder="America/Los_Angeles, America/Vancouver" className={INPUT_CLASS} disabled={disabled} />
         </Field>
       </div>
       <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-muted">Bot tells</p>
@@ -496,10 +529,10 @@ function ConditionsBuilder({
               name={r.type}
               defaultValue={isCountry ? initial.countries : initial.languages}
               required
-              placeholder={isCountry ? "US, CA" : "en, es"}
+              placeholder={isCountry ? "US, CA" : "en, en-IN"}
               className={`${input} ${isCountry ? "uppercase" : ""}`}
               disabled={disabled}
-              aria-label={isCountry ? "Countries (ISO-2)" : "Languages (ISO 639-1)"}
+              aria-label={isCountry ? "Countries (ISO-2)" : "Languages or language tags"}
             />
           </>
         );

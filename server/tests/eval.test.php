@@ -473,6 +473,58 @@ check('viewport_is_screen: no sizes is undecidable', !eval_conditions_match(['vi
 check('viewport_is_screen: screen alone is undecidable', !eval_conditions_match(['viewport_is_screen' => 1], $req, ['sw' => 360, 'sh' => 601], null));
 check('viewport_is_screen: unknown stays pending for the checkpoint', eval_conditions_match(['viewport_is_screen' => 1], $req, null, null, true));
 
+// outer_is_screen: the outer window fills the screen exactly (a cell-phone
+// emulator or a remote fullscreen browser).
+check('outer_is_screen: 1920x1080 == 1920x1080 fires', eval_conditions_match(['outer_is_screen' => 1], $req, ['sw' => 1920, 'sh' => 1080, 'ow' => 1920, 'oh' => 1080], null));
+check('outer_is_screen: a smaller window does not fire 1', !eval_conditions_match(['outer_is_screen' => 1], $req, ['sw' => 1920, 'sh' => 1080, 'ow' => 1366, 'oh' => 907], null));
+check('outer_is_screen: 0 (a windowed browser) fires', eval_conditions_match(['outer_is_screen' => 0], $req, ['sw' => 1920, 'sh' => 1080, 'ow' => 1366, 'oh' => 907], null));
+check('outer_is_screen: screen alone is undecidable', !eval_conditions_match(['outer_is_screen' => 1], $req, ['sw' => 1920, 'sh' => 1080], null));
+check('outer_is_screen: outer alone is undecidable', !eval_conditions_match(['outer_is_screen' => 1], $req, ['ow' => 1920, 'oh' => 1080], null));
+check('outer_is_screen: no sizes is undecidable', !eval_conditions_match(['outer_is_screen' => 1], $req, ['mtp' => 0], null));
+check('outer_is_screen: unknown stays pending for the checkpoint', eval_conditions_match(['outer_is_screen' => 1], $req, null, null, true));
+check('outer_is_screen: from a stored entry', eval_conditions_match(['outer_is_screen' => 1], $req, null, ['sw' => 1920, 'sh' => 1080, 'ow' => 1920, 'oh' => 1080]));
+
+// tz_in: the browser's IANA zone is one of the listed (case-insensitive).
+check('tz_in: exact zone fires', eval_conditions_match(['tz_in' => ['America/Los_Angeles']], $req, ['tze' => 'america/los_angeles'], null));
+check('tz_in: mixed case in the rule fires', eval_conditions_match(['tz_in' => ['America/Los_Angeles']], $req, ['tze' => 'AMERICA/LOS_ANGELES'], null));
+check('tz_in: any of the list', eval_conditions_match(['tz_in' => ['America/Los_Angeles', 'America/Vancouver']], $req, ['tze' => 'america/vancouver'], null));
+check('tz_in: a different zone does not', !eval_conditions_match(['tz_in' => ['America/Los_Angeles']], $req, ['tze' => 'america/new_york'], null));
+check('tz_in: Phoenix is not LA (no DST drift)', !eval_conditions_match(['tz_in' => ['America/Los_Angeles']], $req, ['tze' => 'america/phoenix'], null));
+check('tz_in: a substring is not a match', !eval_conditions_match(['tz_in' => ['America/Los']], $req, ['tze' => 'america/los_angeles'], null));
+check('tz_in: no tze is undecidable', !eval_conditions_match(['tz_in' => ['America/Los_Angeles']], $req, ['mtp' => 0], null));
+check('tz_in: unknown stays pending for the checkpoint', eval_conditions_match(['tz_in' => ['America/Los_Angeles']], $req, null, null, true));
+
+// nav_ttfb_missing: a POST ran but the browser didn't deliver nav timing.
+check('nav_ttfb_missing: POST without ntfb fires', eval_conditions_match(['nav_ttfb_missing' => 1], $req, ['mtp' => 1], null));
+check('nav_ttfb_missing: POST with ntfb does not fire 1', !eval_conditions_match(['nav_ttfb_missing' => 1], $req, ['ntfb' => 250], null));
+check('nav_ttfb_missing: 0 (timing present) fires on a POST', eval_conditions_match(['nav_ttfb_missing' => 0], $req, ['ntfb' => 250], null));
+check('nav_ttfb_missing: 0 without ntfb does not', !eval_conditions_match(['nav_ttfb_missing' => 0], $req, ['mtp' => 1], null));
+check('nav_ttfb_missing: a GET is undecidable (no POST)', !eval_conditions_match(['nav_ttfb_missing' => 1], $req, null, null));
+check('nav_ttfb_missing: a stored entry is undecidable', !eval_conditions_match(['nav_ttfb_missing' => 1], $req, null, ['mtp' => 1]));
+check('nav_ttfb_missing: unknown stays pending for the checkpoint', eval_conditions_match(['nav_ttfb_missing' => 1], $req, null, null, true));
+
+// outers "screen" token: the window equals the screen, whatever the size.
+check('outers screen token: equal sizes fire', eval_conditions_match(['outers' => ['screen']], $req, ['sw' => 1366, 'sh' => 768, 'ow' => 1366, 'oh' => 768], null));
+check('outers screen token: a smaller window does not', !eval_conditions_match(['outers' => ['screen']], $req, ['sw' => 1366, 'sh' => 768, 'ow' => 1280, 'oh' => 720], null));
+check('outers screen token: works alongside a WxH', eval_conditions_match(['outers' => ['1024x768', 'screen']], $req, ['sw' => 1920, 'sh' => 1080, 'ow' => 1920, 'oh' => 1080], null));
+check('outers screen token: still matches a WxH', eval_conditions_match(['outers' => ['1024x768', 'screen']], $req, ['sw' => 1920, 'sh' => 1080, 'ow' => 1024, 'oh' => 768], null));
+check('outers screen token: without the screen size is indecidible', !eval_conditions_match(['outers' => ['screen']], $req, ['ow' => 1366, 'oh' => 768], null));
+check('outers screen token: unknown stays pending', eval_conditions_match(['outers' => ['screen']], $req, null, null, true));
+
+// The tripla (tz_in + outer_is_screen + a network tell): the reviewer's
+// fingerprint (INCX 17/11) fires; a real buyer's doesn't.
+$reviewerSig = ['tze' => 'america/los_angeles', 'sw' => 1920, 'sh' => 1080, 'ow' => 1920, 'oh' => 1080, 'ntcp' => 412, 'mtp' => 0];
+$buyerSig    = ['tze' => 'america/new_york', 'sw' => 1920, 'sh' => 1080, 'ow' => 1366, 'oh' => 907, 'ntfb' => 220, 'ntcp' => 18, 'nrtt' => 25, 'ndl' => 8.5, 'mtp' => 1];
+$triplaA = ['tz_in' => ['America/Los_Angeles'], 'outer_is_screen' => 1, 'nav_connect_min' => 300];
+$triplaB = ['tz_in' => ['America/Los_Angeles'], 'outer_is_screen' => 1, 'nav_ttfb_missing' => 1];
+$triplaC = ['tz_in' => ['America/Los_Angeles'], 'outer_is_screen' => 1, 'net_downlink_below' => 2.01, 'net_rtt_min' => 100];
+check('tripla A (slow connect): the reviewer fires', eval_conditions_match($triplaA, $req, $reviewerSig, null));
+check('tripla A: a buyer with a windowed browser does not', !eval_conditions_match($triplaA, $req, $buyerSig, null));
+check('tripla B (no nav timing): the reviewer fires', eval_conditions_match($triplaB, $req, $reviewerSig, null));
+check('tripla B: a buyer with ntfb does not', !eval_conditions_match($triplaB, $req, $buyerSig, null));
+check('tripla C (proxy link): a buyer with good network does not', !eval_conditions_match($triplaC, $req, $buyerSig, null));
+check('tripla C: the same buyer behind a proxy link fires', eval_conditions_match($triplaC, $req, array_merge($reviewerSig, ['ndl' => 0.8, 'nrtt' => 180]), null));
+
 // net_rtt_max: Chrome's RTT estimate at most this (with net_rtt_min it brackets a throttled profile).
 check('net_rtt_max: 100 ≤ 150 fires', eval_conditions_match(['net_rtt_max' => 150], $req, ['nrtt' => 100], null));
 check('net_rtt_max: exactly 150 fires (at most)', eval_conditions_match(['net_rtt_max' => 150], $req, ['nrtt' => 150], null));

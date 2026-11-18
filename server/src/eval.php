@@ -56,6 +56,12 @@ const EVAL_OWN_CONDITIONS = [
     'iframe', 'tostring_tampered', 'proto_poisoned', 'tz_offset', 'net_rtt_min', 'screens',
     'nav_ttfb_above', 'coast', 'device_memory', 'cores', 'battery', 'charging', 'plugins', 'chrome_below', 'nav_connect_min', 'zoomed',
     'viewports', 'outers', 'viewport_is_screen', 'net_rtt_max', 'net_downlink_below', 'net_downlink_min', 'net_type', 'gl',
+    // tz_in: the browser's IANA zone is one of the listed (case-insensitive).
+    // outer_is_screen: outerWidth/Height equals screen.width/Height (no chrome
+    // bars — the cell phone emulator's and a remote fullscreen browser's tell).
+    // nav_ttfb_missing: the POST ran but ntfb didn't come — the reviewer's
+    // browser hides the navigation timing. Only decidable on a POST.
+    'tz_in', 'outer_is_screen', 'nav_ttfb_missing',
     // The on/off detectors (1 = the tell fired). no_js is stripped too, but
     // never evaluated from signals — a POST proves JS ran.
     'no_touch', 'chrome_ua', 'no_chrome_object', 'tz_mismatch', 'tz_not_us', 'no_cookie', 'odd_resolution', EVAL_NO_JS,
@@ -725,12 +731,58 @@ function eval_conditions_match(array $cond, Request $req, ?array $signals, ?arra
             [$w, $h] = $sig[$sizeKey];
             $ok = false;
             foreach (is_array($want) ? $want : [] as $res) {
-                if (is_string($res) && preg_match('/^(\d+)x(\d+)$/', strtolower($res), $m) === 1
+                if (!is_string($res)) continue;
+                // The `screen` token (outers only): the window equals the
+                // screen exactly — the cell-phone emulator / remote-fullscreen
+                // tell, no matter the screen's size. Only decidable when both
+                // sizes are known; without the screen, indecidible.
+                if ($key === 'outers' && strtolower($res) === 'screen') {
+                    if (isset($sig['screen']) && $sig['screen'] === [$w, $h]) {
+                        $ok = true;
+                        break;
+                    }
+                    continue;
+                }
+                if (preg_match('/^(\d+)x(\d+)$/', strtolower($res), $m) === 1
                     && (((int) $m[1] === $w && (int) $m[2] === $h) || ((int) $m[1] === $h && (int) $m[2] === $w))) {
                     $ok = true;
                     break;
                 }
             }
+        } elseif ($key === 'tz_in') {
+            // The browser's IANA zone (tze) is one of the listed (case-insensitive).
+            if (!isset($sig['tze'])) {
+                if ($allowPending) {
+                    continue;
+                }
+                return false; // No zone never confirms a bot.
+            }
+            $ok = false;
+            foreach (is_array($want) ? $want : [] as $zone) {
+                if (is_string($zone) && strcasecmp($zone, $sig['tze']) === 0) {
+                    $ok = true;
+                    break;
+                }
+            }
+        } elseif ($key === 'outer_is_screen') {
+            // The derived bit in $sig (set when both sizes are known).
+            if (!array_key_exists('outer_is_screen', $sig)) {
+                if ($allowPending) {
+                    continue;
+                }
+                return false; // Undecidable never confirms a bot.
+            }
+            $ok = ((int) $sig['outer_is_screen'] === 1) === ((int) $want === 1);
+        } elseif ($key === 'nav_ttfb_missing') {
+            // The absence tell: only a POST decides it. A GET (or a stored
+            // entry without the timing) is indecidible — never confirms a bot.
+            if (!$jsRan || !array_key_exists('nav_ttfb_missing', $sig)) {
+                if ($allowPending) {
+                    continue;
+                }
+                return false;
+            }
+            $ok = ((int) $sig['nav_ttfb_missing'] === 1) === ((int) $want === 1);
         } elseif ($key === 'net_rtt_max') {
             if (!isset($sig['net_rtt'])) {
                 if ($allowPending) {
@@ -983,6 +1035,9 @@ function eval_signal_values(?array $signals, ?array $stored): array
     if (isset($src['ow'], $src['oh']) && (int) $src['ow'] > 0 && (int) $src['oh'] > 0) $out['outer'] = [(int) $src['ow'], (int) $src['oh']];
     // viewport_is_screen: the viewport fills the screen exactly (no browser bars) — an emulated phone.
     if (isset($out['screen'], $out['viewport'])) $out['viewport_is_screen'] = $out['screen'] === $out['viewport'] ? 1 : 0;
+    // outer_is_screen: the outer window fills the screen exactly — an emulated
+    // cell phone or a remote fullscreen browser. Only decidable with both sizes.
+    if (isset($out['screen'], $out['outer'])) $out['outer_is_screen'] = $out['screen'] === $out['outer'] ? 1 : 0;
     // Chrome's downlink estimate (Mbps); 0 = it hasn't measured.
     if (isset($src['ndl']) && (is_int($src['ndl']) || is_float($src['ndl'])) && (float) $src['ndl'] > 0) $out['net_downlink'] = (float) $src['ndl'];
     // Chrome's effective connection type (slow-2g / 2g / 3g / 4g); not reported = undecidable.
@@ -997,6 +1052,11 @@ function eval_signal_values(?array $signals, ?array $stored): array
     }
     // The checkpoint page's own time to first byte (ms, quantized to 25): the request to the first response byte.
     if (isset($src['ntfb']) && (int) $src['ntfb'] > 0) $out['nav_ttfb'] = (int) $src['ntfb'];
+    // nav_ttfb_missing: a POST ran (JS on) but the browser never delivered the
+    // navigation timing — the reviewer's tell. A GET without the POST stays
+    // undecidable (the no_js case), so this key is only present when the
+    // signal source is the POST's fresh payload, not a stored entry.
+    if (is_array($signals) && $signals !== []) $out['nav_ttfb_missing'] = isset($out['nav_ttfb']) ? 0 : 1;
     if (isset($src['ntcp']) && (int) $src['ntcp'] > 0) $out['nav_connect'] = (int) $src['ntcp'];
     if (isset($src['dm']) && (int) $src['dm'] > 0) $out['device_memory'] = (int) $src['dm'];
     if (isset($src['hc']) && (int) $src['hc'] > 0) $out['cores'] = (int) $src['hc'];
